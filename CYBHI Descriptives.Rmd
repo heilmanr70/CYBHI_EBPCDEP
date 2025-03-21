@@ -1,0 +1,326 @@
+---
+title: "Exploratory Descriptives CYBHI Discharges"
+author: "Rebecca Heilman"
+date: "2025-02-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Import File
+
+Import the CYBHI discharge file (raw extract).
+
+```{r}
+library(readxl)
+CYBHI_Discharges <- readxl::read_xlsx("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/2025_02/Discharge/CYBHI_EInsights Export_Discharge Summary Report_Export 02.14.2025.xlsx")
+View(CYBHI_Discharges)
+summary(CYBHI_Discharges)
+```
+
+## Modify values for NULL
+
+Adjust the fields that have hyphens for null values and make them true Null values (defined by NA). Define the score fields as integers. Glimpse the data to review a sample of and ensure accurate mutations took place.
+
+```{r}
+library(dplyr)
+
+CYBHI_Discharges <- CYBHI_Discharges %>%
+  mutate(across(c(`Pre Score`, `Post Score`, `Positive Outcomes`), ~ ifelse(. == "-", NA, .))) %>% 
+  mutate(across(c(`Pre Score`, `Post Score`, `Positive Outcomes`), as.integer)) %>% 
+      glimpse()
+```
+
+## Create Measure Type and Time Point variables
+
+Using the pre- and post-measure fields, develop a measure type and time point variable. First Clean string values as needed.
+
+```{r}
+library(tidyr) 
+library(stringr)
+
+CYBHI_Discharges <- CYBHI_Discharges %>%
+  mutate(
+    Pre_Measures_Clean = str_replace_all(
+      `Pre Measure(s)`, "\\bIntial\\b", "Initial")) %>% 
+  mutate(
+    Post_Measures_Clean = str_replace_all(
+      `Post Measure(s)`, "\\bUp\\b", "up")) 
+
+```
+
+```{r}
+
+CYBHI_Discharges <- CYBHI_Discharges %>%
+  mutate(
+    Pre_Measures_Clean = str_squish(Pre_Measures_Clean),
+    Post_Measures_Clean = str_squish(Post_Measures_Clean)
+  )
+
+replace_list <- c(
+  "Strengths and Difficulties Questionnaire P4-10 Initial" = 
+  "SDQ Parent or Teacher (age 4-10) Initial", 
+  "Pediatric Symptom Checklist \\(PSC\\)" = 
+  "PSC-35", 
+  "Pediatric Symptom Checklist \\(PSC\\) Follow up 1" = 
+  "PSC-35 Follow up 1")
+
+CYBHI_Discharges <- CYBHI_Discharges %>%
+  mutate(
+    Pre_Measures_Clean = str_replace_all(Pre_Measures_Clean, replace_list),
+    Post_Measures_Clean = str_replace_all(Post_Measures_Clean, replace_list)
+  )
+```
+
+```{r}
+
+unique(CYBHI_Discharges$Pre_Measures_Clean)
+
+unique(CYBHI_Discharges$Post_Measures_Clean)
+```
+
+## Extract core measure names (removing "Initial", "Follow up X")
+
+```{r}
+CYBHI_Discharges <- CYBHI_Discharges %>%
+  mutate(
+    Pre_Time_Point = str_extract(
+      `Pre_Measures_Clean`, "(Initial|Follow up \\d+)"),
+    PreAssessment_Name = str_remove(
+      `Pre_Measures_Clean`, "(Initial|Follow up \\d+)") %>% str_trim()
+  ) %>% 
+  mutate(
+    Post_Time_Point = str_extract(
+      `Post_Measures_Clean`, "(Initial|Follow up \\d+)"),
+    PostAssessment_Name = str_remove(
+      `Post_Measures_Clean`, "(Initial|Follow up \\d+)") %>% str_trim()
+  )
+
+```
+
+## Check if Pre and Post Assessment Distinct Names Match
+
+Using the new fields, create a flag to identify the matching vs non-matching assessment tools between initial (pre) and follow up time points (post).
+
+```{r}
+CYBHI_Discharges <- CYBHI_Discharges %>%
+mutate(MatchDistinct = PreAssessment_Name == PostAssessment_Name)
+
+```
+
+## Create Clean Assessment Tool Name Fields - No Distinction between Type of Form
+
+Create fields that categorize the assessment tools by name without distinguishing between the type of form used (Interviewer vs. self-report, child vs parent or caregiver administration, for example).
+
+```{r}
+CYBHI_Discharges <- CYBHI_Discharges %>%
+  mutate(
+    OverarchingPreAssessment = word(PreAssessment_Name, 1),
+    OverarchingPostAssessment = word(PostAssessment_Name, 1)
+  )
+```
+
+## Check if Pre and Post Assessment Nondistinct, Overarching Names Match
+
+Using the new fields, create a flag to identify the matching vs non-matching assessment tools between initial (pre) and follow up time points (post).
+
+```{r}
+CYBHI_Discharges <- CYBHI_Discharges %>%
+mutate(MatchOverarching = OverarchingPreAssessment == OverarchingPostAssessment)
+```
+
+## Create Summary Table showing counts by Pre and Post-Assessments for all cases
+
+```{r}
+summary_table_combo <- CYBHI_Discharges %>%
+  group_by(PreAssessment_Name) %>%
+  summarize(
+    count_pre_scores = sum(!is.na(`Pre Score`)),   
+    count_post_scores = sum(!is.na(`Post Score`)), 
+    total_cases = n(),
+    .groups = "drop"
+  ) %>% 
+  bind_rows(
+    summarize(.,
+              `PreAssessment_Name` = "Total",
+              count_pre_scores = sum(count_pre_scores),
+              count_post_scores = sum(count_post_scores),
+              total_cases = sum(total_cases))
+  )
+```
+
+## Create Summary Table showing counts by Pre and Post-Assessments for only matched cases (exact matches)
+
+```{r}
+summary_table_matches <- CYBHI_Discharges %>%
+  filter(MatchDistinct == TRUE) %>% 
+  group_by(PreAssessment_Name) %>%
+  summarize(
+    count_pre_scores = sum(!is.na(`Pre Score`)),   
+    count_post_scores = sum(!is.na(`Post Score`)), 
+    total_cases = n(),
+    .groups = "drop"
+  ) %>% 
+  bind_rows(
+    summarize(.,
+              `PreAssessment_Name` = "Total",
+              count_pre_scores = sum(count_pre_scores),
+              count_post_scores = sum(count_post_scores),
+              total_cases = sum(total_cases))
+  )
+```
+
+## Create Summary Table showing counts by Pre and Post-Assessments - clear distinctions on assessment tool names
+
+```{r}
+summary_table_distinct <- CYBHI_Discharges %>%
+  group_by(PreAssessment_Name, PostAssessment_Name) %>%
+  summarize(
+    count_pre_scores = sum(!is.na(`Pre Score`)),   
+    count_post_scores = sum(!is.na(`Post Score`)), 
+    total_cases = n(),
+    .groups = "drop"
+  ) %>% 
+  bind_rows(
+    summarize(.,
+              `PreAssessment_Name` = "Total",
+              `PostAssessment_Name` = "Total",
+              count_pre_scores = sum(count_pre_scores),
+              count_post_scores = sum(count_post_scores),
+              total_cases = sum(total_cases))
+  )
+```
+
+## Create Summary Table showing counts by Pre and Post-Assessments for all cases - Using Overarching Assessment Names
+
+```{r}
+summary_table_combo_overarching <- CYBHI_Discharges %>%
+  group_by(OverarchingPreAssessment) %>%
+  summarize(
+    count_pre_scores = sum(!is.na(`Pre Score`)),   
+    count_post_scores = sum(!is.na(`Post Score`)), 
+    total_cases = n(),
+    .groups = "drop"
+  ) %>% 
+  bind_rows(
+    summarize(.,
+              `OverarchingPreAssessment` = "Total",
+              count_pre_scores = sum(count_pre_scores),
+              count_post_scores = sum(count_post_scores),
+              total_cases = sum(total_cases))
+  )
+```
+
+## Create Summary Table showing counts by Pre and Post-Assessments for only matched cases (exact matches, based on overarching assessment names)
+
+```{r}
+summary_table_matches_overarching <- CYBHI_Discharges %>%
+  filter(MatchOverarching == TRUE) %>% 
+  group_by(OverarchingPreAssessment) %>%
+  summarize(
+    count_pre_scores = sum(!is.na(`Pre Score`)),   
+    count_post_scores = sum(!is.na(`Post Score`)), 
+    total_cases = n(),
+    .groups = "drop"
+  ) %>% 
+  bind_rows(
+    summarize(.,
+              `OverarchingPreAssessment` = "Total",
+              count_pre_scores = sum(count_pre_scores),
+              count_post_scores = sum(count_post_scores),
+              total_cases = sum(total_cases))
+  )
+```
+
+## Create Summary Table showing counts by Pre and Post-Assessments - clear distinctions on assessment tool names - using Overarching assessment names
+
+```{r}
+summary_table_distinct_overarching <- CYBHI_Discharges %>%
+  group_by(OverarchingPreAssessment, OverarchingPostAssessment) %>%
+  summarize(
+    count_pre_scores = sum(!is.na(`Pre Score`)),   
+    count_post_scores = sum(!is.na(`Post Score`)), 
+    total_cases = n(),
+    .groups = "drop"
+  ) %>% 
+  bind_rows(
+    summarize(.,
+              `OverarchingPreAssessment` = "Total",
+              `OverarchingPostAssessment` = "Total",
+              count_pre_scores = sum(count_pre_scores),
+              count_post_scores = sum(count_post_scores),
+              total_cases = sum(total_cases))
+  )
+```
+
+## Look at only those that are Follow up 1 time point
+
+```{r}
+summary_followup1_matches_overarching <- CYBHI_Discharges %>%
+  filter(MatchOverarching == TRUE & Post_Time_Point == "Follow up 1") %>% 
+  group_by(OverarchingPreAssessment) %>%
+  summarize(
+    count_pre_scores = sum(!is.na(`Pre Score`)),   
+    count_post_scores = sum(!is.na(`Post Score`)), 
+    total_cases = n(),
+    .groups = "drop"
+  ) %>% 
+  bind_rows(
+    summarize(.,
+              `OverarchingPreAssessment` = "Total",
+              count_pre_scores = sum(count_pre_scores),
+              count_post_scores = sum(count_post_scores),
+              total_cases = sum(total_cases))
+  )
+```
+
+## Create a Summary Table by Funding Round, Assessment Type, and Time Point
+
+```{r}
+summRounds_followup1_matches_overarching <- CYBHI_Discharges %>%
+  filter(MatchOverarching == TRUE & Post_Time_Point == "Follow up 1") %>% 
+  group_by(`Funding Round`, OverarchingPreAssessment) %>%
+  summarize(
+    count_pre_scores = sum(!is.na(`Pre Score`)),   
+    count_post_scores = sum(!is.na(`Post Score`)), 
+    total_cases = n(),
+    .groups = "drop"
+  ) %>% 
+  bind_rows(
+    summarize(.,
+              `OverarchingPreAssessment` = "Total",
+              count_pre_scores = sum(count_pre_scores),
+              count_post_scores = sum(count_post_scores),
+              total_cases = sum(total_cases))
+  )
+```
+
+## Save Combination Summary Tables and Matching Summary Tables
+
+```{r}
+library(openxlsx)
+
+CYBHI_SummaryTables <- createWorkbook()
+
+addWorksheet(CYBHI_SummaryTables, "AllCasesDistinct")
+writeData(CYBHI_SummaryTables, "AllCasesDistinct", summary_table_combo)
+
+addWorksheet(CYBHI_SummaryTables, "MatchedCasesDistinct")
+writeData(CYBHI_SummaryTables, "MatchedCasesDistinct", summary_table_matches)
+
+addWorksheet(CYBHI_SummaryTables, "AllCasesHiLevel")
+writeData(CYBHI_SummaryTables, "AllCasesHiLevel", summary_table_combo_overarching)
+
+addWorksheet(CYBHI_SummaryTables, "MatchedCasesHiLevel")
+writeData(CYBHI_SummaryTables, "MatchedCasesHiLevel", summary_table_matches_overarching)
+
+addWorksheet(CYBHI_SummaryTables, "FU1_MatchedCasesHiLevel")
+writeData(CYBHI_SummaryTables, "FU1_MatchedCasesHiLevel", summary_followup1_matches_overarching)
+
+addWorksheet(CYBHI_SummaryTables, "ByRoundFU1_MatchHiLev")
+writeData(CYBHI_SummaryTables, "ByRoundFU1_MatchHiLev", summRounds_followup1_matches_overarching)
+
+saveWorkbook(CYBHI_SummaryTables, "CYBHI_SummaryTables.xlsx", overwrite = TRUE)
+```
