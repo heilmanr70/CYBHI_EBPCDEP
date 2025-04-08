@@ -5,8 +5,6 @@ date: "2025-02-16"
 output: html_document
 ---
 
-
-aaksdfh;aksdjflakdsfjk;saljfkldafjklsdfj;klasjdfklfjk
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
