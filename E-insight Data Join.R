@@ -23,3 +23,5 @@ join.data %>%
   group_by(`Client ID`) %>% 
   summarise(n=n()) %>% 
   filter(n>1)
+
+#NOW we have this!
