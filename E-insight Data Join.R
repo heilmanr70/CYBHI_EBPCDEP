@@ -1,10 +1,12 @@
 library(openxlsx)
 
-#outcomes.data <- read.xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/2025_02/Discharge/CYBHI_EInsights Export_Discharge Summary Report_Export 02.14.2025.xlsx")
-outcomes.data <- read_xlsx("~/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/2025_02/Discharge/CYBHI_EInsights Export_Discharge Summary Report_Export 02.14.2025.xlsx")
+discharge.data <- read.xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/2025_04/CYBHI_EInsights Export_Discharge Summary Report_Export 04.07.2025.xlsx")
+#outcomes.data <- read_xlsx("~/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/2025_04/Discharge/CYBHI_EInsights Export_Discharge Summary Report_Export 02.14.2025.xlsx")
 
-#demo.data <- read.xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/2025_02/Discharge/MOCKUP CYBHI_EInsights Export_Demographics Summary Report_Export 02.14.2025.xlsx")
-demo.data <- read_xlsx("~/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/2025_02/Discharge/MOCKUP CYBHI_EInsights Export_Demographics Summary Report_Export 02.14.2025.xlsx")
+clinical.data <- read.xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/2025_04/EInsight_Clinical Summary_04.07.2025.xlsx")
+
+demo.data <- read.xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/2025_04/EInsight_Demographics_04.07.2025.xlsx")
+#demo.data <- read_xlsx("~/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/2025_02/Discharge/MOCKUP CYBHI_EInsights Export_Demographics Summary Report_Export 02.14.2025.xlsx")
 
 join.data <- merge(outcomes.data,demo.data, by="Client ID")
 
