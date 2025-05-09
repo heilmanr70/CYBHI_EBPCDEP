@@ -2,8 +2,20 @@
 title: "Data Join for EInsight Location Data Files"
 output: html_notebook
 ---
-Load the necessary libraries
 
+*CY review*
+[CY] Line 125: Round 5 --> Cohort 1 Locations --> "Late Uploads" : changed to "Locations after deadline" 
+[CY] Line 125: Round 2 --> Round 2 Cohort 5-6, ...late uploads 8-4-24.xlsx & Round 2 Cohort 1-4 Locations - Late uploads 7-26-24 : created "Locations after deadline" folder and moved to this folder
+[ ] Line 76: There are a couple of excel files that have instructions before the header rows. We'll need to double check those locations have been added correctly
+[CY] Lines 115ish: why use coalesce instead of joins? 
+[CY] Line 170: added miscellaneous files; moved "Misc. locations 8-19-24" and "Misc. locations after 7-26-24 deadline" to "Miscellaneous locations" folder in "Platform Action Items" in Dropbox
+[ ] Some provider IDs are only in the first row of the excel file and then blank thereafter and would have to be manually cleaned; we need to figure this out (e.g., 60412)
+[ ] Some rows say "LEAVE BLANK" in provider ID and we end up with a blank row in the master df
+[ ] Check in SPSS master .sav file from Rikke 
+[ ] Check in data files
+
+
+Load the necessary libraries
 ```{r}
 # Load necessary libraries
 library(readxl)
@@ -15,7 +27,6 @@ library(openxlsx)
 ```
 
 Define the cleaning function
-
 ```{r}
 clean_funding_round <- function(folder_path) {
   # --- Setup keywords & known field names ---
@@ -151,20 +162,29 @@ output_folder <- "C:/Users/heilm/Dropbox/CYBHI Project/Rebecca and Tristan and C
 ```
 
 Set folder paths for each path
-
 ```{r}
+# round_folders <- list(
+#   round1 = "C:/Users/heilm/Dropbox/CYBHI Project/eInsight Data Platform/Platform Action Items/Round 1/",
+#   round2 = "C:/Users/heilm/Dropbox/CYBHI Project/eInsight Data Platform/Platform Action Items/Round 2/",
+#   round3 = "C:/Users/heilm/Dropbox/CYBHI Project/eInsight Data Platform/Platform Action Items/Round 3/",
+#   round4 = "C:/Users/heilm/Dropbox/CYBHI Project/eInsight Data Platform/Platform Action Items/Round 4/",
+#   round5 = "C:/Users/heilm/Dropbox/CYBHI Project/eInsight Data Platform/Platform Action Items/Round 5/",
+#   misc = "/Users/cristin/Dropbox/Platform Action Items/Miscellaneous locations/"
+# )
+
+#checking for my own locations
 round_folders <- list(
-  round1 = "C:/Users/heilm/Dropbox/CYBHI Project/eInsight Data Platform/Platform Action Items/Round 1/",
-  round2 = "C:/Users/heilm/Dropbox/CYBHI Project/eInsight Data Platform/Platform Action Items/Round 2/",
-  round3 = "C:/Users/heilm/Dropbox/CYBHI Project/eInsight Data Platform/Platform Action Items/Round 3/",
-  round4 = "C:/Users/heilm/Dropbox/CYBHI Project/eInsight Data Platform/Platform Action Items/Round 4/",
-  round5 = "C:/Users/heilm/Dropbox/CYBHI Project/eInsight Data Platform/Platform Action Items/Round 5/"
+  round1 = "/Users/cristin/Dropbox/Platform Action Items/Round 1/",
+  round2 = "/Users/cristin/Dropbox/Platform Action Items/Round 2/",
+  round3 = "/Users/cristin/Dropbox/Platform Action Items/Round 3/",
+  round4 = "/Users/cristin/Dropbox/Platform Action Items/Round 4/",
+  round5 = "/Users/cristin/Dropbox/Platform Action Items/Round 5/",
+  misc = "/Users/cristin/Dropbox/Platform Action Items/Miscellaneous locations/"
 )
 
 ```
 
 Run cleaning on all rounds
-
 ```{r}
 # Run and store all cleaned data frames
 cleaned_rounds <- lapply(round_folders, clean_funding_round)
@@ -209,11 +229,10 @@ qa_table
 Export cleaned data and summary tabs 
 
 ```{r}
-output_folder <- "C:/Users/heilm/Dropbox/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/"
+# output_folder <- "C:/Users/heilm/Dropbox/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/"
+#cristin
+output_folder <- "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/"
 dir.create(output_folder, showWarnings = FALSE, recursive = TRUE)
-
-# Export individual rounds
-library(openxlsx)
 
 # Export each round with a summary tab
 for (round_name in names(cleaned_rounds)) {
@@ -231,7 +250,7 @@ for (round_name in names(cleaned_rounds)) {
   saveWorkbook(
     wb,
     file = file.path(output_folder, paste0("cleaned_", round_name, ".xlsx")),
-    overwrite = TRUE
+    overwrite = FALSE #while I'm checking my code I don't want to overwrite anything
   )
 }
 
@@ -255,7 +274,7 @@ writeData(wb_all, "QA Summary", qa_table)
 saveWorkbook(
   wb_all,
   file = file.path(output_folder, "cleaned_all_rounds.xlsx"),
-  overwrite = TRUE
+  overwrite = FALSE
 )
 
 ```
