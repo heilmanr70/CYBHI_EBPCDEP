@@ -15,7 +15,7 @@ Import the CYBHI discharge file (raw extract).
 
 ```{r}
 library(readxl)
-CYBHI_Discharges <- readxl::read_xlsx("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/2025_02/Discharge/CYBHI_EInsights Export_Discharge Summary Report_Export 02.14.2025.xlsx")
+CYBHI_Discharges <- readxl::read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Discharge Report Export/DischargeData_05-08-25.xlsx", na = c("-", "", "NA"))
 View(CYBHI_Discharges)
 summary(CYBHI_Discharges)
 ```
@@ -87,15 +87,15 @@ unique(CYBHI_Discharges$Post_Measures_Clean)
 CYBHI_Discharges <- CYBHI_Discharges %>%
   mutate(
     Pre_Time_Point = str_extract(
-      `Pre_Measures_Clean`, "(Initial|Follow up \\d+)"),
+      `Pre_Measures_Clean`, "(Initial|Follow up \\d+)", ignore.case = TRUE),
     PreAssessment_Name = str_remove(
-      `Pre_Measures_Clean`, "(Initial|Follow up \\d+)") %>% str_trim()
+      `Pre_Measures_Clean`, "(Initial|Follow up \\d+)", ignore.case = TRUE) %>% str_trim()
   ) %>% 
   mutate(
     Post_Time_Point = str_extract(
-      `Post_Measures_Clean`, "(Initial|Follow up \\d+)"),
+      `Post_Measures_Clean`, "(Initial|Follow up \\d+)", ignore.case = TRUE),
     PostAssessment_Name = str_remove(
-      `Post_Measures_Clean`, "(Initial|Follow up \\d+)") %>% str_trim()
+      `Post_Measures_Clean`, "(Initial|Follow up \\d+)", ignore.case = TRUE) %>% str_trim()
   )
 
 ```
