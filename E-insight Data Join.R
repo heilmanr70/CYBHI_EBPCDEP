@@ -1,13 +1,13 @@
 library(openxlsx)
 library(dplyr)
 
-discharge.data <- read.xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/2025_04/CYBHI_EInsights Export_Discharge Summary Report_Export 04.07.2025.xlsx")
+discharge.data <- read.xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Dishcharge_Report.xlsx")
 #outcomes.data <- read_xlsx("~/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/2025_04/Discharge/CYBHI_EInsights Export_Discharge Summary Report_Export 02.14.2025.xlsx")
 
 # [TB] NOTE - AS FAR AS I CAN TELL, THE ONLY ADDITIONAL USEFUL PIECE OF DATA IN THIS FILE IS "COMPLETED" - PRESUMABLY THAT IS MODEL COMPLETION?
-clinical.data <- read.xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/2025_04/EInsight_Clinical Summary_04.07.2025.xlsx")
+clinical.data <- read.xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Clinical_Summary.xlsx")
 
-demo.data <- read.xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/2025_04/EInsight_Demographics_04.07.2025.xlsx")
+demo.data <- read.xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Client_Demographics.xlsx")
 
 # Detect and remove entries where the Provider ID contains the text "DEMO" as these are not real data
 text <- demo.data$Provider.ID
