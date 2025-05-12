@@ -1,0 +1,285 @@
+---
+title: "YOQ 30.2 - Data Quality Scoring Check"
+author: "Cristin Young"
+date: "2025-04-25"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  html_notebook: default
+---
+
+This notebook answers study question 1. 
+
+#Read in data
+```{r}
+library(tidyverse)
+library(janitor)
+library(gt)
+dischargdischargdischarge_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Discharge Report Export/DischargeData_05-08-25.xlsx", na = c("-", "", "NA"))
+demographic_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Admin Report Exports/Client_Demographics_05-08-25.xlsx", na = c("-", "", "NA"))
+
+length(discharge_data$`Client ID`)
+length(demographic_data$`Client ID`)
+```
+
+#Clean up demographic data
+```{r}
+#get rid of demo data
+demographic_data_filtered <- demographic_data %>%
+  filter(!if_any(c(`Provider ID`, `Client ID`), ~ str_detect(as.character(.x), "DEMO"))) %>% 
+  clean_names()
+
+#are there unique client IDs? 
+length(unique(demographic_data_filtered$client_id)) == nrow(demographic_data_filtered)
+
+#which IDs have been repeated and how many times? 
+duplicates <- demographic_data_filtered %>% 
+  group_by(client_id) %>% 
+   filter(n() > 1) %>%
+  tally() 
+
+#how many rows are duplicated?
+duplicates %>% 
+  summarise(total_duplicated = sum(n))
+
+#what data is repeating for each client?
+demographic_data_filtered %>%
+  group_by(client_id) %>%
+  filter(n() > 1) %>%
+  summarise(across(everything(), ~ {
+    u <- unique(.x)
+    if(length(u) > 1) paste(u, collapse = ", ") else NA_character_
+  }), .groups = "drop") %>%
+  select(client_id, where(~ any(!is.na(.))))
+
+#for now, drop the 172 clients (982 rows)
+demographic_data_filtered <- demographic_data_filtered %>% 
+  filter(!(client_id %in% duplicates$client_id))
+
+#check again for duplicate ids, just in case
+length(unique(demographic_data_filtered$client_id)) == nrow(demographic_data_filtered)
+```
+
+#clean up discharge data
+```{r}
+#get rid of demo data
+discharge_data_filtered <- discharge_data %>%
+  filter(!if_any(c(`Provider ID`, `Client ID`), ~ str_detect(as.character(.x), "DEMO"))) %>% 
+  clean_names()
+
+#are there unique client IDs? 
+length(unique(discharge_data_filtered$client_id)) == nrow(discharge_data_filtered)
+
+#which IDs have been repeated and how many times? 
+discharge_data_filtered %>% 
+  group_by(client_id) %>% 
+  summarise(n=n()) %>% 
+  filter(n>1)
+
+#what data is repeating for each client?
+discharge_data_filtered %>%
+  group_by(client_id, pre_measure_s) %>%
+  filter(n() > 1) %>%
+  summarise(across(everything(), ~ {
+    u <- unique(.x)
+    if(length(u) > 1) paste(u, collapse = ", ") else NA_character_
+  }), .groups = "drop") %>%
+  select(client_id, where(~ any(!is.na(.))))
+
+unique(discharge_data_filtered$pre_measure_s)
+unique(discharge_data_filtered$post_measure_s)
+
+#clean up pre/post-measure names
+discharge_data_filtered <- discharge_data_filtered %>%
+  mutate(
+    pre_time_point = str_extract(
+      pre_measure_s, "(Initial|(?i)follow up \\d+)"),
+    pre_assessment_name = str_remove(
+      pre_measure_s, "(Initial|(?i)follow up \\d+)") %>% 
+      str_trim()
+  ) %>% 
+  mutate(
+    post_time_point = str_extract(
+      post_measure_s, "(Initial|(?i)follow up \\d+)"),
+    post_assessment_name = str_remove(
+      post_measure_s, "(Initial|(?i)follow up \\d+)") %>% 
+      str_trim()
+  )
+
+#see if pre/post assessment names match yet
+discharge_data_filtered <- discharge_data_filtered %>% 
+mutate(MatchDistinct = pre_assessment_name == post_assessment_name)
+
+#not everyone uses the correct name for pre vs post assessment, so clean further
+discharge_data_filtered <- discharge_data_filtered %>% 
+  mutate(
+    trimmed_pre_assessment_name = word(pre_assessment_name, 1),
+    trimmed_post_assessment_name = word(post_assessment_name, 1)
+  )
+
+#are they all the same now? 
+discharge_data_filtered <- discharge_data_filtered %>% 
+mutate(trimmed_match = trimmed_pre_assessment_name == trimmed_post_assessment_name)
+
+#this is the same thing - they just wrote out SDQ for post
+discharge_data_filtered %>% 
+  filter(trimmed_match == FALSE)
+```
+
+#now join demographic and discharge data by client ID
+```{r}
+all_data <- left_join(discharge_data_filtered, demographic_data_filtered, by = c("client_id", "provider_id"))
+```
+
+#how many unique clients were served?
+```{r}
+n_distinct(demographic_data_filtered$client_id)
+```
+
+#how many clients had outcomes data? 
+```{r}
+n_distinct(all_data$client_id)
+```
+
+#1. Did the EBP/CDEP Workstream increase access to services for targeted populations?
+
+##1.01 Did improved access to services affect all subpopulations?
+Cross-tab of study population by relevant demographic data
+
+Total number of clients served and by demographics
+###race
+```{r}
+race_summary <- demographic_data_filtered %>%
+  select(race) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  count(variable, value) %>%
+  group_by(variable) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  arrange(variable, desc(n))
+
+race_summary %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+
+all_data_race_summary <- all_data %>%
+  select(race) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  count(variable, value) %>%
+  group_by(variable) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  arrange(variable, desc(n))
+
+all_data_race_summary %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+```
+
+###ethnicity
+```{r}
+ethnicity_summary <- demographic_data_filtered %>%
+  select(ethnicity) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  count(variable, value) %>%
+  group_by(variable) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  arrange(variable, desc(n))
+
+ethnicity_summary %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+
+all_data_ethnicity_summary <- all_data %>%
+  select(ethnicity) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  count(variable, value) %>%
+  group_by(variable) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  arrange(variable, desc(n))
+
+all_data_ethnicity_summary %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+```
+
+###gender identity
+```{r}
+gender_summary <- demographic_data_filtered %>%
+  select(gender_identity) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  count(variable, value) %>%
+  group_by(variable) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  arrange(variable, desc(n))
+
+gender_summary %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+
+all_data_gender_summary <- all_data %>%
+  select(gender_identity) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  count(variable, value) %>%
+  group_by(variable) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  arrange(variable, desc(n))
+
+all_data_gender_summary %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+```
+
+###sexual orientation
+```{r}
+sex_summary <- demographic_data_filtered %>%
+  select(sexual_orientation) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  count(variable, value) %>%
+  group_by(variable) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  arrange(variable, desc(n))
+
+sex_summary %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+
+all_data_sex_summary <- all_data %>%
+  select(sexual_orientation) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  count(variable, value) %>%
+  group_by(variable) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  arrange(variable, desc(n))
+
+all_data_sex_summary %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+```
+
+###insurance status
+```{r}
+insurance_summary <- demographic_data_filtered %>%
+  select(insurance_status) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  count(variable, value) %>%
+  group_by(variable) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  arrange(variable, desc(n))
+
+insurance_summary %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+
+all_data_insurance_summary <- all_data %>%
+  select(insurance_status) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  count(variable, value) %>%
+  group_by(variable) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  arrange(variable, desc(n))
+
+all_data_insurance_summary %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+```
+

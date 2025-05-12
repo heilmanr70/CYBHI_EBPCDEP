@@ -1,0 +1,165 @@
+---
+title: "YOQ 30.2 - Data Quality Scoring Check"
+author: "Cristin Young"
+date: "2025-04-25"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  html_notebook: default
+---
+TO DO
+[ ] add duplicate into issues gsheet from Lauren
+[ ] check no meaningful change people --> is there a difference for these people here? 
+    - is it only in certain orgs? 
+    - what's the breakdown across orgs?
+[ ] RCI --> stratify by above clinical cutoff at pre score (at intake)
+[ ] RCI --> stratify by above vs below clinical cutoff
+
+
+
+This code uses the discharge export file found here: https://www.dropbox.com/scl/fi/h5dbek0m613ly6nribzou/Discharge-Exploration.xlsx?rlkey=a7edwvrhfcifvnep1omy4mygd&dl=0 
+
+And checks: 
+
+1. That a decrease in score is a positive outcome
+2. Whether a reliable change occurred (+/- 10 points change in score)
+
+#**Read in data**
+
+- Filter pre-measure to YOQ
+```{r, include= FALSE}
+library(tidyverse)
+discharge_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/Exploration Set (edited)/2025_04/Discharge Exploration-all data.xlsx", na = c("NA", "-", ""))
+yoq <- discharge_data %>% 
+  filter(`Pre Measure(s)` == "YOQ 30.2 Caregiver Initial" |
+         `Pre Measure(s)` == "YOQ 30.2 Self Report Initial")
+```
+
+#**Missing data**
+
+How much data is missing? 
+
+- 10% (482/4682) of rows are YOQ data
+
+- 75% (n=363) of rows have a pre but no post score
+
+- 0 rows have a post score but no pre score
+
+- 25% (n=119) of rows have both a pre and post score
+```{r, include = FALSE}
+pre_no_post <- yoq %>% 
+  filter(is.na(`Post Score`))
+
+#checking there's no opposite to above (yes post, no pre score)
+post_no_pre <- yoq %>% 
+  filter(is.na(`Pre Score`) & !is.na(`Post Score`))
+
+pre_post <- yoq %>% 
+  filter(!is.na(`Pre Score`) & !is.na(`Post Score`))
+```
+
+#**Do we have any duplicates?**
+
+Looks like one person (ID: 13042) took both versions of the YOQ (why??)
+We don't have to exclude the other two in this analysis but should in overall, because it's the same score for two enrollments, effectively
+```{r}
+#how many duplicates are there?
+n_occur <- data.frame(table(pre_post$`Client ID`))
+#how many times do they occur?
+n_occur[n_occur$Freq > 1,]
+#what's the data? 
+duplicates <- pre_post[pre_post$`Client ID` %in% n_occur$Var1[n_occur$Freq > 1],]
+duplicates
+```
+
+#**Is a decrease in score always scored as "positive outcome"?**
+
+Thankfully, yes. No wrong scoring here!
+```{r}
+pre_post %>% 
+  mutate(result = case_when(
+    `Pre Score` < `Post Score` & `Positive Outcomes` == "Yes" ~ FALSE,
+    TRUE ~ TRUE
+  )) %>% 
+  filter(result == FALSE)
+```
+
+#**How many positive outcomes are there?**
+
+64% have positive outcomes
+```{r}
+table(pre_post$`Positive Outcomes`)
+77/119
+```
+
+#**Clinical cutoff**
+##How many people were above the clinical cutoff at discharge?
+
+Clinical cutoff:
+
+  - Self-report: ≥ 30 --> n=16 (from n = 28)
+  - Parent/guardian: ≥ 29 --> n=13 (from n = 20)
+```{r}
+caregiver <- pre_post %>% 
+  filter(`Pre Measure(s)` == "YOQ 30.2 Caregiver Initial",
+         `Post Score` >= 29)
+
+self <- pre_post %>% 
+  filter(`Pre Measure(s)` == "YOQ 30.2 Self Report Initial",
+         `Post Score` >= 30)
+
+test <- pre_post %>% 
+  filter(`Pre Measure(s)` == "YOQ 30.2 Caregiver Initial",
+        `Pre Score` >= 29)
+```
+
+#**RCI**
+
+Let's create a reliable change index to see how many really matter
+```{r, include = FALSE}
+pre_post <- pre_post %>% 
+  mutate(rci = `Pre Score` - `Post Score`)
+```
+
+
+**How many of these scores changed for the better or worse?**
+
+RCI ≤-10 or ≥10 is a reliable change
+
+- 51% (39/77) saw reliable change
+- 43% (n=33) did reliably better
+- 8% (n=6) did reliably worse
+```{r, include = FALSE}
+reliable_change <- pre_post %>% 
+  filter(rci >= 10 | rci <= -10)
+
+#these people did reliably better
+pos_rci <- reliable_change %>% 
+  filter(rci >= 10)
+
+#these people did reliably worse
+neg_rci <- reliable_change %>% 
+  filter(rci <= -10)
+```
+
+#**Some plots for fun**
+
+What's the spread?
+```{r}
+#conditional color formatting
+pre_post$rci_col <- as.factor((pre_post[,17] > 10 | pre_post[,17] <= -10)*1)
+
+pre_post %>% 
+  ggplot(aes(rci)) + 
+  geom_histogram(aes(fill = rci_col), color = "white", binwidth = 4) +
+  theme_classic() +
+  scale_x_continuous(breaks = seq(-25, 50, 5), expand = c(0,0)) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Reliable Change Index") +
+  scale_fill_manual("Reliable Change Index",
+                    labels = c("no meaningful change (n=38)", "meaningful change (n=39)"), 
+                    values = c("#ABDDDE", "#046C9A"))
+```
+
+
