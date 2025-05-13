@@ -1,7 +1,7 @@
 ---
-title: "YOQ 30.2 - Data Quality Scoring Check"
+title: "Annual Report Data Analysis - Cleaning Data"
 author: "Cristin Young"
-date: "2025-04-25"
+date: "2025-05-13"
 output:
   html_document:
     df_print: paged
@@ -9,15 +9,16 @@ output:
   html_notebook: default
 ---
 
-This notebook answers study question 1. 
+This notebook answers study question 1 and study question 3.14.
 
 #Read in data
 ```{r}
 library(tidyverse)
 library(janitor)
 library(gt)
-dischargdischargdischarge_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Discharge Report Export/DischargeData_05-08-25.xlsx", na = c("-", "", "NA"))
-demographic_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Admin Report Exports/Client_Demographics_05-08-25.xlsx", na = c("-", "", "NA"))
+
+discharge_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Dishcharge_Report.xlsx", na = c("-", "", "NA"))
+demographic_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Client_Demographics.xlsx", na = c("-", "", "NA"))
 
 length(discharge_data$`Client ID`)
 length(demographic_data$`Client ID`)
@@ -53,7 +54,7 @@ demographic_data_filtered %>%
   }), .groups = "drop") %>%
   select(client_id, where(~ any(!is.na(.))))
 
-#for now, drop the 172 clients (982 rows)
+#for now, drop the 317 clients (1285 rows)
 demographic_data_filtered <- demographic_data_filtered %>% 
   filter(!(client_id %in% duplicates$client_id))
 
@@ -61,7 +62,7 @@ demographic_data_filtered <- demographic_data_filtered %>%
 length(unique(demographic_data_filtered$client_id)) == nrow(demographic_data_filtered)
 ```
 
-#clean up discharge data
+#Clean up discharge data
 ```{r}
 #get rid of demo data
 discharge_data_filtered <- discharge_data %>%
@@ -127,7 +128,7 @@ discharge_data_filtered %>%
   filter(trimmed_match == FALSE)
 ```
 
-#now join demographic and discharge data by client ID
+#Now join demographic and discharge data by client ID
 ```{r}
 all_data <- left_join(discharge_data_filtered, demographic_data_filtered, by = c("client_id", "provider_id"))
 ```
@@ -142,144 +143,15 @@ n_distinct(demographic_data_filtered$client_id)
 n_distinct(all_data$client_id)
 ```
 
-#1. Did the EBP/CDEP Workstream increase access to services for targeted populations?
-
-##1.01 Did improved access to services affect all subpopulations?
-Cross-tab of study population by relevant demographic data
-
-Total number of clients served and by demographics
-###race
+#write csvs
 ```{r}
-race_summary <- demographic_data_filtered %>%
-  select(race) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  count(variable, value) %>%
-  group_by(variable) %>%
-  mutate(percent = round(n / sum(n) * 100, 1)) %>%
-  arrange(variable, desc(n))
+#all data
+write_csv(all_data, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
 
-race_summary %>% 
-  knitr::kable() %>% 
-  clipr::write_clip()
+#clean demo data
+write_csv(demographic_data_filtered, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
 
-all_data_race_summary <- all_data %>%
-  select(race) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  count(variable, value) %>%
-  group_by(variable) %>%
-  mutate(percent = round(n / sum(n) * 100, 1)) %>%
-  arrange(variable, desc(n))
-
-all_data_race_summary %>% 
-  knitr::kable() %>% 
-  clipr::write_clip()
-```
-
-###ethnicity
-```{r}
-ethnicity_summary <- demographic_data_filtered %>%
-  select(ethnicity) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  count(variable, value) %>%
-  group_by(variable) %>%
-  mutate(percent = round(n / sum(n) * 100, 1)) %>%
-  arrange(variable, desc(n))
-
-ethnicity_summary %>% 
-  knitr::kable() %>% 
-  clipr::write_clip()
-
-all_data_ethnicity_summary <- all_data %>%
-  select(ethnicity) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  count(variable, value) %>%
-  group_by(variable) %>%
-  mutate(percent = round(n / sum(n) * 100, 1)) %>%
-  arrange(variable, desc(n))
-
-all_data_ethnicity_summary %>% 
-  knitr::kable() %>% 
-  clipr::write_clip()
-```
-
-###gender identity
-```{r}
-gender_summary <- demographic_data_filtered %>%
-  select(gender_identity) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  count(variable, value) %>%
-  group_by(variable) %>%
-  mutate(percent = round(n / sum(n) * 100, 1)) %>%
-  arrange(variable, desc(n))
-
-gender_summary %>% 
-  knitr::kable() %>% 
-  clipr::write_clip()
-
-all_data_gender_summary <- all_data %>%
-  select(gender_identity) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  count(variable, value) %>%
-  group_by(variable) %>%
-  mutate(percent = round(n / sum(n) * 100, 1)) %>%
-  arrange(variable, desc(n))
-
-all_data_gender_summary %>% 
-  knitr::kable() %>% 
-  clipr::write_clip()
-```
-
-###sexual orientation
-```{r}
-sex_summary <- demographic_data_filtered %>%
-  select(sexual_orientation) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  count(variable, value) %>%
-  group_by(variable) %>%
-  mutate(percent = round(n / sum(n) * 100, 1)) %>%
-  arrange(variable, desc(n))
-
-sex_summary %>% 
-  knitr::kable() %>% 
-  clipr::write_clip()
-
-all_data_sex_summary <- all_data %>%
-  select(sexual_orientation) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  count(variable, value) %>%
-  group_by(variable) %>%
-  mutate(percent = round(n / sum(n) * 100, 1)) %>%
-  arrange(variable, desc(n))
-
-all_data_sex_summary %>% 
-  knitr::kable() %>% 
-  clipr::write_clip()
-```
-
-###insurance status
-```{r}
-insurance_summary <- demographic_data_filtered %>%
-  select(insurance_status) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  count(variable, value) %>%
-  group_by(variable) %>%
-  mutate(percent = round(n / sum(n) * 100, 1)) %>%
-  arrange(variable, desc(n))
-
-insurance_summary %>% 
-  knitr::kable() %>% 
-  clipr::write_clip()
-
-all_data_insurance_summary <- all_data %>%
-  select(insurance_status) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  count(variable, value) %>%
-  group_by(variable) %>%
-  mutate(percent = round(n / sum(n) * 100, 1)) %>%
-  arrange(variable, desc(n))
-
-all_data_insurance_summary %>% 
-  knitr::kable() %>% 
-  clipr::write_clip()
+#clean dishcarge data
+write_csv(discharge_data_filtered, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
 ```
 
