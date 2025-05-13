@@ -1,0 +1,172 @@
+---
+title: "Annual Report Data Analysis - Question 3.14-PSC"
+author: "Cristin Young"
+date: "2025-05-13"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  html_notebook: default
+---
+
+#Read in data
+```{r}
+library(tidyverse)
+library(janitor)
+library(gt)
+
+all_data <- read_csv("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
+```
+
+#3.14 To what extent did children/youth report reductions in overall distress after receiving the intervention?
+PSC = 224
+YOQ Caregiver = 292
+YOQ Self = 345
+```{r}
+table(all_data$pre_assessment_name)
+table(all_data$trimmed_pre_assessment_name)
+
+youth <- all_data %>% 
+  filter(client_type == "Youth (16-25)",
+         trimmed_pre_assessment_name == "Pediatric")
+
+child <- all_data %>% 
+  filter(client_type == "Child (0-15)",
+         trimmed_pre_assessment_name == "Pediatric")
+
+child_youth <- all_data %>% 
+  filter(client_type != "Parent/Caregiver",
+         trimmed_pre_assessment_name == "Pediatric")
+```
+
+##Checking missing data
+
+How much data is missing? 
+
+- 91% (n=204/224) of rows have a pre but no post score
+
+- 0 rows have a post score but no pre score
+
+- 9% (n=21/224) of rows have both a pre and post score
+
+```{r}
+pre_no_post <- child_youth %>% 
+  filter(is.na(trimmed_post_assessment_name))
+
+#checking there's no opposite to above (yes post, no pre score)
+post_no_pre <- child_youth %>% 
+  filter(is.na(trimmed_pre_assessment_name) & !is.na(trimmed_post_assessment_name))
+
+pre_post <- child_youth %>% 
+  filter(!is.na(trimmed_pre_assessment_name) & !is.na(trimmed_post_assessment_name))
+```
+
+##do we have any duplicates?
+
+Looks like they're reporting both caregiver AND self-assessment. Keeping only self-assessment right now.
+```{r}
+#how many duplicates are there?
+n_occur <- data.frame(table(pre_post$client_id))
+#how many times do they occur?
+n_occur[n_occur$Freq > 1,]
+```
+
+#PSC cutoffs
+https://tnaap.org/wp-content/uploads/2022/06/PSC-35-Scoring-Instructions.pdf 
+- Lower score is better
+- For children ages 4 and 5, the PSC score of 24 or higher suggests the presence of significant behavioral
+or emotional problems. 
+- For children ages 6 through 16, the cutoff score is 28 or higher.
+
+#Creating positive outcome and cutoff variables
+```{r}
+pre_post <- pre_post %>% 
+  mutate(positive_outcome = case_when(
+    pre_score > post_score ~ "Yes",
+    TRUE ~ "No"),
+    child_cutoff = case_when(
+      post_score >= 24 & client_type == "Child (0-15)" ~ 1,
+      post_score < 24 & client_type == "Child (0-15)" ~ 0),
+    youth_cutoff = case_when(
+      post_score >= 28 & client_type == "Youth (16-25)" ~ 1,
+      post_score < 28 & client_type == "Youth (16-25)" ~ 0
+    )
+  ) 
+```
+
+#how many positive outcomes?
+20 / 21 = 95%
+```{r}
+table(pre_post$positive_outcome)
+pre_post %>% 
+  select(pre_score, post_score, positive_outcome)
+```
+
+#how many above clinical cutoff at discharge?
+Clinical cutoff:
+- For children ages 4 and 5, the PSC score of 24 or higher suggests the presence of significant behavioral
+or emotional problems. 
+    - one child was above clinical cutoff (25) at discharge
+- For children ages 6 through 16, the cutoff score is 28 or higher.
+    - 2 youth were above clinical cutoff (scores of 34 and 36) at discharge
+  
+```{r}
+#child
+ pre_post %>% 
+  filter(child_cutoff == 1)
+
+#youth
+ pre_post %>% 
+  filter(youth_cutoff == 1)
+```
+
+##mean and SD of pre and post scores
+```{r}
+#mean and sd of this data
+summary_pre_score <- pre_post %>%
+  summarise(
+    mean_score = mean(pre_score, na.rm = TRUE),
+    median_score = median(pre_score, na.rm = TRUE),
+    sd_score = sd(pre_score, na.rm = TRUE)
+  )
+
+summary_pre_score
+summary_pre_score %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+
+summary_post_score <- pre_post %>%
+  summarise(
+    mean_score = mean(post_score, na.rm = TRUE),
+    median_score = median(post_score, na.rm = TRUE),
+    sd_score = sd(post_score, na.rm = TRUE)
+  )
+
+summary_post_score
+summary_post_score %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+```
+
+##do a t test on the data
+```{r}
+t.test(pre_post$pre_score, pre_post$post_score, paired = TRUE)
+```
+##plot pre vs post scores
+```{r}
+pre_post_long <- pre_post %>%
+  ungroup() %>% 
+  select(client_id, pre_score, post_score, pre_time_point, post_time_point) %>% 
+  pivot_longer(
+    cols = -client_id,
+    names_to = c("timepoint", ".value"),
+    names_sep = "_"
+  )
+
+pre_post_long$time <- factor(pre_post_long$time, levels = c("Initial", "Follow up 1", "Follow up 2"))
+
+pre_post_long %>% 
+  ggplot() + 
+  geom_line(aes(time, score, group = client_id, color = factor(client_id)), show.legend = FALSE) 
+```
+
