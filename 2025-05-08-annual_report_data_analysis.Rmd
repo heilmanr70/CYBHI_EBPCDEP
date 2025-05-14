@@ -9,7 +9,10 @@ output:
   html_notebook: default
 ---
 
-This notebook answers study question 1 and study question 3.14.
+This notebook cleans up demographic and discharge data.
+[x] which clients have >1 outcome measure?  --> n = 391 (row 83)
+[ ] did they do them one after the other or all at the same time? 
+[ ] 
 
 #Read in data
 ```{r}
@@ -80,7 +83,7 @@ discharge_data_filtered %>%
 
 #what data is repeating for each client?
 discharge_data_filtered %>%
-  group_by(client_id, pre_measure_s) %>%
+  group_by(client_id) %>%
   filter(n() > 1) %>%
   summarise(across(everything(), ~ {
     u <- unique(.x)
@@ -127,6 +130,22 @@ mutate(trimmed_match = trimmed_pre_assessment_name == trimmed_post_assessment_na
 discharge_data_filtered %>% 
   filter(trimmed_match == FALSE)
 ```
+
+#look at clients with >1 intervention
+```{r}
+dup_client_id <- discharge_data_filtered %>%
+  group_by(client_id) %>%
+  filter(n() > 1) %>%
+  summarise(across(everything(), ~ {
+    u <- unique(.x)
+    if(length(u) > 1) paste(u, collapse = ", ") else NA_character_
+  }), .groups = "drop") %>%
+  select(client_id, where(~ any(!is.na(.))))
+
+dup_clients <- discharge_data_filtered %>% 
+  filter(client_id %in% dup_client_id$client_id)
+```
+
 
 #Now join demographic and discharge data by client ID
 ```{r}
