@@ -9,6 +9,8 @@ output:
   html_notebook: default
 ---
 
+This notebook answers question 3.14. 
+
 #Read in data
 ```{r}
 library(tidyverse)
@@ -28,7 +30,7 @@ table(all_data$trimmed_pre_assessment_name)
 
 youth <- all_data %>% 
   filter(client_type == "Youth (16-25)",
-         trimmed_pre_assessment_name == "Pediatric")
+         trimmed_pre_assessment_name == "Pediatric") #it's not abbreviated in the data
 
 child <- all_data %>% 
   filter(client_type == "Child (0-15)",
@@ -43,7 +45,7 @@ child_youth <- all_data %>%
 
 How much data is missing? 
 
-- 91% (n=204/224) of rows have a pre but no post score
+- 91% (n=203/224) of rows have a pre but no post score
 
 - 0 rows have a post score but no pre score
 
@@ -152,21 +154,3 @@ summary_post_score %>%
 ```{r}
 t.test(pre_post$pre_score, pre_post$post_score, paired = TRUE)
 ```
-##plot pre vs post scores
-```{r}
-pre_post_long <- pre_post %>%
-  ungroup() %>% 
-  select(client_id, pre_score, post_score, pre_time_point, post_time_point) %>% 
-  pivot_longer(
-    cols = -client_id,
-    names_to = c("timepoint", ".value"),
-    names_sep = "_"
-  )
-
-pre_post_long$time <- factor(pre_post_long$time, levels = c("Initial", "Follow up 1", "Follow up 2"))
-
-pre_post_long %>% 
-  ggplot() + 
-  geom_line(aes(time, score, group = client_id, color = factor(client_id)), show.legend = FALSE) 
-```
-

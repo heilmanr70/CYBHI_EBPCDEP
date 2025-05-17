@@ -1,0 +1,162 @@
+---
+title: "Annual Report Data Analysis - Question 3.16"
+author: "Cristin Young"
+date: "2025-05-15"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  html_notebook: default
+---
+
+This notebook answers Question 3.16: To what extent did children/youth report reductions in PTSD symptoms/PTSD symptom severity after the intervention?
+
+#Read in data
+```{r}
+library(tidyverse)
+library(janitor)
+library(gt)
+
+all_data <- read_csv("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
+```
+
+#3.16 To what extent did children/youth report reductions in PTSD symptoms/PTSD symptom severity after the intervention?
+CPSS-5: 119
+CPSS-5 (interviewer): 42
+CATS (caregiver, ages 3-6): 11
+CATS-2 (self-report, 7-17): 30
+
+Assumptions: combining each into CPSS and CATS, respectively
+
+##CPSS-5
+Scores for the first part of the scale range from 0-80, higher scores indicating greater symptom severity. A cutoff score of 31 or higher in part one of the CPSS-5 is recommended for identifying probable PTSD.
+```{r}
+table(all_data$pre_assessment_name)
+cpss <- all_data %>% 
+  filter(trimmed_pre_assessment_name == "CPSS" | trimmed_pre_assessment_name == "CPSS-5")
+table(cpss$client_type, useNA = "ifany")
+
+cpss_youth <- cpss %>% 
+  filter(client_type == "Youth (16-25)") 
+
+cpss_child <- cpss %>% 
+  filter(client_type == "Child (0-15)")
+
+cpss_child_youth <- cpss %>% 
+  filter(client_type != "Parent/Caregiver") 
+```
+
+##CATS
+NOTE: NOT USING CATS UNTIL WE GET BETTER AGE RANGE DATA FROM EINSIGHT
+Ages 3-6: The total symptom score is calculated by summing up the items 1-16 (possible range = 0-48). We recommend to use a cut-off ≥ 16 as indication of a clinically relevant level of symptoms in preschool children.
+Ages 7-17: A total symptom score is calculated by summing up the raw scores of items 1-20 (possible range = 0-60). We recommend to use a cut-off ≥ 21 as indication of a clinically relevant level of symptoms.
+```{r}
+cats <- all_data %>% 
+  filter(trimmed_pre_assessment_name == "CATS" | trimmed_pre_assessment_name == "CATS-2")
+```
+
+
+##Checking missing data
+
+How much data is missing? 
+
+- 60% (n=91/161) of rows have a pre but no post score
+
+- 0 rows have a post score but no pre score
+
+- 40% (n=60/151) of rows have both a pre and post score
+
+```{r}
+pre_no_post <- cpss %>% 
+  filter(is.na(trimmed_post_assessment_name))
+
+#checking there's no opposite to above (yes post, no pre score)
+post_no_pre <- cpss %>% 
+  filter(is.na(trimmed_pre_assessment_name) & !is.na(trimmed_post_assessment_name))
+
+pre_post <- cpss %>% 
+  filter(!is.na(trimmed_pre_assessment_name) & !is.na(trimmed_post_assessment_name))
+```
+
+##Do we have any duplicates?
+Had a second follow-up - keeping only second follow-up
+```{r}
+#how many duplicates are there?
+n_occur <- data.frame(table(pre_post$client_id))
+#how many times do they occur?
+n_occur[n_occur$Freq > 1,]
+
+pre_post <- pre_post %>% 
+  filter(!(client_id == "7406" & post_time_point == "Follow up 1"))
+```
+
+#CPSS cutoffs
+- Lower score is better
+- A cutoff score of 31 or higher in part one of the CPSS-5 is recommended for identifying probable PTSD.
+
+##Creating positive outcome and cutoff variables
+```{r}
+pre_post <- pre_post %>% 
+  mutate(positive_outcome = case_when(
+    pre_score > post_score ~ "Yes",
+    TRUE ~ "No"),
+    ptsd_cutoff = case_when(
+      post_score >= 31 ~ 1,
+      post_score < 31 ~ 0))
+```
+
+#how many positive outcomes?
+50 / 59 = 85%
+Only 3 / 9 without positive outcomes had >3 difference in scores 
+```{r}
+table(pre_post$positive_outcome)
+pre_post %>% 
+  filter(positive_outcome == "No") %>% 
+  select(pre_score, post_score, positive_outcome)
+```
+
+#how many above clinical cutoff at discharge?
+Clinical cutoff:
+15 individuals above clinical cutoff at discharge, spread between 31 and 64.  
+```{r}
+clin_cutoff <- pre_post %>% 
+  filter(ptsd_cutoff == 1) %>% 
+  select(post_score)
+hist(clin_cutoff$post_score)
+
+pre_post %>% 
+  filter(ptsd_cutoff == 0)
+```
+
+##mean and SD of pre and post scores
+```{r}
+#mean and sd of this data
+summary_pre_score <- pre_post %>%
+  summarise(
+    mean_score = mean(pre_score, na.rm = TRUE),
+    median_score = median(pre_score, na.rm = TRUE),
+    sd_score = sd(pre_score, na.rm = TRUE)
+  )
+
+summary_pre_score
+summary_pre_score %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+
+summary_post_score <- pre_post %>%
+  summarise(
+    mean_score = mean(post_score, na.rm = TRUE),
+    median_score = median(post_score, na.rm = TRUE),
+    sd_score = sd(post_score, na.rm = TRUE)
+  )
+
+summary_post_score
+summary_post_score %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+```
+
+##do a t test on the data
+```{r}
+t.test(pre_post$pre_score, pre_post$post_score, paired = TRUE)
+```
