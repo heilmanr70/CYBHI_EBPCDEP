@@ -40,11 +40,11 @@ child_youth <- all_data %>%
 
 How much data is missing? 
 
-- 67% (n=402/601) of rows have a pre but no post score
+- 68% (n=415/614) of rows have a pre but no post score
 
 - 0 rows have a post score but no pre score
 
-- 33% (n=199/601) of rows have both a pre and post score
+- 32% (n=199/614) of rows have both a pre and post score
 
 ```{r}
 pre_no_post <- child_youth %>% 
@@ -204,4 +204,3 @@ pre_post_long %>%
   ggplot() + 
   geom_line(aes(time, score, group = client_id, color = factor(client_id)), show.legend = FALSE) 
 ```
-

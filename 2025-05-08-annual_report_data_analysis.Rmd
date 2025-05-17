@@ -23,14 +23,16 @@ library(tidyverse)
 library(janitor)
 library(gt)
 
-# discharge_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Dishcharge_Report.xlsx", na = c("-", "", "NA"))
-# demographic_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Client_Demographics.xlsx", na = c("-", "", "NA"))
+discharge_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Dishcharge_Report.xlsx", na = c("-", "", "NA"))
+demographic_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Client_Demographics.xlsx", na = c("-", "", "NA"))
+demographic_data_updated <- readxl::read_xlsx("/Users/cristin/Downloads/4df7eac3-9fe9-4fd7-8f9c-103c5d002612.xlsx", na = c("-", "", "NA"))
 
-discharge_data <- readxl::read_xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Dishcharge_Report.xlsx", na = c("-", "", "NA"))
-demographic_data <- readxl::read_xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Client_Demographics.xlsx", na = c("-", "", "NA"))
+# discharge_data <- readxl::read_xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Dishcharge_Report.xlsx", na = c("-", "", "NA"))
+# demographic_data <- readxl::read_xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Client_Demographics.xlsx", na = c("-", "", "NA"))
 
 length(discharge_data$`Client ID`)
 length(demographic_data$`Client ID`)
+length(demographic_data_updated$`Client ID`)
 ```
 
 #Clean up demographic data
@@ -40,11 +42,15 @@ demographic_data_filtered <- demographic_data %>%
   filter(!if_any(c(`Provider ID`, `Client ID`), ~ str_detect(as.character(.x), "DEMO"))) %>% 
   clean_names()
 
+demographic_data_filtered_updated <- demographic_data_updated %>%
+  filter(!if_any(c(`Provider ID`, `Client ID`), ~ str_detect(as.character(.x), "DEMO"))) %>% 
+  clean_names()
+
 #are there unique client IDs? 
-length(unique(demographic_data_filtered$client_id)) == nrow(demographic_data_filtered)
+length(unique(demographic_data_filtered_updated$client_id)) == nrow(demographic_data_filtered_updated)
 
 #which IDs have been repeated and how many times? 
-duplicates <- demographic_data_filtered %>% 
+duplicates <- demographic_data_filtered_updated %>% 
   group_by(client_id) %>% 
    filter(n() > 1) %>%
   tally() 
@@ -54,7 +60,7 @@ duplicates %>%
   summarise(total_duplicated = sum(n))
 
 #what data is repeating for each client?
-demographic_data_filtered %>%
+demographic_data_filtered_updated %>%
   group_by(client_id) %>%
   filter(n() > 1) %>%
   summarise(across(everything(), ~ {
@@ -63,10 +69,10 @@ demographic_data_filtered %>%
   }), .groups = "drop") %>%
   select(client_id, where(~ any(!is.na(.))))
 
-duplicate_list <- demographic_data_filtered %>% 
+duplicate_list <- demographic_data_filtered_updated %>% 
   filter(client_id %in% duplicates$client_id)
 
-write_csv(duplicate_list, "/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/duplicate_list.csv")
+write_csv(duplicate_list, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/duplicate_list.csv")
 
 #for now, drop the 317 clients (1285 rows)
 demographic_data_filtered <- demographic_data_filtered %>% 
@@ -200,7 +206,8 @@ dup_clients_diff_time_data <- discharge_data_filtered %>%
 
 #Now join demographic and discharge data by client ID
 ```{r}
-all_data <- left_join(discharge_data_filtered, demographic_data_filtered, by = c("client_id", "provider_id"))
+#assessment-level data
+all_data <- left_join(discharge_data_filtered, demographic_data_filtered_updated, by = c("client_id", "provider_id"))
 ```
 
 #how many unique clients were served?
@@ -216,16 +223,14 @@ n_distinct(all_data$client_id)
 #write csvs
 ```{r}
 #all data /Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin
-write_csv(all_data, "/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
-#write_csv(all_data, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
+# write_csv(all_data, "/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
+write_csv(all_data, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
 
 #clean demo data
-write_csv(demographic_data_filtered, "/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
-#write_csv(demographic_data_filtered, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
+# write_csv(demographic_data_filtered, "/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
+write_csv(demographic_data_filtered, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
 
 #clean dishcarge data
-write_csv(discharge_data_filtered, "/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
-#write_csv(discharge_data_filtered, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
-
+# write_csv(discharge_data_filtered, "/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
+write_csv(discharge_data_filtered, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
 ```
-

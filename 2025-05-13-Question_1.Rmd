@@ -21,6 +21,7 @@ all_data <- read_csv("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EIn
 #1. Did the EBP/CDEP Workstream increase access to services for targeted populations?
 
 ##1.01 Did improved access to services affect all subpopulations?
+
 Cross-tab of study population by relevant demographic data
 
 Total number of clients served and by demographics
@@ -160,4 +161,11 @@ all_data_insurance_summary %>%
   clipr::write_clip()
 ```
 
+
+##1.02 How does access differ compared to previous access to services before EBP/CDEP funding? For each subpopulation?
+
+Cross-tab of demographics and grant types: Total number of clients served and by demographic, and by whether grant was start up or expansion
+```{r}
+glimpse(all_data)
+```
 

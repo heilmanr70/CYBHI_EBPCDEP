@@ -1,0 +1,170 @@
+---
+title: "Annual Report Data Analysis - Question 2.01"
+author: "Cristin Young and Tristan Burgess"
+date: "2025-05-17"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  html_notebook: default
+---
+
+This notebook answers Question 2.01: Did successful transition rates out of EBP/CDEP services differ by location? and Question 2.02: Did successful transition rates out of EBP/CDEP services differ by subpopulations?
+
+#Read in data
+```{r}
+library(tidyverse)
+library(janitor)
+library(gt)
+
+all_data <- read_csv("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
+```
+
+
+# Question 2.01: Did successful transition rates out of EBP/CDEP services differ by location?
+THREE inclusion criteria:
+ 1. must have initial time point data (i.e., be enrolled in an intervention), 
+ 2. must have a valid reason for discharge selected at time of discharge (i.e., excludes those with "no reason selected"), 
+ 3. client must be attached to a specific grantee location
+
+##Make a table of participation and completion rates by location
+```{r}
+data201 <- all_data %>% 
+  filter(!is.na(location) & 
+           !is.na(pre_score) & 
+           !is.na(post_score) & 
+           !is.na(reason_for_discharge))
+
+data201$positive_outcomes <- factor(data201$positive_outcomes, levels = c("No", "Yes"))
+```
+
+## % reported Mutually agreed upon cessation of Tx/successful completion at Discharge by location
+```{r}
+perc_sucessful_table <- data201 %>% 
+  group_by(location) %>% 
+  summarise(
+    total = n(),
+    successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+    perc_success = round(100* successful / total, 1)
+  )
+              
+perc_sucessful_table %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+```
+
+## % of those who met Tx goals (% successful completion + improved score) by location"
+mutually agreed cessation of tx = 892
+clinically referred out = 11
+```{r}
+data201_txgoals <- data201 %>% 
+  filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)",
+         positive_outcomes == "Yes")
+table(data201_txgoals$location)
+
+#or
+p_yes = function(x) round(x[1]/sum(x), 2)
+
+table <- addmargins(xtabs(data=data201, ~location + positive_outcomes, subset = data201$reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)"), FUN = list(p_yes))
+table %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+```
+
+
+#Question 2.02: Did successful transition rates out of EBP/CDEP services differ by subpopulations?
+look at data201 by demographics
+
+##Race
+```{r}
+detailed_race <- data201 %>% 
+  group_by(race) %>% 
+  summarise(
+    total = n(),
+    successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+    perc_success = round(100* successful / total, 1)
+  )
+
+detailed_race %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+
+chisq.test(data201$positive_outcomes, data201$race)
+
+model <- glm(positive_outcomes ~ race, data = data201, family = "binomial")
+summary(model)
+table(data201$insurance_status)
+```
+
+##Ethnicity
+```{r}
+detailed_ethnicity <- data201 %>% 
+  group_by(ethnicity) %>% 
+  summarise(
+    total = n(),
+    successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+    perc_success = round(100* successful / total, 1)
+  )
+
+detailed_ethnicity %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+
+chisq.test(data201$positive_outcomes, data201$ethnicity)
+```
+
+##Gender Identity
+```{r}
+gender_identity <- data201 %>% 
+  group_by(gender_identity) %>% 
+  summarise(
+    total = n(),
+    successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+    perc_success = round(100* successful / total, 1)
+  )
+
+gender_identity %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+
+chisq.test(data201$gender_identity, data201$positive_outcomes)
+
+model <- glm(positive_outcomes ~ gender_identity, data = data201, family = "binomial")
+summary(model)
+```
+##Sexual orientation
+```{r}
+sex_orientation <- data201 %>% 
+  group_by(sexual_orientation) %>% 
+  summarise(
+    total = n(),
+    successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+    perc_success = round(100* successful / total, 1)
+  )
+
+sex_orientation %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+
+chisq.test(data201$positive_outcomes, data201$sexual_orientation)
+```
+
+##Insurance status
+```{r}
+insurance <- data201 %>% 
+  group_by(insurance_status) %>% 
+  summarise(
+    total = n(),
+    successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+    perc_success = round(100* successful / total, 1)
+  )
+
+insurance %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+
+chisq.test(data201$positive_outcomes, data201$insurance_status)
+
+model <- glm(positive_outcomes ~ insurance_status, data = data201, family = "binomial")
+summary(model)
+```
