@@ -1,0 +1,216 @@
+---
+title: "NOMS_Visuals"
+output: html_document
+---
+
+#each NOMS assessment topic area (except for the NOMS sub-scale used for evaluation study question 2.00) will have two visuals, which will show: 1) the averages and the distributions at both initial and discharge time points, and 2) the percentages of those who selected ratings of 4 or higher (indicating the positive outcome) across the sub-scale item(s) at initial and discharge time points.
+
+#the first report out will use a ridgeline plot to visualize across the different versions (caregiver self-report, caregiver report on youth, and youth self-report) as well as overall (all versions): <https://kieranhealy.org/blog/archives/2021/12/19/comparing-distributions/>
+
+#the second report out will use a dumbbell plot to visualize across the different versions (caregiver self-report, caregiver report on youth, and youth self-report) as well as overall (all versions): <https://r-graph-gallery.com/web-dumbbell-chart-with-a-gap-column.html>
+
+# 
+
+```{r}
+
+library(ggplot2)
+library(ggridges)
+library(tidyr)
+library(dplyr)
+library(stringr)
+
+# Step 1: Create Initial and Discharge in the dataframe
+set.seed(1243098)
+df <- df %>%
+  mutate(
+    pop_a_initial = pmax(1, pmin(5, rnorm(n(), 3, 0.6))), # centered at 3, max/min of 1 and 5
+    pop_a_discharge = pmax(1, pmin(5, rnorm(n(), 3.4, 0.6))),
+    pop_b_initial = pmax(1, pmin(5, rnorm(n(), 3, 0.6))),
+    pop_b_discharge = pmax(1, pmin(5, rnorm(n(), 3.3, 0.6))),
+    pop_c_initial = pmax(1, pmin(5, rnorm(n(), 3, 0.6))),
+    pop_c_discharge = pmax(1, pmin(5, rnorm(n(), 3.5, 0.6))),
+    pop_total_initial = pmax(1, pmin(5, rnorm(n(), 3, 0.6))),
+    pop_total_discharge = pmax(1, pmin(5, rnorm(n(), 3.4, 0.6)))
+  )
+
+# Step 2: Pivot to long format
+df_long <- df %>%
+  pivot_longer(cols = ends_with(c("initial", "discharge")),
+               names_to = c("subgroup", "timepoint"),
+               names_pattern = "(.*)_(.*)") 
+
+# Step 3: Rename groups for readability and order them
+df_long$subgroup <- recode(df_long$subgroup,
+                           "pop_a" = "Youth Self-Report",
+                           "pop_b" = "Caregiver's Report on Youth/Child",
+                           "pop_c" = "Caregiver Self-Report",
+                           "pop_total" = "Total")
+
+# Order the subgroups exactly as specified:
+df_long$subgroup <- factor(df_long$subgroup, levels = c(
+  "Youth Self-Report", 
+  "Caregiver's Report on Youth/Child",
+  "Caregiver Self-Report",
+  "Total"
+))
+
+# Order the timepoints to render Discharge in front
+df_long$timepoint <- factor(df_long$timepoint, levels = c("initial", "discharge"))
+
+# Step 4: Plot
+ggplot(df_long, aes(x = value, y = subgroup, fill = timepoint)) +
+  geom_density_ridges(
+    aes(color = timepoint),
+    alpha = 0.7,
+    scale = 0.9,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("initial" = "#8A8C8E", "discharge" = "#BBDB49"),
+    breaks = c("initial", "discharge"),
+    labels = c("Initial", "Discharge")
+  ) +
+  scale_color_manual(
+    values = c("initial" = "#8A8C8E", "discharge" = "#BBDB49"),
+    breaks = c("initial", "discharge"),
+    labels = c("Initial", "Discharge")
+  ) +
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 25)) +
+  labs(
+    x = "Measure: Mental Health (1-5 Likert Scale)",
+    y = NULL,
+    title = "Comparing Means of Initial and Discharge Time Points\nAcross NOMS Sub-scale by Subgroups"
+  ) +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    plot.title.position = "plot",
+    axis.title.x = element_text(hjust = 0),
+    axis.text.y = element_text(hjust = 0),
+    legend.position = "bottom",
+    legend.title = element_blank()
+  )
+
+
+
+
+
+```
+
+```{r}
+
+library(ggplot2)
+library(ggridges)
+library(tidyr)
+library(dplyr)
+library(stringr)
+library(patchwork)
+
+# Step 1: Create Initial and Discharge in the dataframe
+set.seed(1243098)
+df <- df %>%
+  mutate(
+    pop_a_initial = pmax(1, pmin(5, rnorm(n(), 3, 0.6))),
+    pop_a_discharge = pmax(1, pmin(5, rnorm(n(), 3.4, 0.6))),
+    pop_b_initial = pmax(1, pmin(5, rnorm(n(), 3, 0.6))),
+    pop_b_discharge = pmax(1, pmin(5, rnorm(n(), 3.3, 0.6))),
+    pop_c_initial = pmax(1, pmin(5, rnorm(n(), 3, 0.6))),
+    pop_c_discharge = pmax(1, pmin(5, rnorm(n(), 3.5, 0.6))),
+    pop_total_initial = pmax(1, pmin(5, rnorm(n(), 3, 0.6))),
+    pop_total_discharge = pmax(1, pmin(5, rnorm(n(), 3.4, 0.6)))
+  )
+
+# Step 2: Pivot to long format
+df_long <- df %>%
+  pivot_longer(cols = ends_with(c("initial", "discharge")),
+               names_to = c("subgroup", "timepoint"),
+               names_pattern = "(.*)_(.*)") 
+
+# Step 3: Rename groups for readability and order them
+df_long$subgroup <- recode(df_long$subgroup,
+                           "pop_a" = "Youth Self-Report",
+                           "pop_b" = "Caregiver's Report on Youth/Child",
+                           "pop_c" = "Caregiver Self-Report",
+                           "pop_total" = "Total")
+
+# ✅ Order the subgroups exactly as you specified:
+df_long$subgroup <- factor(df_long$subgroup, levels = c(
+  "Total",
+  "Caregiver Self-Report",
+  "Caregiver's Report on Youth/Child",
+  "Youth Self-Report"
+))
+
+# Order the timepoints to render Discharge in front
+df_long$timepoint <- factor(df_long$timepoint, levels = c("initial", "discharge"))
+
+# === 📌 Compute the Mean Difference and Order
+mean_differences <- df_long %>%
+  group_by(subgroup, timepoint) %>%
+  summarise(mean_value = mean(value, na.rm = TRUE)) %>%
+  pivot_wider(names_from = timepoint, values_from = mean_value) %>%
+  mutate(Difference = discharge - initial)
+
+# === 📌 Create the Gap Difference Table Plot
+gap_table <- ggplot(mean_differences, aes(x = 1, y = subgroup)) +
+  geom_text(aes(label = round(Difference, 2)), size = 3, hjust = 0) +  # 🔥 Smaller font for cells
+  theme_void() +
+  labs(title = "Mean Diff.\n(Discharge - Initial)") +  # 🔥 Updated the title
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 8, margin = margin(t = 5, b = 5)), # 🔥 Smaller title
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    plot.margin = margin(t = 40, r = 40, b = 40, l = 20)
+  ) +
+  scale_y_discrete(limits = c("Total", "Caregiver Self-Report", "Caregiver's Report on Youth/Child", "Youth Self-Report"))
+
+# === 📌 Create the Ridgeline Plot with **Tight Label Alignment**
+ridge_plot <- ggplot(df_long, aes(x = value, y = subgroup, fill = timepoint)) + 
+  geom_density_ridges(
+    aes(color = timepoint),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("initial" = "#8A8C8E", "discharge" = "#BBDB49"),
+    breaks = c("initial", "discharge"),
+    labels = c("Initial", "Discharge")
+  ) +
+  scale_color_manual(
+    values = c("initial" = "#8A8C8E", "discharge" = "#BBDB49"),
+    breaks = c("initial", "discharge"),
+    labels = c("Initial", "Discharge")
+  ) +
+  scale_x_continuous(
+    limits = c(1, 5),
+    breaks = seq(1, 5, by = 1)
+  ) +
+  labs(
+    x = "Measure: Mental Health (1-5 Likert Scale)",
+    y = NULL,
+    title = "Comparing Means of Initial and Discharge Time Points\nAcross NOMS Sub-scale by Subgroups"
+  ) +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    strip.background = element_blank(),
+    strip.text.y = element_text(size = 10, angle = 0),
+    plot.title.position = "plot",
+    plot.title = element_text(size = 10, margin = margin(t = 20, b = 20)),
+    axis.title.x = element_text(hjust = 0, size = 9),
+    axis.text.y = element_text(hjust = 1, size = 9, margin = margin(r = 5)),
+    axis.text.x = element_text(size = 9),
+    legend.position = "bottom",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 9),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.margin = margin(20, 10, 20, 10)
+  )
+
+# === 📌 Combine the Plots and Adjust Layout
+(ridge_plot | gap_table) + 
+  plot_layout(widths = c(5, 1)) &
+  theme(plot.margin = margin(10, 10, 10, 10))
+
+
+```
