@@ -33,12 +33,13 @@ demographic_data_updated <- readxl::read_xlsx("/Users/cristin/Downloads/4df7eac3
 length(discharge_data$`Client ID`)
 length(demographic_data$`Client ID`)
 length(demographic_data_updated$`Client ID`)
+length(demographic_data_filtered$client_id)
 ```
 
 #Clean up demographic data
 ```{r}
 #get rid of demo data
-demographic_data_filtered <- demographic_data %>%
+demographic_data_filtered <- demographic_data_updated %>%
   filter(!if_any(c(`Provider ID`, `Client ID`), ~ str_detect(as.character(.x), "DEMO"))) %>% 
   clean_names()
 
@@ -228,7 +229,7 @@ write_csv(all_data, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EIns
 
 #clean demo data
 # write_csv(demographic_data_filtered, "/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
-write_csv(demographic_data_filtered, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
+write_csv(demographic_data_filtered_updated, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
 
 #clean dishcarge data
 # write_csv(discharge_data_filtered, "/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
