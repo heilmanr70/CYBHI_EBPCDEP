@@ -96,6 +96,43 @@ summary(model)
 table(data201$insurance_status)
 ```
 
+##Race summary
+Roll detailed race variables, based on first answer, up into: 
+- Asian
+- Black or African American
+- Don't Know
+- Hispanic or Latino
+- Middle Eastern or North African
+- Native American/American Indian or Alaska Native
+- Native Hawaiian or Pacific Islander
+- Not Applicable
+- Prefer Not to Answer
+- White
+```{r}
+#make new column of only the first race recorded
+data201 <- data201 %>% 
+  separate(race, into = c("first_race", NA), sep = ",", extra = "drop", remove = FALSE)
+
+summary_race <- data201 %>% 
+  group_by(first_race) %>% 
+  summarise(
+    total = n(),
+    successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+    perc_success = round(100* successful / total, 1)
+  )
+
+summary_race %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+
+chisq.test(data201$positive_outcomes, data201$first_race)
+
+model <- glm(positive_outcomes ~ first_race, data = data201, family = "binomial")
+summary(model)
+table(data201$first_race)
+```
+
+
 ##Ethnicity
 ```{r}
 detailed_ethnicity <- data201 %>% 
