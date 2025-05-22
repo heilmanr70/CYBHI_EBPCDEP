@@ -1,12 +1,14 @@
 ---
 title: "Annual Report Data Analysis - Question 2.01"
 author: "Cristin Young and Tristan Burgess"
-date: "2025-05-17"
+date: '2025-05-17'
 output:
-  html_document:
-    df_print: paged
-  pdf_document: default
   html_notebook: default
+  word_document: default
+  html_document: default
+  pdf_document: default
+editor_options: 
+  chunk_output_type: inline
 ---
 
 This notebook answers Question 2.01: Did successful transition rates out of EBP/CDEP services differ by location? and Question 2.02: Did successful transition rates out of EBP/CDEP services differ by subpopulations?
@@ -16,8 +18,11 @@ This notebook answers Question 2.01: Did successful transition rates out of EBP/
 library(tidyverse)
 library(janitor)
 library(gt)
+library(clipr)
 
-all_data <- read_csv("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
+
+#all_data <- read_csv("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
+all_data <- read_csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
 ```
 
 
@@ -33,6 +38,7 @@ data201 <- all_data %>%
   filter(!is.na(location) & 
            !is.na(pre_score) & 
            !is.na(post_score) & 
+           !is.nat(location) &
            !is.na(reason_for_discharge))
 
 data201$positive_outcomes <- factor(data201$positive_outcomes, levels = c("No", "Yes"))
@@ -50,7 +56,7 @@ perc_sucessful_table <- data201 %>%
               
 perc_sucessful_table %>% 
   knitr::kable() %>% 
-  clipr::write_clip()
+  clipr::write_clip(allow_non_interactive = TRUE)
 ```
 
 ## % of those who met Tx goals (% successful completion + improved score) by location"
@@ -63,12 +69,12 @@ data201_txgoals <- data201 %>%
 table(data201_txgoals$location)
 
 #or
-p_yes = function(x) round(x[1]/sum(x), 2)
+p_yes = function(x) round(x[2]/sum(x), 2) # 1 in this line was doing p_no!
 
 table <- addmargins(xtabs(data=data201, ~location + positive_outcomes, subset = data201$reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)"), FUN = list(p_yes))
 table %>% 
   knitr::kable() %>% 
-  clipr::write_clip()
+  clipr::write_clip(allow_non_interactive = TRUE)
 ```
 
 
@@ -87,7 +93,7 @@ detailed_race <- data201 %>%
 
 detailed_race %>% 
   knitr::kable() %>% 
-  clipr::write_clip()
+  clipr::write_clip(allow_non_interactive = TRUE)
 
 chisq.test(data201$positive_outcomes, data201$race)
 
@@ -123,7 +129,7 @@ summary_race <- data201 %>%
 
 summary_race %>% 
   knitr::kable() %>% 
-  clipr::write_clip()
+  clipr::write_clip(allow_non_interactive = TRUE)
 
 chisq.test(data201$positive_outcomes, data201$first_race)
 
@@ -145,7 +151,7 @@ detailed_ethnicity <- data201 %>%
 
 detailed_ethnicity %>% 
   knitr::kable() %>% 
-  clipr::write_clip()
+  clipr::write_clip(allow_non_interactive = TRUE)
 
 chisq.test(data201$positive_outcomes, data201$ethnicity)
 ```
@@ -162,7 +168,7 @@ gender_identity <- data201 %>%
 
 gender_identity %>% 
   knitr::kable() %>% 
-  clipr::write_clip()
+  clipr::write_clip(allow_non_interactive = TRUE)
 
 chisq.test(data201$gender_identity, data201$positive_outcomes)
 
@@ -181,7 +187,7 @@ sex_orientation <- data201 %>%
 
 sex_orientation %>% 
   knitr::kable() %>% 
-  clipr::write_clip()
+  clipr::write_clip(allow_non_interactive = TRUE)
 
 chisq.test(data201$positive_outcomes, data201$sexual_orientation)
 ```
@@ -198,7 +204,7 @@ insurance <- data201 %>%
 
 insurance %>% 
   knitr::kable() %>% 
-  clipr::write_clip()
+  clipr::write_clip(allow_non_interactive = TRUE)
 
 chisq.test(data201$positive_outcomes, data201$insurance_status)
 
