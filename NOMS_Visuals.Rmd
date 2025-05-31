@@ -11,16 +11,17 @@ output: html_document
 
 ```{r}
 
+# Required packages
 library(ggplot2)
 library(ggridges)
 library(tidyr)
 library(dplyr)
-library(stringr)
 library(patchwork)
+library(ggtext)
 
-# Step 1: Create Initial and Discharge in the dataframe
+# Simulated data
 set.seed(1243098)
-df <- df %>%
+df <- data.frame(id = 1:3000) %>%
   mutate(
     pop_a_initial = pmax(1, pmin(5, rnorm(n(), 3, 0.6))),
     pop_a_discharge = pmax(1, pmin(5, rnorm(n(), 3.4, 0.6))),
@@ -32,52 +33,42 @@ df <- df %>%
     pop_total_discharge = pmax(1, pmin(5, rnorm(n(), 3.4, 0.6)))
   )
 
-# Step 2: Pivot to long format
+# Pivot to long format
 df_long <- df %>%
   pivot_longer(cols = ends_with(c("initial", "discharge")),
                names_to = c("subgroup", "timepoint"),
                names_pattern = "(.*)_(.*)") 
 
-# Step 3: Rename groups for readability and order them
+# Rename and order subgroups
 df_long$subgroup <- recode(df_long$subgroup,
                            "pop_a" = "Youth Self-Report",
                            "pop_b" = "Caregiver's Report on Youth/Child",
                            "pop_c" = "Caregiver Self-Report",
                            "pop_total" = "Total")
-
-# ✅ Order the subgroups exactly as you specified:
 df_long$subgroup <- factor(df_long$subgroup, levels = c(
-  "Total",
-  "Caregiver Self-Report",
-  "Caregiver's Report on Youth/Child",
-  "Youth Self-Report"
-))
-
-# Order the timepoints to render Discharge in front
+  "Total", "Caregiver Self-Report", "Caregiver's Report on Youth/Child", "Youth Self-Report"))
 df_long$timepoint <- factor(df_long$timepoint, levels = c("initial", "discharge"))
 
-# === 📌 Compute the Mean Difference and Order
+# Mean difference table
 mean_differences <- df_long %>%
   group_by(subgroup, timepoint) %>%
   summarise(mean_value = mean(value, na.rm = TRUE)) %>%
   pivot_wider(names_from = timepoint, values_from = mean_value) %>%
   mutate(Difference = discharge - initial)
 
-# === 📌 Create the Gap Difference Table Plot
 gap_table <- ggplot(mean_differences, aes(x = 1, y = subgroup)) +
-  geom_text(aes(label = round(Difference, 2)), size = 3, hjust = 0) +  # 🔥 Smaller font for cells
+  geom_text(aes(label = round(Difference, 2)), size = 3, hjust = 0) +
   theme_void() +
-  labs(title = "Mean Diff.\n(Discharge - Initial)") +  # 🔥 Updated the title
+  labs(title = "Mean Diff.\n(DC - Initial)") +
   theme(
-    plot.title = element_text(hjust = 0.5, size = 8, margin = margin(t = 5, b = 5)), # 🔥 Smaller title
+    plot.title = element_text(hjust = 0.5, size = 7, margin = margin(t = 8, b = -15)),
     axis.text.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    plot.margin = margin(t = 40, r = 40, b = 40, l = 20)
+    plot.margin = margin(t = 5, b = -5, l = 5, r = 5)
   ) +
-  scale_y_discrete(limits = c("Total", "Caregiver Self-Report", "Caregiver's Report on Youth/Child", "Youth Self-Report"))
+  scale_y_discrete(limits = levels(df_long$subgroup))
 
-# === 📌 Create the Ridgeline Plot with **Tight Label Alignment**
-ridge_plot <- ggplot(df_long, aes(x = value, y = subgroup, fill = timepoint)) + 
+# Ridgeline plot with top legend and no chart title
+ridge_plot <- ggplot(df_long, aes(x = value, y = subgroup, fill = timepoint)) +
   geom_density_ridges(
     aes(color = timepoint),
     alpha = 0.7,
@@ -87,43 +78,32 @@ ridge_plot <- ggplot(df_long, aes(x = value, y = subgroup, fill = timepoint)) +
   scale_fill_manual(
     values = c("initial" = "#8A8C8E", "discharge" = "#BBDB49"),
     breaks = c("initial", "discharge"),
-    labels = c("Initial", "Discharge")
+    labels = c("Initial", "Discharge (DC)")
   ) +
   scale_color_manual(
     values = c("initial" = "#8A8C8E", "discharge" = "#BBDB49"),
     breaks = c("initial", "discharge"),
-    labels = c("Initial", "Discharge")
+    labels = c("Initial", "Discharge (DC)")
   ) +
-  scale_x_continuous(
-    limits = c(1, 5),
-    breaks = seq(1, 5, by = 1)
-  ) +
-  labs(
-    x = "Measure: Mental Health (1-5 Likert Scale)",
-    y = NULL,
-    title = "Comparing Means of Initial and Discharge Time Points\nAcross NOMS Sub-scale by Subgroups"
-  ) +
+  scale_x_continuous(limits = c(1, 5), breaks = 1:5) +
+  labs(x = "Measure: Mental Health (1–5 Likert Scale)", y = NULL) +
   theme_ridges(font_family = "Arial") +
   theme(
-    strip.background = element_blank(),
-    strip.text.y = element_text(size = 10, angle = 0),
-    plot.title.position = "plot",
-    plot.title = element_text(size = 10, margin = margin(t = 20, b = 20)),
-    axis.title.x = element_text(hjust = 0, size = 9),
-    axis.text.y = element_text(hjust = 1, size = 9, margin = margin(r = 5)),
+    axis.title.x = element_text(size = 9, hjust = 0),
+    axis.text.y = element_text(size = 9, hjust = 1),
     axis.text.x = element_text(size = 9),
-    legend.position = "bottom",
+    legend.position = "top",
     legend.title = element_blank(),
-    legend.text = element_text(size = 9),
-    panel.grid.major.y = element_blank(),
-    panel.grid.minor = element_blank(),
-    plot.margin = margin(20, 10, 20, 10)
+    legend.text = element_text(size = 8),
+    legend.box.margin = margin(b = -5),
+    plot.margin = margin(5, 5, 5, 5)
   )
 
-# === 📌 Combine the Plots and Adjust Layout
-(ridge_plot | gap_table) + 
-  plot_layout(widths = c(5, 1)) &
-  theme(plot.margin = margin(10, 10, 10, 10))
+# Combine with patchwork without title/subtitle
+final_plot <- (ridge_plot | gap_table) +
+  plot_layout(widths = c(5, 1)) +
+  plot_annotation(title = NULL, subtitle = NULL)
 
-
+# Display final plot
+final_plot
 ```
