@@ -23,18 +23,18 @@ for(i in 7:length(newnames)){
 #tab <- rbind(names,colnames(NOMS_Ind_data),newnames)
 colnames(NOMS_Ind_data) <- newnames
 
-NOMS_Ind_clean <- NOMS_Ind_data[,c(1:6,37:42,7:22,43:48,23,24,49:54,25:36)] # Cristin will hate this line... :)
+NOMS_Ind_clean <- NOMS_Ind_data[,c(1:6,37,39,41,7,9:22,43:48,23,24,49:54,25:36)] # Cristin will hate this line... :) Ideally would be replaced by robust searches for each column in order.
 
 # Calculate putative NOMS Score
 NOMS_Ind_clean$NOMSRawScore <- rep(NA,dim(NOMS_Ind_data)[1])
 Scorecols <- grepl( "SCR. ", names(NOMS_Ind_clean), fixed = TRUE)
 tab2 <- rbind(names(NOMS_Ind_clean),Scorecols) # view this table to check correct columns selected
 
-NOMS_Ind_clean$NOMSRawScore  <- # sum of individual scores according to scoring guide
+NOMS_Ind_clean[,Scorecols]<-lapply(NOMS_Ind_clean[,Scorecols],as.numeric)
+NOMS_Ind_clean$NOMSRawScore  <- rowSums(NOMS_Ind_clean[,Scorecols]) # sum of individual scores
+
 NOMS_Ind_clean$NOMSScore <- rep(NA,dim(NOMS_Ind_clean)[1])
 NOMS_Ind_clean$NOMSScore[NOMS_Ind_clean$NOMSValid==1] <- NOMS_Ind_clean$NOMSRawScore # NOTE: Check response distribution -> no bullshit numbers, only valid ones.
-
-
 
 
 # Test for valid assessment
