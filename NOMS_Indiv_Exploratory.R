@@ -33,13 +33,24 @@ tab2 <- rbind(names(NOMS_Ind_clean),Scorecols) # view this table to check correc
 NOMS_Ind_clean[,Scorecols]<-lapply(NOMS_Ind_clean[,Scorecols],as.numeric)
 NOMS_Ind_clean$NOMSRawScore  <- rowSums(NOMS_Ind_clean[,Scorecols]) # sum of individual scores
 
-NOMS_Ind_clean$NOMSScore <- rep(NA,dim(NOMS_Ind_clean)[1])
-NOMS_Ind_clean$NOMSScore[NOMS_Ind_clean$NOMSValid==1] <- NOMS_Ind_clean$NOMSRawScore # NOTE: Check response distribution -> no bullshit numbers, only valid ones.
-
-
 # Test for valid assessment
-NOMS_Ind_data$NOMSValid <- rep(0,dim(NOMS_Ind_data)[1])
-NOMS_Ind_data$NOMSValid # <- 1 for a valid assessment, leave as zero if invalid - NB: Steve excluded any assessment with a single missing item.
+NOMS_Ind_clean$NOMSValid <- rep(0,dim(NOMS_Ind_clean)[1])
+NOMS_Ind_clean$NOMSValid[!is.na(rowSums(NOMS_Ind_clean[,Scorecols]))] <- 1 # <- 1 for a valid assessment, leave as zero if invalid - NB: Steve excluded any assessment with a single missing item.
+
+NOMS_Ind_clean$NOMSScore <- rep(NA,dim(NOMS_Ind_clean)[1])
+NOMS_Ind_clean$NOMSScore[NOMS_Ind_clean$NOMSValid==1] <- NOMS_Ind_clean$NOMSRawScore[NOMS_Ind_clean$NOMSValid==1] # NOTE: Check response distribution -> no bullshit numbers, only valid ones.
 
 # Calculate Positive Change (Y/N) 
 # Next step will be to connect initial and follow-up scores by client to check positive change calculations
+
+Valid_INIT <- rep(1,dim(NOMS_Ind_clean)[1])# Select all lines which constitute a valid NOMS Initial score
+Valid_INIT[which(is.na(NOMS_Ind_clean$NOMSScore))] <- 0
+Valid_INIT[which(NOMS_Ind_clean$Collection!="NOMS Self-Report Version Initial")] <- 0
+
+CIDS <- NOMS_Ind_clean$`Client ID`[Valid_INIT]
+NOMS_POS <- data.frame(Client_ID=CIDS) # SEEMS plausible, has not been checked yet
+
+# For each client ID in this list, gather the other valid scores
+# If there are none - NA
+# If there is at least one, select the latest in time
+# Compare the numerical change and report by client ID
