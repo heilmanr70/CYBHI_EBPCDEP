@@ -47,10 +47,13 @@ Valid_INIT <- rep(1,dim(NOMS_Ind_clean)[1])# Select all lines which constitute a
 Valid_INIT[which(is.na(NOMS_Ind_clean$NOMSScore))] <- 0
 Valid_INIT[which(NOMS_Ind_clean$Collection!="NOMS Self-Report Version Initial")] <- 0
 
-CIDS <- NOMS_Ind_clean$`Client ID`[Valid_INIT]
+CIDS <- NOMS_Ind_clean$`Client ID`[Valid_INIT==1]
 NOMS_POS <- data.frame(Client_ID=CIDS) # SEEMS plausible, has not been checked yet
+NOMS_POS$init_score <- NOMS_Ind_clean$NOMSScore[Valid_INIT==1] # Initial scores
 
 # For each client ID in this list, gather the other valid scores
 # If there are none - NA
 # If there is at least one, select the latest in time
 # Compare the numerical change and report by client ID
+# Add the e-insight pos change value
+# Compare the two scores for agreement
