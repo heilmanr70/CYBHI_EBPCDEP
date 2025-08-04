@@ -124,6 +124,97 @@ print(tabyl(dat, pathway))
 print(tabyl(dat, round, pathway))
 
 ```
+```{r}
+# ---- Glue helpers (formatters & extractors) ----
+library(glue)
+library(dplyr)
+library(scales)
+
+# pretty formatters
+fmt_n    <- function(x) comma(x, accuracy = 1)
+fmt_pct  <- function(x, digits = 1) percent(x, accuracy = if (digits == 0) 1 else 0.1)
+fmt_p    <- function(p) ifelse(is.na(p), "—", ifelse(p < .001, "<0.001", sprintf("%.3f", p)))
+fmt_orci <- function(or, lcl, ucl, digits = 2) {
+  if (any(is.na(c(or, lcl, ucl)))) return("—")
+  sprintf("%.2f (95%% CI %.2f–%.2f)", or, lcl, ucl)
+}
+
+# safe getter for round counts (handles missing rounds)
+get_round_n <- function(dat, r) {
+  ct <- table(dat$round)
+  n  <- unname(ct[as.character(r)])
+  if (length(n) == 0 || is.na(n)) 0 else n
+}
+
+# OR + Wald CI from clm coefficient name (e.g., "round2" or "auditorAuditor A")
+or_from_clm <- function(model, term) {
+  cf <- coef(model)
+  V  <- try(vcov(model), silent = TRUE)
+  if (inherits(V, "try-error") || is.null(cf) || !term %in% names(cf)) {
+    return(list(OR = NA_real_, LCL = NA_real_, UCL = NA_real_, p = NA_real_))
+  }
+  est <- cf[term]
+  se  <- sqrt(diag(V))[term]
+  if (is.na(se)) return(list(OR = NA_real_, LCL = NA_real_, UCL = NA_real_, p = NA_real_))
+  z  <- est / se
+  p  <- 2 * pnorm(-abs(z))
+  list(OR = exp(est), LCL = exp(est - 1.96 * se), UCL = exp(est + 1.96 * se), p = p)
+}
+
+# Pull a predicted probability (+ CI) for a given round and category from an emmeans prob table
+get_pp_round <- function(pp_df, r, category = c("Low","Medium","High")) {
+  if (is.null(pp_df)) return(list(prob = NA_real_, lcl = NA_real_, ucl = NA_real_))
+  category <- match.arg(category)
+  # standardize column names if needed
+  nm <- names(pp_df)
+  if (!"lower.CL" %in% nm && "asymp.LCL" %in% nm) pp_df <- rename(pp_df, lower.CL = asymp.LCL)
+  if (!"upper.CL" %in% nm && "asymp.UCL" %in% nm) pp_df <- rename(pp_df, upper.CL = asymp.UCL)
+  if (!"category" %in% nm) {
+    alt <- c("response",".response","level","Level","Outcome","outcome")
+    hit <- alt[alt %in% nm][1]
+    if (!is.na(hit)) pp_df <- rename(pp_df, category = !!hit)
+  }
+  out <- pp_df %>% filter(round == r, as.character(category) == !!category)
+  if (nrow(out) == 0) return(list(prob = NA_real_, lcl = NA_real_, ucl = NA_real_))
+  list(prob = out$prob[1], lcl = out$lower.CL[1], ucl = out$upper.CL[1])
+}
+
+# Pull a predicted probability (+ CI) for a given auditor, within a round, from emmeans prob table
+get_pp_aud <- function(pp_df, r, auditor_name, category = c("Low","Medium","High")) {
+  if (is.null(pp_df)) return(list(prob = NA_real_, lcl = NA_real_, ucl = NA_real_))
+  category <- match.arg(category)
+  nm <- names(pp_df)
+  if (!"lower.CL" %in% nm && "asymp.LCL" %in% nm) pp_df <- rename(pp_df, lower.CL = asymp.LCL)
+  if (!"upper.CL" %in% nm && "asymp.UCL" %in% nm) pp_df <- rename(pp_df, upper.CL = asymp.UCL)
+  if (!"category" %in% nm) {
+    alt <- c("response",".response","level","Level","Outcome","outcome")
+    hit <- alt[alt %in% nm][1]
+    if (!is.na(hit)) pp_df <- rename(pp_df, category = !!hit)
+  }
+  out <- pp_df %>% filter(round == r, auditor == !!auditor_name, as.character(category) == !!category)
+  if (nrow(out) == 0) return(list(prob = NA_real_, lcl = NA_real_, ucl = NA_real_))
+  list(prob = out$prob[1], lcl = out$lower.CL[1], ucl = out$upper.CL[1])
+}
+
+# Get pathway share by round from comp_prop (a row-normalized table: round x pathway)
+get_pathway_share <- function(comp_prop, r, pathway) {
+  rn <- rownames(comp_prop)
+  cn <- colnames(comp_prop)
+  if (!as.character(r) %in% rn || !pathway %in% cn) return(NA_real_)
+  comp_prop[as.character(r), pathway]
+}
+
+# Missingness helpers from miss_by_round (data.frame)
+get_miss_pct <- function(df, r, which = c("demo","clin")) {
+  which <- match.arg(which)
+  col <- if (which == "demo") "demo_na_pct" else "clin_na_pct"
+  val <- df %>% filter(round == r) %>% pull(all_of(col))
+  if (length(val) == 0) NA_real_ else val[1]
+}
+
+```
+
+
 
 ```{r}
 
@@ -502,6 +593,66 @@ if (!is.null(pp_clin_a_all)) plot_pp_clin_aud <- pp_aud_plot_fun(pp_clin_a_all, 
 
 ```{r}
 
+# ---- Bind commonly used numbers for glue ----
+N_total <- nrow(dat)
+N_r1 <- get_round_n(dat, "1"); N_r2 <- get_round_n(dat, "2")
+N_r4 <- get_round_n(dat, "4"); N_r5 <- get_round_n(dat, "5")
+
+# Example ORs for DEMO round contrasts vs baseline (adjust term names to your model)
+# These assume the reference round is "1" and terms look like "round2","round4","round5".
+OR_demo_r2 <- or_from_clm(m_demo_round, "round2")
+OR_demo_r4 <- or_from_clm(m_demo_round, "round4")
+OR_demo_r5 <- or_from_clm(m_demo_round, "round5")
+
+# Example ORs for Clinical round contrasts
+OR_clin_r2 <- or_from_clm(m_clin_round, "round2")
+OR_clin_r4 <- or_from_clm(m_clin_round, "round4")
+OR_clin_r5 <- or_from_clm(m_clin_round, "round5")
+
+# Predicted probabilities (by round) for the High category
+pp_demo_r1_H <- get_pp_round(pp_demo_round, r = "1", category = "High")
+pp_demo_r2_H <- get_pp_round(pp_demo_round, r = "2", category = "High")
+pp_demo_r4_H <- get_pp_round(pp_demo_round, r = "4", category = "High")
+pp_demo_r5_H <- get_pp_round(pp_demo_round, r = "5", category = "High")
+
+pp_clin_r1_H <- get_pp_round(pp_clin_round, r = "1", category = "High")
+pp_clin_r2_H <- get_pp_round(pp_clin_round, r = "2", category = "High")
+pp_clin_r4_H <- get_pp_round(pp_clin_round, r = "4", category = "High")
+pp_clin_r5_H <- get_pp_round(pp_clin_round, r = "5", category = "High")
+
+# Pathway shares by round (from comp_prop row-normalized table)
+share_not_onboarded_r1 <- get_pathway_share(comp_prop, "1", "NotOnboarded")
+share_not_onboarded_r2 <- get_pathway_share(comp_prop, "2", "NotOnboarded")
+share_not_onboarded_r4 <- get_pathway_share(comp_prop, "4", "NotOnboarded")
+share_not_onboarded_r5 <- get_pathway_share(comp_prop, "5", "NotOnboarded")
+
+share_not_started_r1 <- get_pathway_share(comp_prop, "1", "NotStarted")
+share_not_started_r2 <- get_pathway_share(comp_prop, "2", "NotStarted")
+share_not_started_r4 <- get_pathway_share(comp_prop, "4", "NotStarted")
+share_not_started_r5 <- get_pathway_share(comp_prop, "5", "NotStarted")
+
+share_special_r1 <- get_pathway_share(comp_prop, "1", "SpecialGrant")
+share_special_r2 <- get_pathway_share(comp_prop, "2", "SpecialGrant")
+share_special_r4 <- get_pathway_share(comp_prop, "4", "SpecialGrant")
+share_special_r5 <- get_pathway_share(comp_prop, "5", "SpecialGrant")
+
+# Missingness among Eligible by round
+miss_demo_r1 <- get_miss_pct(miss_by_round, "1", "demo")
+miss_demo_r2 <- get_miss_pct(miss_by_round, "2", "demo")
+miss_demo_r4 <- get_miss_pct(miss_by_round, "4", "demo")
+miss_demo_r5 <- get_miss_pct(miss_by_round, "5", "demo")
+
+miss_clin_r1 <- get_miss_pct(miss_by_round, "1", "clin")
+miss_clin_r2 <- get_miss_pct(miss_by_round, "2", "clin")
+miss_clin_r4 <- get_miss_pct(miss_by_round, "4", "clin")
+miss_clin_r5 <- get_miss_pct(miss_by_round, "5", "clin")
+
+
+```
+
+
+```{r}
+
 # -------- 9) Print / save outputs --------
 print(plot_pathway_round)
 print(plot_pathway_aud)
@@ -518,6 +669,34 @@ if (exists("plot_pp_clin_aud"))  print(plot_pp_clin_aud)
 # ggsave("clin_pred_round.png",  plot_pp_clin_round, width = 9, height = 5, dpi = 300)
 # if (exists("plot_pp_demo_aud")) ggsave("demo_pred_aud.png", plot_pp_demo_aud, width = 10, height = 6, dpi = 300)
 # if (exists("plot_pp_clin_aud")) ggsave("clin_pred_aud.png", plot_pp_clin_aud, width = 10, height = 6, dpi = 300)
+
+
+```
+
+```{r}
+
+# -------- 10) Results write up --------
+
+#Sample/Coverage Sentence #
+glue("We reviewed {fmt_n(N_total)} grantees across Round 1 (n={fmt_n(N_r1)}), Round 2 (n={fmt_n(N_r2)}), Round 4 (n={fmt_n(N_r4)}), and Round 5 (n={fmt_n(N_r5)}).")
+
+#Pathway mix by round #
+glue("The share NotOnboarded was {fmt_pct(share_not_onboarded_r1,0)} in R1, {fmt_pct(share_not_onboarded_r2,0)} in R2, {fmt_pct(share_not_onboarded_r4,0)} in R4, and {fmt_pct(share_not_onboarded_r5,0)} in R5.")
+
+#Missingness among eligible #
+glue("Among Eligible, DEMO missingness ranged from {fmt_pct(miss_demo_r1,0)} (R1) to {fmt_pct(miss_demo_r5,0)} (R5), while Clinical missingness ranged from {fmt_pct(miss_clin_r1,0)} (R1) to {fmt_pct(miss_clin_r5,0)} (R5).")
+
+#DEMO Quality by Round: Predicted HIGH #
+glue("Predicted High DEMO was {fmt_pct(pp_demo_r1_H$prob,0)} in R1 (95% CI {fmt_pct(pp_demo_r1_H$lcl,0)}–{fmt_pct(pp_demo_r1_H$ucl,0)}), rising to {fmt_pct(pp_demo_r5_H$prob,0)} in R5 (95% CI {fmt_pct(pp_demo_r5_H$lcl,0)}–{fmt_pct(pp_demo_r5_H$ucl,0)}).")
+
+#DEMO Round Contrast Odds Ratio_Round 2 vs Round 1 #
+glue("Compared with R1, the cumulative odds of higher DEMO quality in R2 were {fmt_orci(OR_demo_r2$OR, OR_demo_r2$LCL, OR_demo_r2$UCL)} (p = {fmt_p(OR_demo_r2$p)}).")
+
+#Clinical Quality by Round: Predicted HIGH #
+glue("Predicted High Clinical was {fmt_pct(pp_clin_r2_H$prob,0)} in R2 and {fmt_pct(pp_clin_r1_H$prob,0)} in R1.")
+
+
+
 ###############################################
 # End of script
 ###############################################
