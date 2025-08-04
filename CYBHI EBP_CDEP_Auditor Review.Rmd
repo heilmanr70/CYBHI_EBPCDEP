@@ -1,0 +1,705 @@
+---
+title: "CYBHI EBP CDEP Auditor Review"
+author: "Rebecca Heilman"
+date: "2025-08-04"
+Data file: Deidentified_Auditor Review File.xlsx
+output: html_document
+---
+
+```{r}
+
+###############################################
+# CYBHI Auditor Review — End-to-End Analysis (robust)
+# Updated to handle blank-but-Eligible ratings and sparse cells
+###############################################
+
+# -------- Packages --------
+# install.packages(c("readxl","dplyr","stringr","janitor","ordinal","emmeans",
+#                    "ggplot2","scales","gt","tidyr","forcats"))
+
+library(readxl)
+library(dplyr)
+library(stringr)
+library(janitor)
+library(ordinal)   # clm()
+library(emmeans)   # predicted probabilities / contrasts
+library(ggplot2)
+library(scales)
+library(gt)
+library(tidyr)
+library(forcats)
+
+options(contrasts = c("contr.treatment","contr.poly"))
+
+# -------- 1) Import (Windows/macOS safe) --------
+# Set your absolute path as a STRING (do not call read_* here)
+path_xlsx <- "/Users/heilm/Dropbox/CYBHI Project/Grantee Monitoring/Auditing/Final Report Audit June 2025/Deidentified_Auditor Review File.xlsx"
+if (!file.exists(path_xlsx)) stop("File not found at: ", path_xlsx)
+
+dat_raw <- readxl::read_xlsx(path_xlsx)
+
+# Clean header whitespace then snake_case
+names(dat_raw) <- names(dat_raw) |> trimws() |> str_squish()
+dat <- janitor::clean_names(dat_raw)
+
+# Expected names after clean_names():
+# "audit_staff", "date_completed", "grant_id", "round",
+# "implementation_start_yn",
+# "alternative_evaluation_grantee_sda_or_tta_mcu_no",
+# "onboarded_to_e_insight",
+# "demo_data_quality", "clinical_data_quality",
+# "in_compliance", "risk_assessment_rating"
+
+```
+
+```{r}
+# -------- 2) Value standardization & robust NA cleaning --------
+
+# Y/N (or Yes/No) to 1/0
+yn_to_bool <- function(x) {
+  y <- str_to_lower(str_trim(as.character(x)))
+  case_when(
+    y %in% c("y","yes","true","1") ~ 1L,
+    y %in% c("n","no","false","0") ~ 0L,
+    TRUE ~ NA_integer_
+  )
+}
+
+# Special-grant flag: anything other than "No" => 1
+special_flag <- function(x) {
+  v <- str_to_lower(str_trim(as.character(x)))
+  case_when(
+    is.na(v) ~ 0L,         # treat NA as not special (edit if needed)
+    v == "no" ~ 0L,
+    TRUE ~ 1L
+  )
+}
+
+# Robust quality cleaner: blank-ish tokens -> NA; title-case valid levels
+clean_quality <- function(x) {
+  z <- as.character(x)
+  z <- str_trim(z)
+  # treat common blank/placeholder tokens as NA
+  z[z %in% c("", "-", "—", "--", "n/a", "N/A", "na", "NA", ".")] <- NA_character_
+  # standardize case for valid levels
+  z <- ifelse(is.na(z), NA_character_, str_to_title(z))
+  # keep only expected levels; anything else -> NA
+  z[!z %in% c("Low","Medium","High")] <- NA_character_
+  ordered(z, levels = c("Low","Medium","High"))
+}
+
+dat <- dat %>%
+  mutate(
+    round      = factor(round),
+    auditor    = factor(audit_staff),
+    onboarded      = yn_to_bool(onboarded_to_e_insight),
+    started_impl   = yn_to_bool(implementation_start_yn),
+    special_grant  = special_flag(alternative_evaluation_grantee_sda_or_tta_mcu_no),
+
+    demo_quality = clean_quality(demo_data_quality),
+    clin_quality = clean_quality(clinical_data_quality),
+
+    risk_score = ordered(as.character(risk_assessment_rating), levels = c("1","2","3"))
+  )
+
+```
+
+```{r}
+
+# -------- 3) Mutually exclusive PATHWAY --------
+# SpecialGrant → NotOnboarded → NotStarted → Eligible
+dat <- dat %>%
+  mutate(
+    pathway = case_when(
+      special_grant == 1L ~ "SpecialGrant",
+      onboarded     == 0L ~ "NotOnboarded",
+      started_impl  == 0L ~ "NotStarted",
+      TRUE               ~ "Eligible"
+    ),
+    pathway = factor(pathway, levels = c("Eligible","NotOnboarded","NotStarted","SpecialGrant"))
+  )
+
+# Quick sanity checks
+print(tabyl(dat, pathway))
+print(tabyl(dat, round, pathway))
+
+```
+```{r}
+# ---- Glue helpers (formatters & extractors) ----
+library(glue)
+library(dplyr)
+library(scales)
+
+# pretty formatters
+fmt_n    <- function(x) comma(x, accuracy = 1)
+fmt_pct  <- function(x, digits = 1) percent(x, accuracy = if (digits == 0) 1 else 0.1)
+fmt_p    <- function(p) ifelse(is.na(p), "—", ifelse(p < .001, "<0.001", sprintf("%.3f", p)))
+fmt_orci <- function(or, lcl, ucl, digits = 2) {
+  if (any(is.na(c(or, lcl, ucl)))) return("—")
+  sprintf("%.2f (95%% CI %.2f–%.2f)", or, lcl, ucl)
+}
+
+# safe getter for round counts (handles missing rounds)
+get_round_n <- function(dat, r) {
+  ct <- table(dat$round)
+  n  <- unname(ct[as.character(r)])
+  if (length(n) == 0 || is.na(n)) 0 else n
+}
+
+# OR + Wald CI from clm coefficient name (e.g., "round2" or "auditorAuditor A")
+or_from_clm <- function(model, term) {
+  cf <- coef(model)
+  V  <- try(vcov(model), silent = TRUE)
+  if (inherits(V, "try-error") || is.null(cf) || !term %in% names(cf)) {
+    return(list(OR = NA_real_, LCL = NA_real_, UCL = NA_real_, p = NA_real_))
+  }
+  est <- cf[term]
+  se  <- sqrt(diag(V))[term]
+  if (is.na(se)) return(list(OR = NA_real_, LCL = NA_real_, UCL = NA_real_, p = NA_real_))
+  z  <- est / se
+  p  <- 2 * pnorm(-abs(z))
+  list(OR = exp(est), LCL = exp(est - 1.96 * se), UCL = exp(est + 1.96 * se), p = p)
+}
+
+# Pull a predicted probability (+ CI) for a given round and category from an emmeans prob table
+get_pp_round <- function(pp_df, r, category = c("Low","Medium","High")) {
+  if (is.null(pp_df)) return(list(prob = NA_real_, lcl = NA_real_, ucl = NA_real_))
+  category <- match.arg(category)
+  # standardize column names if needed
+  nm <- names(pp_df)
+  if (!"lower.CL" %in% nm && "asymp.LCL" %in% nm) pp_df <- rename(pp_df, lower.CL = asymp.LCL)
+  if (!"upper.CL" %in% nm && "asymp.UCL" %in% nm) pp_df <- rename(pp_df, upper.CL = asymp.UCL)
+  if (!"category" %in% nm) {
+    alt <- c("response",".response","level","Level","Outcome","outcome")
+    hit <- alt[alt %in% nm][1]
+    if (!is.na(hit)) pp_df <- rename(pp_df, category = !!hit)
+  }
+  out <- pp_df %>% filter(round == r, as.character(category) == !!category)
+  if (nrow(out) == 0) return(list(prob = NA_real_, lcl = NA_real_, ucl = NA_real_))
+  list(prob = out$prob[1], lcl = out$lower.CL[1], ucl = out$upper.CL[1])
+}
+
+# Pull a predicted probability (+ CI) for a given auditor, within a round, from emmeans prob table
+get_pp_aud <- function(pp_df, r, auditor_name, category = c("Low","Medium","High")) {
+  if (is.null(pp_df)) return(list(prob = NA_real_, lcl = NA_real_, ucl = NA_real_))
+  category <- match.arg(category)
+  nm <- names(pp_df)
+  if (!"lower.CL" %in% nm && "asymp.LCL" %in% nm) pp_df <- rename(pp_df, lower.CL = asymp.LCL)
+  if (!"upper.CL" %in% nm && "asymp.UCL" %in% nm) pp_df <- rename(pp_df, upper.CL = asymp.UCL)
+  if (!"category" %in% nm) {
+    alt <- c("response",".response","level","Level","Outcome","outcome")
+    hit <- alt[alt %in% nm][1]
+    if (!is.na(hit)) pp_df <- rename(pp_df, category = !!hit)
+  }
+  out <- pp_df %>% filter(round == r, auditor == !!auditor_name, as.character(category) == !!category)
+  if (nrow(out) == 0) return(list(prob = NA_real_, lcl = NA_real_, ucl = NA_real_))
+  list(prob = out$prob[1], lcl = out$lower.CL[1], ucl = out$upper.CL[1])
+}
+
+# Get pathway share by round from comp_prop (a row-normalized table: round x pathway)
+get_pathway_share <- function(comp_prop, r, pathway) {
+  rn <- rownames(comp_prop)
+  cn <- colnames(comp_prop)
+  if (!as.character(r) %in% rn || !pathway %in% cn) return(NA_real_)
+  comp_prop[as.character(r), pathway]
+}
+
+# Missingness helpers from miss_by_round (data.frame)
+get_miss_pct <- function(df, r, which = c("demo","clin")) {
+  which <- match.arg(which)
+  col <- if (which == "demo") "demo_na_pct" else "clin_na_pct"
+  val <- df %>% filter(round == r) %>% pull(all_of(col))
+  if (length(val) == 0) NA_real_ else val[1]
+}
+
+```
+
+
+
+```{r}
+
+# -------- 4) Helper functions (tables & safe modeling) --------
+
+
+# Always ask emmeans to return confidence intervals
+emmeans::emm_options(infer = c(TRUE, TRUE))  # CIs for pairs & means
+
+# Standardize emmeans "probabilities by category" output for ordinal models
+standardize_emm_prob <- function(df, outcome_levels = c("Low","Medium","High")) {
+  nm <- names(df)
+  # Common alternatives used by different emmeans versions
+  candidates <- c("category", "response", ".response", "level", "Level", "outcome", "Outcome")
+  hit <- candidates[candidates %in% nm][1]
+  if (!is.na(hit)) {
+    df <- dplyr::rename(df, category = !!hit)
+  } else if (!"category" %in% nm) {
+    # If none of those exist, just create an empty 'category' so downstream code doesn't crash
+    df$category <- NA_character_
+  }
+  df <- df %>% dplyr::mutate(category = factor(as.character(category), levels = outcome_levels))
+  # Some emmeans builds name CI columns as asymp.LCL / asymp.UCL — normalize those too
+  if (!"lower.CL" %in% nm && "asymp.LCL" %in% nm) df <- dplyr::rename(df, lower.CL = asymp.LCL)
+  if (!"upper.CL" %in% nm && "asymp.UCL" %in% nm) df <- dplyr::rename(df, upper.CL = asymp.UCL)
+  if (!"lower.CL" %in% names(df)) df$lower.CL <- NA_real_
+  if (!"upper.CL" %in% names(df)) df$upper.CL <- NA_real_
+  if (!"prob" %in% names(df) && "p" %in% names(df)) df <- dplyr::rename(df, prob = p)
+  df
+}
+
+
+
+# Pretty composition table with gt (expects table/matrix of proportions)
+composition_gt <- function(tab, title = "Composition table") {
+  as.data.frame.matrix(tab) %>%
+    tibble::rownames_to_column("Row") %>%
+    gt() %>%
+    tab_header(title = title) %>%
+    fmt_percent(columns = where(is.numeric), decimals = 1)
+}
+
+# Wald CI OR table (no profiling; robust if profile fails)
+or_table_from_clm <- function(model, title = "Odds ratios") {
+  cf  <- coef(model)
+  V   <- try(vcov(model), silent = TRUE)
+  se  <- if (inherits(V, "try-error")) rep(NA_real_, length(cf)) else sqrt(diag(V))
+  out <- tibble(term = names(cf), estimate = cf, se = se) %>%
+    filter(!grepl("\\|", term)) %>%  # drop thresholds
+    mutate(
+      OR  = exp(estimate),
+      LCL = exp(estimate - 1.96 * se),
+      UCL = exp(estimate + 1.96 * se)
+    ) %>%
+    select(Term = term, OR, LCL, UCL)
+
+  gt(out) %>%
+    tab_header(title = title) %>%
+    fmt_number(columns = OR:UCL, decimals = 2)
+}
+
+# Emmeans predicted probabilities table
+pp_table <- function(emm_df, title = "Predicted probabilities") {
+  # Standardize CI column names if needed (some versions use asymp.LCL / asymp.UCL)
+  if (!"lower.CL" %in% names(emm_df) && "asymp.LCL" %in% names(emm_df)) {
+    emm_df <- dplyr::rename(emm_df, lower.CL = asymp.LCL)
+  }
+  if (!"upper.CL" %in% names(emm_df) && "asymp.UCL" %in% names(emm_df)) {
+    emm_df <- dplyr::rename(emm_df, upper.CL = asymp.UCL)
+  }
+  # If still missing, create empty columns so gt::fmt_percent() won’t fail
+  if (!"lower.CL" %in% names(emm_df)) emm_df$lower.CL <- NA_real_
+  if (!"upper.CL" %in% names(emm_df)) emm_df$upper.CL <- NA_real_
+
+  gt(emm_df) %>%
+    tab_header(title = title) %>%
+    fmt_percent(columns = c(prob, lower.CL, upper.CL), decimals = 1)
+}
+
+# Safe fit wrapper for clm that checks minimal variation
+safe_clm <- function(formula, data, outcome_name, group_name = "round") {
+  d <- data
+  # ensure we drop rows with NA outcome, and drop unused factor levels
+  d <- d %>% filter(!is.na(.data[[outcome_name]])) %>% droplevels()
+
+  # minimal checks
+  if (nrow(d) == 0) return(list(model = NULL, data = d,
+                                reason = paste0("No non-missing ", outcome_name, " rows.")))
+  if (dplyr::n_distinct(d[[outcome_name]]) < 2)
+    return(list(model = NULL, data = d,
+                reason = paste0("Only one ", outcome_name, " level present after NA drop.")))
+  # need >1 level of grouping factor (e.g., round) for that model
+  gf_levels <- try(levels(d[[group_name]]), silent = TRUE)
+  if (!inherits(gf_levels, "try-error") && length(gf_levels) < 2 &&
+      n_distinct(d[[group_name]]) < 2)
+    return(list(model = NULL, data = d,
+                reason = paste0("Only one level of ", group_name, " present after NA drop.")))
+
+  # try to fit
+  fit <- try(clm(formula, data = d), silent = TRUE)
+  if (inherits(fit, "try-error"))
+    return(list(model = NULL, data = d, reason = as.character(fit)))
+
+  list(model = fit, data = d, reason = NULL)
+}
+
+```
+
+```{r}
+# -------- 5) Composition diagnostics (prerequisites) --------
+# By round: does the distribution of pathway differ?
+comp_prop <- prop.table(table(dat$round, dat$pathway), 1)
+print(composition_gt(comp_prop, "Pathway composition by round (row %)"))
+comp_test <- suppressWarnings(chisq.test(table(dat$round, dat$pathway)))
+print(comp_test)
+
+# Within Round 2 & 5: pathway by auditor (row %)
+for (r in c("2","5")) {
+  d_r <- dplyr::filter(dat, round == r)
+  if (nrow(d_r) > 0 && dplyr::n_distinct(d_r$auditor) > 1) {
+    prop_tab <- prop.table(table(d_r$auditor, d_r$pathway), 1)
+    print(composition_gt(prop_tab, paste0("Pathway by auditor — Round ", r, " (row %)")))
+  }
+}
+
+# Missing-rate diagnostics among Eligible (this is where your blank ratings live)
+eligible_all <- filter(dat, pathway == "Eligible")
+miss_diag <- eligible_all %>%
+  summarize(
+    n = n(),
+    demo_na_n = sum(is.na(demo_quality)),
+    demo_na_pct = mean(is.na(demo_quality)),
+    clin_na_n = sum(is.na(clin_quality)),
+    clin_na_pct = mean(is.na(clin_quality))
+  )
+print(miss_diag)
+
+# By round
+miss_by_round <- eligible_all %>%
+  group_by(round) %>%
+  summarize(
+    n = n(),
+    demo_na_n = sum(is.na(demo_quality)),
+    demo_na_pct = mean(is.na(demo_quality)),
+    clin_na_n = sum(is.na(clin_quality)),
+    clin_na_pct = mean(is.na(clin_quality)),
+    .groups = "drop"
+  )
+print(miss_by_round)
+
+```
+
+
+```{r}
+
+# -------- 6) QUALITY models (Eligible only; outcome-specific frames) --------
+eligible_demo <- eligible_all %>% filter(!is.na(demo_quality)) %>% droplevels()
+eligible_clin <- eligible_all %>% filter(!is.na(clin_quality)) %>% droplevels()
+
+# ---- Round effects
+fit_demo_round <- safe_clm(demo_quality ~ round, eligible_demo, "demo_quality", "round")
+fit_clin_round <- safe_clm(clin_quality  ~ round, eligible_clin, "clin_quality", "round")
+
+if (is.null(fit_demo_round$reason)) {
+  m_demo_round <- fit_demo_round$model
+  cat("\n== DEMO quality by Round (Eligible only) ==\n")
+  print(summary(m_demo_round))
+  # OR table (Wald CI)
+  print(or_table_from_clm(m_demo_round, "Odds ratios for Round — DEMO quality (Eligible only)"))
+  # Predicted probabilities
+  pp_demo_round <- as.data.frame(emmeans(m_demo_round, ~ round, mode = "prob", infer = c(TRUE, TRUE)))
+  print(pp_table(pp_demo_round, "Predicted probabilities by Round — DEMO quality (Eligible only)"))
+} else {
+  message("Skipping DEMO ~ round model: ", fit_demo_round$reason)
+}
+
+if (is.null(fit_clin_round$reason)) {
+  m_clin_round <- fit_clin_round$model
+  cat("\n== Clinical quality by Round (Eligible only) ==\n")
+  print(summary(m_clin_round))
+  print(or_table_from_clm(m_clin_round, "Odds ratios for Round — Clinical quality (Eligible only)"))
+  pp_clin_round <- as.data.frame(emmeans(m_clin_round, ~ round, mode = "prob", infer = c(TRUE, TRUE)))
+  print(pp_table(pp_clin_round, "Predicted probabilities by Round — Clinical quality (Eligible only)"))
+} else {
+  message("Skipping Clinical ~ round model: ", fit_clin_round$reason)
+}
+
+# ---- Within-round auditor effects (Rounds 2 & 5)
+pp_demo_a_all <- NULL
+pp_clin_a_all <- NULL
+
+for (r in c("2","5")) {
+  e_demo_r <- eligible_demo %>% filter(round == r) %>% droplevels()
+  e_clin_r <- eligible_clin %>% filter(round == r) %>% droplevels()
+
+  # DEMO
+  if (nrow(e_demo_r) > 0 && n_distinct(e_demo_r$auditor) > 1 && n_distinct(e_demo_r$demo_quality) > 1) {
+    fit_demo_a <- safe_clm(demo_quality ~ auditor, e_demo_r, "demo_quality", "auditor")
+    if (is.null(fit_demo_a$reason)) {
+      m_demo_a <- fit_demo_a$model
+      cat("\n== Auditor effects, Round ", r, " — DEMO (Eligible only) ==\n", sep = "")
+      print(summary(m_demo_a))
+      print(or_table_from_clm(m_demo_a, paste0("ORs for Auditor — DEMO quality (Round ", r, ")")))
+      tmp <- as.data.frame(emmeans(m_demo_a, ~ auditor, mode = "prob", infer = c(TRUE, TRUE))) %>% mutate(round = r)
+      pp_demo_a_all <- bind_rows(pp_demo_a_all, tmp)
+      print(pp_table(tmp, paste0("Predicted probabilities by Auditor — DEMO (Round ", r, ")")))
+    } else {
+      message("Skipping DEMO ~ auditor (Round ", r, "): ", fit_demo_a$reason)
+    }
+  } else {
+    message("Insufficient variation for DEMO auditor model in Round ", r,
+            " (need ≥2 auditors and ≥2 DEMO levels).")
+  }
+
+  # CLIN
+  if (nrow(e_clin_r) > 0 && n_distinct(e_clin_r$auditor) > 1 && n_distinct(e_clin_r$clin_quality) > 1) {
+    fit_clin_a <- safe_clm(clin_quality ~ auditor, e_clin_r, "clin_quality", "auditor")
+    if (is.null(fit_clin_a$reason)) {
+      m_clin_a <- fit_clin_a$model
+      cat("\n== Auditor effects, Round ", r, " — Clinical (Eligible only) ==\n", sep = "")
+      print(summary(m_clin_a))
+      print(or_table_from_clm(m_clin_a, paste0("ORs for Auditor — Clinical quality (Round ", r, ")")))
+      tmp <- as.data.frame(emmeans(m_clin_a, ~ auditor, mode = "prob", infer = c(TRUE, TRUE))) %>% mutate(round = r)
+      pp_clin_a_all <- bind_rows(pp_clin_a_all, tmp)
+      print(pp_table(tmp, paste0("Predicted probabilities by Auditor — Clinical (Round ", r, ")")))
+    } else {
+      message("Skipping Clinical ~ auditor (Round ", r, "): ", fit_clin_a$reason)
+    }
+  } else {
+    message("Insufficient variation for Clinical auditor model in Round ", r,
+            " (need ≥2 auditors and ≥2 Clinical levels).")
+  }
+}
+
+```
+
+```{r}
+
+# -------- 7) Risk: Decomposition view --------
+# Structural component — shares of pathways by round and by auditor (R2/R5)
+print(prop.table(table(dat$round, dat$pathway), 1))
+for (r in c("2","5")) {
+  d_r <- filter(dat, round == r)
+  if (n_distinct(d_r$auditor) > 1) {
+    cat("\n== Pathway shares by auditor (Round ", r, ") ==\n", sep = "")
+    print(prop.table(table(d_r$auditor, d_r$pathway), 1))
+  }
+}
+
+```
+
+```{r}
+
+# -------- 8) ggplot figures --------
+
+# A) Pathway composition by round (stacked, percent)
+plot_pathway_round <- dat %>%
+  count(round, pathway, name = "n") %>%
+  group_by(round) %>%
+  mutate(p = n / sum(n)) %>%
+  ggplot(aes(x = round, y = p, fill = pathway)) +
+  geom_col() +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(x = "Round", y = "Percent of grantees", fill = "Pathway",
+       title = "Pathway composition by round") +
+  theme_minimal(base_size = 12)
+
+# B) Pathway composition by auditor within R2 & R5 (faceted)
+plot_pathway_aud <- dat %>%
+  filter(round %in% c("2","5")) %>%
+  count(round, auditor, pathway, name = "n") %>%
+  group_by(round, auditor) %>%
+  mutate(p = n / sum(n)) %>%
+  ggplot(aes(x = auditor, y = p, fill = pathway)) +
+  geom_col(position = "fill") +
+  facet_wrap(~ round, scales = "free_x") +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(x = "Auditor", y = "Percent of grantees", fill = "Pathway",
+       title = "Pathway composition by auditor (Rounds 2 & 5)") +
+  theme_minimal(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# C) Observed distributions (Eligible only): DEMO & Clinical by round
+plot_obs_demo <- eligible_demo %>%
+  count(round, demo_quality, name = "n") %>%
+  group_by(round) %>%
+  mutate(p = n / sum(n)) %>%
+  ggplot(aes(x = round, y = p, fill = demo_quality)) +
+  geom_col() +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(x = "Round", y = "Percent", fill = "DEMO quality",
+       title = "Observed DEMO quality distribution (Eligible only)") +
+  theme_minimal(base_size = 12)
+
+plot_obs_clin <- eligible_clin %>%
+  count(round, clin_quality, name = "n") %>%
+  group_by(round) %>%
+  mutate(p = n / sum(n)) %>%
+  ggplot(aes(x = round, y = p, fill = clin_quality)) +
+  geom_col() +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(x = "Round", y = "Percent", fill = "Clinical quality",
+       title = "Observed Clinical quality distribution (Eligible only)") +
+  theme_minimal(base_size = 12)
+
+# D) Model-based predicted probabilities by round (Eligible only)
+if (exists("pp_demo_round")) {
+  pp_demo_round <- standardize_emm_prob(pp_demo_round, c("Low","Medium","High"))
+  plot_pp_demo_round <- pp_demo_round %>%
+    ggplot(aes(x = round, y = prob, group = category)) +
+    geom_point(position = position_dodge(width = 0.4)) +
+    geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL),
+                  position = position_dodge(width = 0.4), width = 0.2) +
+    geom_line(position = position_dodge(width = 0.4)) +
+    facet_wrap(~ category) +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+    labs(x = "Round", y = "Predicted probability",
+         title = "Predicted probabilities by Round — DEMO quality (Eligible only)") +
+    theme_minimal(base_size = 12)
+}
+
+if (exists("pp_clin_round")) {
+  pp_clin_round <- standardize_emm_prob(pp_clin_round, c("Low","Medium","High"))
+  plot_pp_clin_round <- pp_clin_round %>%
+    ggplot(aes(x = round, y = prob, group = category)) +
+    geom_point(position = position_dodge(width = 0.4)) +
+    geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL),
+                  position = position_dodge(width = 0.4), width = 0.2) +
+    geom_line(position = position_dodge(width = 0.4)) +
+    facet_wrap(~ category) +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+    labs(x = "Round", y = "Predicted probability",
+         title = "Predicted probabilities by Round — Clinical quality (Eligible only)") +
+    theme_minimal(base_size = 12)
+}
+
+
+# E) Predicted probabilities by auditor within round (R2 & R5)
+if (!is.null(pp_demo_a_all)) {
+  pp_demo_a_all <- standardize_emm_prob(pp_demo_a_all, c("Low","Medium","High"))
+  plot_pp_demo_aud <- pp_demo_a_all %>%
+    ggplot(aes(x = auditor, y = prob, group = category)) +
+    geom_point(position = position_dodge(width = 0.6)) +
+    geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL),
+                  position = position_dodge(width = 0.6), width = 0.2) +
+    geom_line(position = position_dodge(width = 0.6)) +
+    facet_wrap(round ~ category, scales = "free_x") +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+    labs(x = "Auditor", y = "Predicted probability",
+         title = "Predicted probabilities by Auditor — DEMO quality (Eligible only)") +
+    theme_minimal(base_size = 12) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+
+if (!is.null(pp_clin_a_all)) {
+  pp_clin_a_all <- standardize_emm_prob(pp_clin_a_all, c("Low","Medium","High"))
+  plot_pp_clin_aud <- pp_clin_a_all %>%
+    ggplot(aes(x = auditor, y = prob, group = category)) +
+    geom_point(position = position_dodge(width = 0.6)) +
+    geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL),
+                  position = position_dodge(width = 0.6), width = 0.2) +
+    geom_line(position = position_dodge(width = 0.6)) +
+    facet_wrap(round ~ category, scales = "free_x") +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+    labs(x = "Auditor", y = "Predicted probability",
+         title = "Predicted probabilities by Auditor — Clinical quality (Eligible only)") +
+    theme_minimal(base_size = 12) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+
+
+if (!is.null(pp_demo_a_all)) plot_pp_demo_aud <- pp_aud_plot_fun(pp_demo_a_all, "DEMO")
+if (!is.null(pp_clin_a_all)) plot_pp_clin_aud <- pp_aud_plot_fun(pp_clin_a_all, "Clinical")
+
+```
+
+```{r}
+
+# ---- Bind commonly used numbers for glue ----
+N_total <- nrow(dat)
+N_r1 <- get_round_n(dat, "1"); N_r2 <- get_round_n(dat, "2")
+N_r4 <- get_round_n(dat, "4"); N_r5 <- get_round_n(dat, "5")
+
+# Example ORs for DEMO round contrasts vs baseline (adjust term names to your model)
+# These assume the reference round is "1" and terms look like "round2","round4","round5".
+OR_demo_r2 <- or_from_clm(m_demo_round, "round2")
+OR_demo_r4 <- or_from_clm(m_demo_round, "round4")
+OR_demo_r5 <- or_from_clm(m_demo_round, "round5")
+
+# Example ORs for Clinical round contrasts
+OR_clin_r2 <- or_from_clm(m_clin_round, "round2")
+OR_clin_r4 <- or_from_clm(m_clin_round, "round4")
+OR_clin_r5 <- or_from_clm(m_clin_round, "round5")
+
+# Predicted probabilities (by round) for the High category
+pp_demo_r1_H <- get_pp_round(pp_demo_round, r = "1", category = "High")
+pp_demo_r2_H <- get_pp_round(pp_demo_round, r = "2", category = "High")
+pp_demo_r4_H <- get_pp_round(pp_demo_round, r = "4", category = "High")
+pp_demo_r5_H <- get_pp_round(pp_demo_round, r = "5", category = "High")
+
+pp_clin_r1_H <- get_pp_round(pp_clin_round, r = "1", category = "High")
+pp_clin_r2_H <- get_pp_round(pp_clin_round, r = "2", category = "High")
+pp_clin_r4_H <- get_pp_round(pp_clin_round, r = "4", category = "High")
+pp_clin_r5_H <- get_pp_round(pp_clin_round, r = "5", category = "High")
+
+# Pathway shares by round (from comp_prop row-normalized table)
+share_not_onboarded_r1 <- get_pathway_share(comp_prop, "1", "NotOnboarded")
+share_not_onboarded_r2 <- get_pathway_share(comp_prop, "2", "NotOnboarded")
+share_not_onboarded_r4 <- get_pathway_share(comp_prop, "4", "NotOnboarded")
+share_not_onboarded_r5 <- get_pathway_share(comp_prop, "5", "NotOnboarded")
+
+share_not_started_r1 <- get_pathway_share(comp_prop, "1", "NotStarted")
+share_not_started_r2 <- get_pathway_share(comp_prop, "2", "NotStarted")
+share_not_started_r4 <- get_pathway_share(comp_prop, "4", "NotStarted")
+share_not_started_r5 <- get_pathway_share(comp_prop, "5", "NotStarted")
+
+share_special_r1 <- get_pathway_share(comp_prop, "1", "SpecialGrant")
+share_special_r2 <- get_pathway_share(comp_prop, "2", "SpecialGrant")
+share_special_r4 <- get_pathway_share(comp_prop, "4", "SpecialGrant")
+share_special_r5 <- get_pathway_share(comp_prop, "5", "SpecialGrant")
+
+# Missingness among Eligible by round
+miss_demo_r1 <- get_miss_pct(miss_by_round, "1", "demo")
+miss_demo_r2 <- get_miss_pct(miss_by_round, "2", "demo")
+miss_demo_r4 <- get_miss_pct(miss_by_round, "4", "demo")
+miss_demo_r5 <- get_miss_pct(miss_by_round, "5", "demo")
+
+miss_clin_r1 <- get_miss_pct(miss_by_round, "1", "clin")
+miss_clin_r2 <- get_miss_pct(miss_by_round, "2", "clin")
+miss_clin_r4 <- get_miss_pct(miss_by_round, "4", "clin")
+miss_clin_r5 <- get_miss_pct(miss_by_round, "5", "clin")
+
+
+```
+
+
+```{r}
+
+# -------- 9) Print / save outputs --------
+print(plot_pathway_round)
+print(plot_pathway_aud)
+print(plot_obs_demo)
+print(plot_obs_clin)
+if (exists("plot_pp_demo_round")) print(plot_pp_demo_round)
+if (exists("plot_pp_clin_round")) print(plot_pp_clin_round)
+if (exists("plot_pp_demo_aud"))  print(plot_pp_demo_aud)
+if (exists("plot_pp_clin_aud"))  print(plot_pp_clin_aud)
+
+# Example saving:
+# ggsave("pathway_by_round.png", plot_pathway_round, width = 8, height = 5, dpi = 300)
+# ggsave("demo_pred_round.png",  plot_pp_demo_round, width = 9, height = 5, dpi = 300)
+# ggsave("clin_pred_round.png",  plot_pp_clin_round, width = 9, height = 5, dpi = 300)
+# if (exists("plot_pp_demo_aud")) ggsave("demo_pred_aud.png", plot_pp_demo_aud, width = 10, height = 6, dpi = 300)
+# if (exists("plot_pp_clin_aud")) ggsave("clin_pred_aud.png", plot_pp_clin_aud, width = 10, height = 6, dpi = 300)
+
+
+```
+
+```{r}
+
+# -------- 10) Results write up --------
+
+#Sample/Coverage Sentence #
+glue("We reviewed {fmt_n(N_total)} grantees across Round 1 (n={fmt_n(N_r1)}), Round 2 (n={fmt_n(N_r2)}), Round 4 (n={fmt_n(N_r4)}), and Round 5 (n={fmt_n(N_r5)}).")
+
+#Pathway mix by round #
+glue("The share NotOnboarded was {fmt_pct(share_not_onboarded_r1,0)} in R1, {fmt_pct(share_not_onboarded_r2,0)} in R2, {fmt_pct(share_not_onboarded_r4,0)} in R4, and {fmt_pct(share_not_onboarded_r5,0)} in R5.")
+
+#Missingness among eligible #
+glue("Among Eligible, DEMO missingness ranged from {fmt_pct(miss_demo_r1,0)} (R1) to {fmt_pct(miss_demo_r5,0)} (R5), while Clinical missingness ranged from {fmt_pct(miss_clin_r1,0)} (R1) to {fmt_pct(miss_clin_r5,0)} (R5).")
+
+#DEMO Quality by Round: Predicted HIGH #
+glue("Predicted High DEMO was {fmt_pct(pp_demo_r1_H$prob,0)} in R1 (95% CI {fmt_pct(pp_demo_r1_H$lcl,0)}–{fmt_pct(pp_demo_r1_H$ucl,0)}), rising to {fmt_pct(pp_demo_r5_H$prob,0)} in R5 (95% CI {fmt_pct(pp_demo_r5_H$lcl,0)}–{fmt_pct(pp_demo_r5_H$ucl,0)}).")
+
+#DEMO Round Contrast Odds Ratio_Round 2 vs Round 1 #
+glue("Compared with R1, the cumulative odds of higher DEMO quality in R2 were {fmt_orci(OR_demo_r2$OR, OR_demo_r2$LCL, OR_demo_r2$UCL)} (p = {fmt_p(OR_demo_r2$p)}).")
+
+#Clinical Quality by Round: Predicted HIGH #
+glue("Predicted High Clinical was {fmt_pct(pp_clin_r2_H$prob,0)} in R2 and {fmt_pct(pp_clin_r1_H$prob,0)} in R1.")
+
+
+
+###############################################
+# End of script
+###############################################
+
+```
+
