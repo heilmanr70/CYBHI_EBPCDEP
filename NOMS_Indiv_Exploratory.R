@@ -29,6 +29,33 @@ for (i in 1:length(qlist)){
   colnames(NOMS_Ind_clean)[dim(NOMS_Ind_clean)[2]] <- paste("SCR.",qlist[i],sep="")
 }
 
+# Calculate putative NOMS Score
+NOMS_Ind_clean$NOMSRawScore <- rep(NA,dim(NOMS_Ind_data)[1])
+Scorecols <- grepl( "SCR.", names(NOMS_Ind_clean), fixed = TRUE)
+tab2 <- rbind(names(NOMS_Ind_clean),Scorecols) # view this table to check correct columns selected
+
+NOMS_Ind_clean[,Scorecols]<-lapply(NOMS_Ind_clean[,Scorecols],as.numeric)
+NOMS_Ind_clean$NOMSRawScore  <- rowSums(NOMS_Ind_clean[,Scorecols],na.rm=T) # sum of individual scores
+
+# Test for valid assessment
+NOMS_Ind_clean$NOMSValid <- rep(0,dim(NOMS_Ind_clean)[1])
+NOMS_Ind_clean$NOMSValid[!is.na(rowSums(NOMS_Ind_clean[,Scorecols]))] <- 1 # <- 1 for a valid assessment, leave as zero if invalid - NB: eInsight excluded any assessment with a single missing item.
+
+NOMS_Ind_clean$NOMSScore <- rep(NA,dim(NOMS_Ind_clean)[1])
+NOMS_Ind_clean$NOMSScore[NOMS_Ind_clean$NOMSValid==1] <- NOMS_Ind_clean$NOMSRawScore[NOMS_Ind_clean$NOMSValid==1] 
+
+# Check response distribution -> no bullshit numbers, only valid ones.
+hist(NOMS_Ind_clean$NOMSScore)
+
+# Calculate Positive Change (Y/N) 
+# Connect initial and follow-up scores by client to check positive change calculations
+
+NOMS_Ind_clean$Valid_INIT <- rep(1,dim(NOMS_Ind_clean)[1])# Select all lines which constitute a valid NOMS Initial score
+NOMS_Ind_clean$Valid_INIT[which(is.na(NOMS_Ind_clean$NOMSScore))] <- 0
+NOMS_Ind_clean$Valid_INIT[which(NOMS_Ind_clean$Collection!="Initial")] <- 0
+
+
+
 
 
 
@@ -41,38 +68,16 @@ for (i in 1:length(qlist)){
 
 
 
-# Calculate putative NOMS Score
-NOMS_Ind_clean$NOMSRawScore <- rep(NA,dim(NOMS_Ind_data)[1])
-Scorecols <- grepl( "SCR. ", names(NOMS_Ind_clean), fixed = TRUE)
-tab2 <- rbind(names(NOMS_Ind_clean),Scorecols) # view this table to check correct columns selected
 
-NOMS_Ind_clean[,Scorecols]<-lapply(NOMS_Ind_clean[,Scorecols],as.numeric)
-NOMS_Ind_clean$NOMSRawScore  <- rowSums(NOMS_Ind_clean[,Scorecols]) # sum of individual scores
-
-# Test for valid assessment
-NOMS_Ind_clean$NOMSValid <- rep(0,dim(NOMS_Ind_clean)[1])
-NOMS_Ind_clean$NOMSValid[!is.na(rowSums(NOMS_Ind_clean[,Scorecols]))] <- 1 # <- 1 for a valid assessment, leave as zero if invalid - NB: Steve excluded any assessment with a single missing item.
-
-NOMS_Ind_clean$NOMSScore <- rep(NA,dim(NOMS_Ind_clean)[1])
-NOMS_Ind_clean$NOMSScore[NOMS_Ind_clean$NOMSValid==1] <- NOMS_Ind_clean$NOMSRawScore[NOMS_Ind_clean$NOMSValid==1] # NOTE: Check response distribution -> no bullshit numbers, only valid ones.
-
-# Calculate Positive Change (Y/N) 
-# Next step will be to connect initial and follow-up scores by client to check positive change calculations
-
-NOMS_Ind_clean$Valid_INIT <- rep(1,dim(NOMS_Ind_clean)[1])# Select all lines which constitute a valid NOMS Initial score
-NOMS_Ind_clean$Valid_INIT[which(is.na(NOMS_Ind_clean$NOMSScore))] <- 0
-NOMS_Ind_clean$Valid_INIT[which(NOMS_Ind_clean$Collection!="NOMS Self-Report Version Initial")] <- 0
-
-CIDS <- NOMS_Ind_clean$`Client ID`[NOMS_Ind_clean$Valid_INIT==1]
-NOMS_POS <- data.frame(Client_ID=CIDS) # SEEMS plausible, has not been checked yet
+NOMS_POS <- data.frame(System.ID=NOMS_Ind_clean$System.ID[NOMS_Ind_clean$Valid_INIT==1])
 NOMS_POS$init_score <- NOMS_Ind_clean$NOMSScore[NOMS_Ind_clean$Valid_INIT==1] # Initial scores
 NOMS_POS$followup <- NA
 
 # For each client ID in this list, gather the other valid scores
-#for (i in 1:length(NOMS_POS$Client_ID)){
+#for (i in 1:length(NOMS_POS$System.ID)){
 for (i in 1:2){
-  subset_i <- NOMS_Ind_clean[which(NOMS_Ind_clean$`Client ID`==NOMS_POS$Client_ID[i]),]
-  print(subset_i[,3:6,10])
+  subset_i <- NOMS_Ind_clean[which(NOMS_Ind_clean$System.ID==NOMS_POS$System.ID[i]),]
+  print(subset_i[,3:10,10])
   print(max(subset_i$Date))
   subset_i <- subset_i[subset_i$NOMSValid==1,]
   last_i <- subset_i[which(subset_i$Date == max(subset_i$Date)),]
