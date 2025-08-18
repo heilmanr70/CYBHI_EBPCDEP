@@ -1,4 +1,4 @@
-NOMS_Ind_data <- read.csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/Individual Item/NOMS_indiv_2025-08-07.csv",header=T,skip=1)
+NOMS_Ind_data <- read.csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/Individual Item/NOMS_indiv_2025-08-19.csv",header=T,skip=1)
 newnames <- read.csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/Individual Item/NOMS_indiv_2025-08-07.csv",header=F)[1,]
 
 tab <- rbind(newnames,colnames(NOMS_Ind_data))
@@ -75,10 +75,10 @@ NOMS_POS$followup <- NA
 
 # For each client ID in this list, gather the other valid scores
 #for (i in 1:length(NOMS_POS$System.ID)){
-for (i in 1:2){
+for (i in 1:10){
   subset_i <- NOMS_Ind_clean[which(NOMS_Ind_clean$System.ID==NOMS_POS$System.ID[i]),]
-  print(subset_i[,3:10,10])
-  print(max(subset_i$Date))
+  print(subset_i[,3:10])
+  #print(max(subset_i$Date))
   subset_i <- subset_i[subset_i$NOMSValid==1,]
   last_i <- subset_i[which(subset_i$Date == max(subset_i$Date)),]
   print(last_i[,3:6])
@@ -90,3 +90,8 @@ for (i in 1:2){
 # Compare the numerical change and report by client ID
 # Add the e-insight pos change value
 # Compare the two scores for agreement
+
+
+
+# NOTE: Next do bit of analysis of completeness vs incompleteness.
+# E.g. Percentage complete by grantee; percentage with at least Q1 answered; percentage that are mostly compliant; percentage with at least one domain other than Q1 complete etc.
