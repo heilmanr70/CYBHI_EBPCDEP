@@ -1,5 +1,5 @@
 NOMS_Ind_data <- read.csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/Individual Item/NOMS_indiv_2025-08-19.csv",header=T,skip=1)
-newnames <- read.csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/Individual Item/NOMS_indiv_2025-08-07.csv",header=F)[1,]
+newnames <- read.csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/Individual Item/NOMS_indiv_2025-08-19.csv",header=F)[1,]
 
 tab <- rbind(newnames,colnames(NOMS_Ind_data))
 
@@ -54,36 +54,38 @@ NOMS_Ind_clean$Valid_INIT <- rep(1,dim(NOMS_Ind_clean)[1])# Select all lines whi
 NOMS_Ind_clean$Valid_INIT[which(is.na(NOMS_Ind_clean$NOMSScore))] <- 0
 NOMS_Ind_clean$Valid_INIT[which(NOMS_Ind_clean$Collection!="Initial")] <- 0
 
-
-
-
-
-
-
-#### Need to check code below this point still works
-
-
-
-
-
-
-
-
 NOMS_POS <- data.frame(System.ID=NOMS_Ind_clean$System.ID[NOMS_Ind_clean$Valid_INIT==1])
 NOMS_POS$init_score <- NOMS_Ind_clean$NOMSScore[NOMS_Ind_clean$Valid_INIT==1] # Initial scores
 NOMS_POS$followup <- NA
 
 # For each client ID in this list, gather the other valid scores
-#for (i in 1:length(NOMS_POS$System.ID)){
-for (i in 1:10){
+
+
+# CURRENTLY THIS FOR-LOOP BREAKS WHEN THERE IS NO FOLLOW-UP FOR A PARTICULAR CLIENT. NEED TO GET IT TO JUST RETURN NA IN THAT INSTANCE
+
+
+for (i in 1:length(NOMS_POS$System.ID)){
+# for (i in 1:10){
   subset_i <- NOMS_Ind_clean[which(NOMS_Ind_clean$System.ID==NOMS_POS$System.ID[i]),]
-  print(subset_i[,3:10])
+  #print(subset_i[,3:10])
   #print(max(subset_i$Date))
   subset_i <- subset_i[subset_i$NOMSValid==1,]
+  subset_i <- subset_i[subset_i$Collection!="Initial",]
   last_i <- subset_i[which(subset_i$Date == max(subset_i$Date)),]
-  print(last_i[,3:6])
-  NOMS_POS$followup[i] <- last_i$NOMSScore
+  #print(last_i[,3:10])
+  #print(last_i$NOMSScore)
+  #print('NEXT')
+  if(dim(last_i)[1]==0){
+    NOMS_POS$followup[i] <- NA
+  }
+  else{
+    NOMS_POS$followup[i] <- last_i$NOMSScore
+  }
 }
+
+NOMS_POS$Pos.Change <- NA
+NOMS_POS$Pos.Change[which(NOMS_POS$followup>NOMS_POS$init_score)] <- 1
+NOMS_POS$Pos.Change[which(NOMS_POS$followup<=NOMS_POS$init_score)] <- 0
 
 # If there are none - NA
 # If there is at least one, select the latest in time
