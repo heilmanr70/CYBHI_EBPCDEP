@@ -41,6 +41,19 @@ child_youth <- all_data %>%
          trimmed_pre_assessment_name == "Pediatric")
 ```
 
+
+#making PSC table for Natalie
+```{r}
+psc <- all_data %>% 
+  filter(pre_assessment_name == "Pediatric Symptom Checklist (PSC)")
+
+psc_summary <- psc %>%
+  group_by(provider, provider_id, location) %>%
+  summarise(num_clients = n_distinct(client_id), .groups = "drop")  
+
+write_csv(psc_summary, "/Users/cristin/Downloads/psc_summary.csv")
+```
+
 ##Checking missing data
 
 How much data is missing? 
