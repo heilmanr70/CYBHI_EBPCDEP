@@ -175,6 +175,7 @@ chisq.test(data201$gender_identity, data201$positive_outcomes)
 model <- glm(positive_outcomes ~ gender_identity, data = data201, family = "binomial")
 summary(model)
 ```
+
 ##Sexual orientation
 ```{r}
 sex_orientation <- data201 %>% 
