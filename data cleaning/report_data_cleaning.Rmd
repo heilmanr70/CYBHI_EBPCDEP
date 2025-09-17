@@ -1,7 +1,7 @@
 ---
-title: "Annual Report Data Analysis - Cleaning Data"
+title: "Report Data Cleaning"
 author: "Cristin Young"
-date: "2025-05-13"
+date: "2025-09-17"
 output:
   html_document:
     df_print: paged
@@ -9,59 +9,52 @@ output:
   html_notebook: default
 ---
 
-This notebook cleans up demographic and discharge data.
+This notebook cleans up demographic and discharge data, and provides clean csv's from which to do the analyses for reports.
 
 ACTION ITEMS
-[x] which clients have >1 outcome measure?  --> n = 391 (row 83)
-[x] did they do them one after the other or all at the same time? 
 [ ] make sure we filter to last follow-up time point (filter to post_time_point == ??)
-[ ] nrow(dup_clients_diff_time_data) + nrow(dup_clients_same_time_data) should equal nrow(dup_clients). It doesn't -- why??
+[ ] nrow(dup_clients_diff_time) + nrow(dup_clients_same_time) should equal nrow(dup_clients). It doesn't -- why??
 
-#Read in data
+# Read in data
 ```{r}
 library(tidyverse)
 library(janitor)
 library(gt)
 
-discharge_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Dishcharge_Report.xlsx", na = c("-", "", "NA"))
-demographic_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Client_Demographics.xlsx", na = c("-", "", "NA"))
-demographic_data_updated <- readxl::read_xlsx("/Users/cristin/Downloads/4df7eac3-9fe9-4fd7-8f9c-103c5d002612.xlsx", na = c("-", "", "NA"))
+discharge_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Discharge Report Export/2025-09-17-discharge_report.xlsx", na = c("-", "", "NA", "N/A")) %>% 
+  janitor::clean_names()
+demographic_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Admin Report Exports/2025-09-17-client_demographics.xlsx", na = c("-", "", "NA", "N/A")) %>% 
+  janitor::clean_names()
 
 # discharge_data <- readxl::read_xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Dishcharge_Report.xlsx", na = c("-", "", "NA"))
 # demographic_data <- readxl::read_xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Client_Demographics.xlsx", na = c("-", "", "NA"))
 
-length(discharge_data$`Client ID`)
-length(demographic_data$`Client ID`)
-length(demographic_data_updated$`Client ID`)
-length(demographic_data_filtered$client_id)
+length(discharge_data$client_id)
+length(demographic_data$client_id)
 ```
 
-#Clean up demographic data
+# DEMOGRAPHIC DATA - Cleaning
 ```{r}
-#get rid of demo data
-demographic_data_filtered <- demographic_data_updated %>%
-  filter(!if_any(c(`Provider ID`, `Client ID`), ~ str_detect(as.character(.x), "DEMO"))) %>% 
-  clean_names()
+# get rid of demo data
+demographic_data_filtered <- demographic_data %>%
+  filter(!if_any(c(provider_id, client_id), ~ str_detect(as.character(.x), "DEMO")))
 
-demographic_data_filtered_updated <- demographic_data_updated %>%
-  filter(!if_any(c(`Provider ID`, `Client ID`), ~ str_detect(as.character(.x), "DEMO"))) %>% 
-  clean_names()
+# are there unique client IDs? 
+length(unique(demographic_data_filtered$client_id)) == nrow(demographic_data_filtered)
 
-#are there unique client IDs? 
-length(unique(demographic_data_filtered_updated$client_id)) == nrow(demographic_data_filtered_updated)
-
-#which IDs have been repeated and how many times? 
-duplicates <- demographic_data_filtered_updated %>% 
+# which IDs have been repeated and how many times? 
+duplicates <- demographic_data_filtered %>% 
   group_by(client_id) %>% 
    filter(n() > 1) %>%
   tally() 
 
-#how many rows are duplicated?
+# how many rows are duplicated?
 duplicates %>% 
   summarise(total_duplicated = sum(n))
 
-#what data is repeating for each client?
-demographic_data_filtered_updated %>%
+# what data is repeating for each client?
+# appears to just be language selected? 
+demographic_data_filtered %>%
   group_by(client_id) %>%
   filter(n() > 1) %>%
   summarise(across(everything(), ~ {
@@ -70,12 +63,12 @@ demographic_data_filtered_updated %>%
   }), .groups = "drop") %>%
   select(client_id, where(~ any(!is.na(.))))
 
-duplicate_list <- demographic_data_filtered_updated %>% 
+duplicate_list <- demographic_data_filtered %>% 
   filter(client_id %in% duplicates$client_id)
 
 write_csv(duplicate_list, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/duplicate_list.csv")
 
-#for now, drop the 317 clients (1285 rows)
+#for now, drop the 45 clients (164 rows)
 demographic_data_filtered <- demographic_data_filtered %>% 
   filter(!(client_id %in% duplicates$client_id))
 
@@ -83,12 +76,100 @@ demographic_data_filtered <- demographic_data_filtered %>%
 length(unique(demographic_data_filtered$client_id)) == nrow(demographic_data_filtered)
 ```
 
-#Clean up discharge data
+## DEMOGRAPHIC DATA - Recoding race
+1. Remove “don’t know”, “prefer not to answer”, and “not applicable” from the comma-separated responses.
+2. Then recode the remaining responses:
+- 0 if nothing is left after removal (or NA)
+- 1 if exactly one valid response remains
+- 2 if 2+ valid responses remain
+3. do an analysis to look within race: so duplicated --> single race dummy variable
+```{r}
+# Define coding for single responses
+codebook <- c("Asian" = 1, 
+              "Black or African American" = 2, 
+              "Hispanic or Latino" = 3,
+              "Middle Eastern or North African" = 4,
+              "Native American/American Indian or Alaska Native" = 5,
+              "Native Hawaiian or Pacific Islander" = 6,
+              "White" = 7
+              )
+
+demographic_data_filtered <- demographic_data_filtered %>% 
+  mutate(
+    # Remove "don't know", "prefer not to answer", "not applicable"
+    cleaned_race = str_remove_all(
+      race,
+      "\\b(Don't Know|Prefer Not To Answer|Not Applicable)\\b"
+    ) %>%
+      str_replace_all(",+", ",") %>%        # collapse extra commas
+      str_replace_all("^,|,$", "") %>%      # trim leading/trailing commas
+      na_if("")                             # convert empty string to NA
+  ) %>%
+  mutate(
+    recoded_race = case_when(
+      is.na(cleaned_race) ~ 0L,             # no valid response
+      str_detect(cleaned_race, ",") ~ 2L,   # multiple responses
+      TRUE ~ 1L                             # single response
+    ),
+    # assign numeric code to single values, 99 if 2+ values
+    code_num = case_when(
+      is.na(cleaned_race) ~ 0L,
+      str_detect(cleaned_race, ",") ~ 88L,
+      TRUE ~ unname(codebook[cleaned_race])  # lookup from codebook
+    )
+  )
+```
+
+## DEMOGRAPHIC DATA - Recoding 
+1. Remove “don’t know”, “prefer not to answer”, and “not applicable” from the comma-separated responses.
+2. Then recode the remaining responses:
+- 0 if nothing is left after removal (or NA)
+- 1 if exactly one valid response remains
+- 2 if 2+ valid responses remain
+3. do an analysis to look within race: so duplicated --> single race dummy variable
+```{r}
+# Define coding for single responses
+codebook <- c("Asian" = 1, 
+              "Black or African American" = 2, 
+              "Hispanic or Latino" = 3,
+              "Middle Eastern or North African" = 4,
+              "Native American/American Indian or Alaska Native" = 5,
+              "Native Hawaiian or Pacific Islander" = 6,
+              "White" = 7
+              )
+
+demographic_data_filtered <- demographic_data_filtered %>% 
+  mutate(
+    # Remove "don't know", "prefer not to answer", "not applicable"
+    cleaned_race = str_remove_all(
+      race,
+      "\\b(Don't Know|Prefer Not To Answer|Not Applicable)\\b"
+    ) %>%
+      str_replace_all(",+", ",") %>%        # collapse extra commas
+      str_replace_all("^,|,$", "") %>%      # trim leading/trailing commas
+      na_if("")                             # convert empty string to NA
+  ) %>%
+  mutate(
+    recoded_race = case_when(
+      is.na(cleaned_race) ~ 0L,             # no valid response
+      str_detect(cleaned_race, ",") ~ 2L,   # multiple responses
+      TRUE ~ 1L                             # single response
+    ),
+    # assign numeric code to single values, 99 if 2+ values
+    code_num = case_when(
+      is.na(cleaned_race) ~ 0L,
+      str_detect(cleaned_race, ",") ~ 88L,
+      TRUE ~ unname(codebook[cleaned_race])  # lookup from codebook
+    )
+  )
+```
+
+# DISCHARGE DATA - Cleaning
 ```{r}
 #get rid of demo data
 discharge_data_filtered <- discharge_data %>%
-  filter(!if_any(c(`Provider ID`, `Client ID`), ~ str_detect(as.character(.x), "DEMO"))) %>% 
-  clean_names()
+  filter(!if_any(c(provider_id, client_id), ~ str_detect(as.character(.x), "DEMO"))) %>% 
+  janitor::clean_names()
 
 #are there unique client IDs? 
 length(unique(discharge_data_filtered$client_id)) == nrow(discharge_data_filtered)
@@ -149,7 +230,7 @@ discharge_data_filtered %>%
   filter(trimmed_match == FALSE)
 ```
 
-#look at clients with >1 intervention
+# DISCHARGE DATA EDA - Look at clients with >1 intervention
 ```{r}
 dup_client_id <- discharge_data_filtered %>%
   filter(!is.na(pre_measure_s) & !is.na(post_measure_s)) 
@@ -168,11 +249,10 @@ dup_clients <- discharge_data_filtered %>%
   filter(client_id %in% dup_client_id$client_id,
         !is.na(pre_measure_s) & !is.na(post_measure_s))
 
-length(unique(dup_clients$client_id)) #89 clients with more than one complete intervention 
-#nrow(dup_clients_diff_time_data) + nrow(dup_clients_same_time_data)
+length(unique(dup_clients$client_id)) #310 clients with more than one complete intervention 
 ```
 
-##find clients that had >1 DIFFERENT interventions AT THE SAME TIME
+## Find clients that had >1 DIFFERENT interventions AT THE SAME TIME
 versus clients that had more than one of the same intervention
 ```{r}
 dup_clients_same_time <- dup_clients %>% 
@@ -188,8 +268,8 @@ dup_clients_same_time_data <- discharge_data_filtered %>%
   filter(client_id %in% dup_clients_same_time$client_id)
 ```
 
-##find clients that had SAME intervention AT DIFFERENT TIMES
-this should be the inverse of dup_clients_same_time (n=34 + n=55 = n=89)
+## find clients that had SAME intervention AT DIFFERENT TIMES
+this should be the inverse of dup_clients_same_time (n=158 + n=157 != n=310 --> why??)
 ```{r}
 dup_clients_diff_time <- dup_clients %>% 
   group_by(client_id) %>% 
@@ -202,13 +282,17 @@ dup_clients_diff_time <- dup_clients %>%
 #this is the data for the clients that had same intervention at different times
 dup_clients_diff_time_data <- discharge_data_filtered %>% 
   filter(client_id %in% dup_clients_diff_time$client_id)
+
+nrow(dup_clients_diff_time) + nrow(dup_clients_same_time)
 ```
 
 
-#Now join demographic and discharge data by client ID
+# JOINING DATA 
+Now join demographic and discharge data by client ID
 ```{r}
 #assessment-level data
-all_data <- left_join(discharge_data_filtered, demographic_data_filtered_updated, by = c("client_id", "provider_id"))
+all_data <- left_join(discharge_data_filtered, demographic_data_filtered, by = c("client_id", "provider_id"))
+head(all_data)
 ```
 
 #how many unique clients were served?
@@ -223,13 +307,13 @@ n_distinct(all_data$client_id)
 
 #write csvs
 ```{r}
-#all data /Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin
+#all data 
 # write_csv(all_data, "/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
 write_csv(all_data, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
 
 #clean demo data
 # write_csv(demographic_data_filtered, "/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
-write_csv(demographic_data_filtered_updated, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
+write_csv(demographic_data_filtered, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
 
 #clean dishcarge data
 # write_csv(discharge_data_filtered, "/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
