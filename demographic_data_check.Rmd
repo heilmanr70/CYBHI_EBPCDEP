@@ -14,11 +14,11 @@ This notebook assesses the demographic data export from 09-17-2025 and 09-22-202
 
 [x] Check diffs among the two files just as a gut check
 [x] Filter both to affected clients based on csv from Natalie
-[ ] Check variables listed to see if there are any obviously wrong ones / if they seem “correct”
+[x] Check variables listed to see if there are any obviously wrong ones / if they seem “correct”
 
-[X] how many records have start and end data?
-send list to Natalie and Rikke of providers - with affected clients
-check before/after just on these clients
+[x] how many records have start and end data?
+[x] send list to Natalie and Rikke of providers - with affected clients
+[x] check before/after just on these clients
 
 # read in data
 ```{r}
