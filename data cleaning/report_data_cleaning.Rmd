@@ -13,7 +13,10 @@ This notebook cleans up demographic and discharge data, and provides clean csv's
 
 ACTION ITEMS
 [ ] make sure we filter to last follow-up time point (filter to post_time_point == ??)
+
 [ ] nrow(dup_clients_diff_time) + nrow(dup_clients_same_time) should equal nrow(dup_clients). It doesn't -- why??
+
+[ ] NEED to filter by client_id + assessment_date (see client_id == 3664 for example issue)
 
 # Read in data
 ```{r}
@@ -21,7 +24,7 @@ library(tidyverse)
 library(janitor)
 library(gt)
 
-discharge_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Discharge Report Export/2025-09-17-discharge_report.xlsx", na = c("-", "", "NA", "N/A")) %>% 
+discharge_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Discharge Report Export/2025-10-09-discharge_report.xlsx", na = c("-", "", "NA", "N/A")) %>% 
   janitor::clean_names()
 demographic_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Admin Report Exports/2025-09-17-client_demographics.xlsx", na = c("-", "", "NA", "N/A")) %>% 
   janitor::clean_names()
@@ -66,7 +69,7 @@ demographic_data_filtered %>%
 duplicate_list <- demographic_data_filtered %>% 
   filter(client_id %in% duplicates$client_id)
 
-write_csv(duplicate_list, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/duplicate_list.csv")
+write_csv(duplicate_list, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_duplicate_list.csv")
 
 #for now, drop the 45 clients (164 rows)
 demographic_data_filtered <- demographic_data_filtered %>% 
@@ -232,9 +235,11 @@ discharge_data_filtered %>%
 
 # DISCHARGE DATA EDA - Look at clients with >1 intervention
 ```{r}
+# filter to those who have a pre AND post measure
 dup_client_id <- discharge_data_filtered %>%
   filter(!is.na(pre_measure_s) & !is.na(post_measure_s)) 
 
+# create df where it shows you what was duplicated for each client ID
 dup_client_id <- dup_client_id %>% 
   group_by(client_id) %>%
   filter(n() > 1) %>%
@@ -252,34 +257,42 @@ dup_clients <- discharge_data_filtered %>%
 length(unique(dup_clients$client_id)) #310 clients with more than one complete intervention 
 ```
 
-## Find clients that had >1 DIFFERENT interventions AT THE SAME TIME
-versus clients that had more than one of the same intervention
+## Find clients that had >1 interventions AT THE SAME TIME
+- versus clients that had more than one of the same intervention
+- this does not include people who had multiple follow-ups of the same intervention; this is filtered by pre-measure name (not trimmed)
 ```{r}
 dup_clients_same_time <- dup_clients %>% 
   group_by(client_id, intervention_start) %>% 
-  summarise(across(pre_assessment_name, ~ {
+  summarise(across(pre_measure_s, ~ {
     u <- unique(.x)
     if(length(u) > 1) paste(u, collapse = ", ") else NA_character_
   }), .groups = "drop") %>% 
-  filter(!is.na(pre_assessment_name))
+  filter(!is.na(pre_measure_s))
 
-#this is the data for the clients that had different intervention at the SAME time
+#this is the data for the clients that had >1 intervention at the SAME time
 dup_clients_same_time_data <- discharge_data_filtered %>% 
   filter(client_id %in% dup_clients_same_time$client_id)
 ```
 
-## find clients that had SAME intervention AT DIFFERENT TIMES
-this should be the inverse of dup_clients_same_time (n=158 + n=157 != n=310 --> why??)
+## find clients that had an intervention AT DIFFERENT TIMES
+- right now this is filtering only on pre-assessment name (not trimmed)
+- if 
 ```{r}
-dup_clients_diff_time <- dup_clients %>% 
-  group_by(client_id) %>% 
-  summarise(across(pre_assessment_name, ~ {
-    u <- unique(.x)
-    if(length(u) == 1) paste(u, collapse = ", ") else NA_character_
-  }), .groups = "drop") %>% 
-  filter(!is.na(pre_assessment_name))
+dup_clients_diff_time <- dup_clients %>%
+  group_by(client_id) %>%
+  filter(n_distinct(intervention_start, na.rm = TRUE) > 1) %>%
+  summarise(
+    n_intervention_start = n_distinct(intervention_start, na.rm = TRUE),
+    intervention_start_dates = paste(sort(unique(intervention_start)), collapse = ", "),
+    pre_measure_s_values = {
+      vals <- unique(na.omit(pre_measure_s))
+      if (length(vals) == 0) NA_character_
+      else paste(vals, collapse = ", ")
+    },
+    .groups = "drop"
+  )
 
-#this is the data for the clients that had same intervention at different times
+#this is the data for the clients that had an intervention at different times
 dup_clients_diff_time_data <- discharge_data_filtered %>% 
   filter(client_id %in% dup_clients_diff_time$client_id)
 
