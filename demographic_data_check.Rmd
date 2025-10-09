@@ -1,0 +1,298 @@
+---
+title: "Demographic Data Check"
+author: "Cristin Young"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  html_notebook: default
+---
+
+This notebook assesses the demographic data export from 09-17-2025 and 09-22-2025, to check whether demographic data has been fixed. 
+
+
+[x] Check diffs among the two files just as a gut check
+[x] Filter both to affected clients based on csv from Natalie
+[ ] Check variables listed to see if there are any obviously wrong ones / if they seem “correct”
+
+[X] how many records have start and end data?
+send list to Natalie and Rikke of providers - with affected clients
+check before/after just on these clients
+
+# read in data
+```{r}
+library(tidyverse)
+library(readxl)
+library(waldo)
+
+#09-17-2025
+old_demo <- read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Admin Report Exports/2025-09-17-client_demographics.xlsx", na = c("-", "", "NA", "N/A")) %>% 
+  janitor::clean_names()
+
+#09-22-2025
+new_demo <- read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Admin Report Exports/2025-09-22-client_demographics-fixed.xlsx", na = c("-", "", "NA", "N/A")) %>% 
+  janitor::clean_names()
+
+#10-09-2025
+newest_demo <- read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Admin Report Exports/2025-10-09-client_demographics.xlsx", na = c("-", "", "NA", "N/A")) %>% 
+  janitor::clean_names()
+
+#list from steve
+affected_clients <- read_csv("/Users/cristin/Downloads/Providers Clients Need Demographic Data Reviewed Sept 18 2025.csv") %>% 
+  janitor::clean_names()
+
+#discharge data
+discharge_data <- read_csv("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
+
+# get rid of demo data
+old_demo <- old_demo %>%
+  filter(!if_any(c(provider_id, client_id), ~ str_detect(as.character(.x), "DEMO"))) %>% 
+  arrange(., provider_id)
+new_demo <- new_demo %>%
+  filter(!if_any(c(provider_id, client_id), ~ str_detect(as.character(.x), "DEMO"))) %>% 
+  arrange(., provider_id)
+newest_demo <- newest_demo %>%
+  filter(!if_any(c(provider_id, client_id), ~ str_detect(as.character(.x), "DEMO"))) %>% 
+  arrange(., provider_id)
+```
+
+# clean new demo df
+```{r}
+# get rid of demo data
+newest_demo_filter <- newest_demo %>%
+  filter(!if_any(c(provider_id, client_id), ~ str_detect(as.character(.x), "DEMO")))
+
+# are there unique client IDs? 
+length(unique(newest_demo_filter$client_id)) == nrow(newest_demo_filter)
+
+# which IDs have been repeated and how many times? 
+duplicates <- newest_demo_filter %>% 
+  group_by(client_id) %>% 
+   filter(n() > 1) %>%
+  tally() 
+
+# how many rows are duplicated?
+duplicates %>% 
+  summarise(total_duplicated = sum(n))
+
+# what data is repeating for each client?
+# appears to just be language selected? 
+newest_demo_filter %>%
+  group_by(client_id) %>%
+  filter(n() > 1) %>%
+  summarise(across(everything(), ~ {
+    u <- unique(.x)
+    if(length(u) > 1) paste(u, collapse = ", ") else NA_character_
+  }), .groups = "drop") %>%
+  select(client_id, where(~ any(!is.na(.))))
+
+#for now, drop the 45 clients (164 rows)
+ newest_demo_filter <- newest_demo_filter %>% 
+  filter(!(client_id %in% duplicates$client_id))
+
+#check again for duplicate ids, just in case
+length(unique(newest_demo_filter$client_id)) == nrow(newest_demo_filter)
+```
+
+# check differences among the two files
+```{r}
+waldo::compare(old_demo, new_demo)
+```
+
+# filter to affected clients
+I need to use the all_data, since it has provider name and the demographics data does not. I'm cleaning the new demo data and merging with the discharge data to get a new "all data" df. Then I'm filtering all_data to those providers in the affected clients list.
+
+There are 125 client_ids in the affected clients list that are not in the demographic data from 2025-10-09. I made this into a csv for Natalie/Rikke. There are 2045 client_ids in the affected clients list that are not in the discharge data. I made this into a csv for Natalie/Rikke as well. 
+```{r}
+#joining newest demographic data + newest discharge data as of 10-09-2025
+updated_all_data <- left_join(discharge_data, newest_demo_filter, by = c("provider_id", "client_id"))
+
+#joining newest demographic data to affected clients list
+affected_demo <- left_join(affected_clients, newest_demo_filter, by = c("system_client_id" = "client_id"))
+test <- newest_demo_filter %>%
+  filter(client_id %in% affected_clients$system_client_id)
+
+#getting all data for those in the affected clients list 
+affected_all_data_join <- left_join(affected_demo, discharge_data, by = c("system_client_id" = "client_id", "provider_id", "provider_name" = "provider", "location_name" = "location"))
+affected_all_data_filter <- updated_all_data %>% 
+  filter(client_id %in% affected_clients$system_client_id)
+
+# Clients in affected_clients but NOT in discharge
+missing_from_discharge <- anti_join(
+  affected_clients %>% distinct(system_client_id),
+  discharge_data %>% distinct(client_id),
+  by = c("system_client_id" = "client_id")
+)
+
+# Clients in affected_clients but NOT in demo
+missing_from_demo <- anti_join(
+  affected_clients %>% distinct(system_client_id),
+  newest_demo_filter %>% distinct(client_id),
+  by = c("system_client_id" = "client_id")
+)
+
+# Make 1-row-per-client tables with a presence flag
+demo_ids       <- newest_demo_filter %>% distinct(client_id) %>% mutate(demo = TRUE)
+discharge_ids  <- discharge_data %>% distinct(client_id) %>% mutate(discharge = TRUE)
+affected_ids   <- affected_clients %>% distinct(system_client_id) %>% mutate(affected = TRUE) %>% rename(client_id = system_client_id)
+
+# Full join them all to get a presence matrix
+presence <- list(demo_ids, discharge_ids, affected_ids) |>
+  reduce(full_join, by = "client_id") |>
+  mutate(across(c(demo, discharge, affected), ~replace_na(.x, FALSE)))
+
+presence
+
+#summary table 
+presence %>%
+  count(demo, discharge, affected, name = "n") %>%
+  arrange(desc(n))
+
+#save these for Natalie/Rikke
+write_csv(missing_from_demo, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/missing_client_ids_from_demo.csv")
+write_csv(missing_from_discharge, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/missing_client_ids_from_discharge.csv")
+write_csv(presence, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/client_ids_in_each_dataset.csv")
+```
+
+# Affected data with intervention dates
+```{r}
+#testing to see which has more complete data between filtered and joined df's
+affected_all_complete <- affected_all_data_filter %>% 
+  filter(!is.na(intervention_start) & !is.na(intervention_end)) 
+affected_all_complete_2 <- affected_all_data_join %>% 
+  filter(!is.na(intervention_start) & !is.na(intervention_end)) 
+
+# should be zero
+setdiff(affected_all_complete_2$system_client_id, affected_clients$system_client_id)
+setdiff(affected_all_complete$client_id, affected_clients$system_client_id)
+# this is not zero, so using affected_all_complete
+setdiff(affected_all_complete$client_id, affected_all_complete_2$system_client_id)
+
+# have pre/post scores as well 
+affected_all_complete_score <- affected_all_complete %>% 
+  filter(!is.na(pre_score) & !is.na(post_score))
+```
+
+# how many grantees does this affect? 
+I want to look at the affected_all_complete df and look at % of clients by grantee, based on updated_all data
+```{r}
+# Just keep what we need
+all_clients <- updated_all_data %>% distinct(client_id, provider_id)
+affected    <- affected_clients %>% distinct(system_client_id) %>% 
+  inner_join(all_clients, by = c("system_client_id" = "client_id"))
+
+percent_by_grantee <- all_clients %>%
+  group_by(provider_id) %>%
+  summarise(
+    total_clients    = n(),
+    affected_clients = sum(client_id %in% affected$system_client_id),
+    pct_affected     = 100 * affected_clients / total_clients
+  )
+
+percent_by_grantee
+
+percent_by_grantee %>% arrange(desc(pct_affected))
+
+write_csv(percent_by_grantee, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/percent_affected_grantees.csv")
+```
+
+
+# THIS IS OLD BELOW THIS POINT
+
+# check affected variables
+-Client Type
+```{r}
+table(filtered_all_data$client_type, useNA = "ifany")
+table(filtered_old_all_data$client_type, useNA = "ifany")
+
+waldo::compare(filtered_all_data$client_type, filtered_old_all_data$client_type)
+```
+
+-Is youth 3 yoa or older? 
+```{r}
+table(filtered_all_data$is_youth_three_years_of_age_or_older)
+table(filtered_old_all_data$is_youth_three_years_of_age_or_older)
+
+waldo::compare(filtered_all_data$is_youth_three_years_of_age_or_older, filtered_old_all_data$is_youth_three_years_of_age_or_older)
+```
+
+-pregnant/expectant parent
+```{r}
+table(filtered_all_data$pregnant)
+table(filtered_old_all_data$pregnant)
+
+waldo::compare(filtered_all_data$pregnant, filtered_old_all_data$pregnant)
+
+# in the old dataset, are there any pregnant males?
+filtered_old_all_data %>% 
+  filter(gender_identity == "Man/boy",
+         pregnant == "Yes") %>% 
+  distinct(client_id)
+
+# what about the new dataset?
+filtered_all_data %>% 
+  filter(gender_identity == "Man/boy",
+         pregnant == "Yes") %>% 
+  distinct(client_id)
+
+filtered_old_all_data %>% 
+  filter(
+    gender_identity == "Man/boy",
+         pregnant == "Yes"
+    #     client_type == "Child (0-15"
+    ) %>% 
+  distinct(client_id)
+
+filtered_all_data %>% 
+  filter(
+    gender_identity == "Man/boy",
+         pregnant == "Yes",
+         client_type == "Child (0-15"
+    ) %>% 
+  distinct(client_id)
+```
+
+-Insurance status
+```{r}
+table(filtered_all_data$insurance_status)
+table(filtered_old_all_data$insurance_status)
+
+waldo::compare(filtered_all_data$insurance_status, filtered_old_all_data$insurance_status)
+```
+
+-Gender Identity
+```{r}
+table(filtered_all_data$gender_identity, useNA = "ifany")
+table(filtered_old_all_data$gender_identity, useNA = "ifany")
+
+waldo::compare(filtered_all_data$gender_identity, filtered_old_all_data$gender_identity)
+```
+
+-Sexual Orientation
+```{r}
+table(filtered_all_data$sexual_orientation, useNA = "ifany")
+table(filtered_old_all_data$sexual_orientation, useNA = "ifany")
+
+waldo::compare(filtered_all_data$sexual_orientation, filtered_old_all_data$sexual_orientation)
+
+ocapca_new <- filtered_all_data %>% 
+  filter(provider == "Orange County Asian and Pacific Islander Community Alliance, Inc.")
+
+ocapca <- filtered_old_all_data %>% 
+  filter(provider == "Orange County Asian and Pacific Islander Community Alliance, Inc.")
+
+foothill_new <- filtered_all_data %>% 
+  filter(provider == "Foothill Family Service")
+
+foothill <- filtered_old_all_data %>% 
+  filter(provider == "Foothill Family Service")
+
+waldo::compare(foothill, foothill_new)
+```
+
+-Pregnant / Expectant Parent
+-Primary language
+-Preferred language
+-Urban/Rural
+-Housing Status
