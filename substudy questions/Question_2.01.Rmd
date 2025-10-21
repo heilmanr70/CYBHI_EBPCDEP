@@ -9,79 +9,104 @@ output:
   pdf_document: default
 editor_options: 
   chunk_output_type: inline
+  markdown: 
+    wrap: 72
 ---
 
-This notebook answers Question 2.01: Did successful transition rates out of EBP/CDEP services differ by location? and Question 2.02: Did successful transition rates out of EBP/CDEP services differ by subpopulations?
+This notebook answers Question 2.01: Did successful transition rates out
+of EBP/CDEP services differ by location? and Question 2.02: Did
+successful transition rates out of EBP/CDEP services differ by
+subpopulations?
 
 #Read in data
+
 ```{r}
 library(tidyverse)
 library(janitor)
 library(gt)
 library(clipr)
 
-
-#all_data <- read_csv("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
-all_data <- read_csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
+all_data <- read_csv("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
+#all_data <- read_csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
 ```
 
-
 # Question 2.01: Did successful transition rates out of EBP/CDEP services differ by location?
-THREE inclusion criteria:
- 1. must have initial time point data (i.e., be enrolled in an intervention), 
- 2. must have a valid reason for discharge selected at time of discharge (i.e., excludes those with "no reason selected"), 
- 3. client must be attached to a specific grantee location
+
+THREE inclusion criteria: 1. must have initial time point data (i.e., be
+enrolled in an intervention), 2. must have a valid reason for discharge
+selected at time of discharge (i.e., excludes those with "no reason
+selected"), 3. client must be attached to a specific grantee location
 
 ##Make a table of participation and completion rates by location
+
 ```{r}
 data201 <- all_data %>% 
   filter(!is.na(location) & 
            !is.na(pre_score) & 
            !is.na(post_score) & 
-           !is.nat(location) &
            !is.na(reason_for_discharge))
 
 data201$positive_outcomes <- factor(data201$positive_outcomes, levels = c("No", "Yes"))
 ```
 
 ## % reported Mutually agreed upon cessation of Tx/successful completion at Discharge by location
+
 ```{r}
-perc_sucessful_table <- data201 %>% 
+perc_successful_table <- data201 %>% 
   group_by(location) %>% 
   summarise(
     total = n(),
     successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
-    perc_success = round(100* successful / total, 1)
+    perc_success = round(100 * successful / total, 1)
   )
               
-perc_sucessful_table %>% 
+perc_successful_table %>% 
   knitr::kable() %>% 
   clipr::write_clip(allow_non_interactive = TRUE)
 ```
 
 ## % of those who met Tx goals (% successful completion + improved score) by location"
-mutually agreed cessation of tx = 892
-clinically referred out = 11
+
+mutually agreed cessation of tx = 3782
+
+clinically referred out = 63
+
 ```{r}
+table(data201$reason_for_discharge)
+
 data201_txgoals <- data201 %>% 
-  filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)",
+  filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)" | reason_for_discharge == "Clinically referred out",
          positive_outcomes == "Yes")
-table(data201_txgoals$location)
+
+perc_successful_table_pos_outcome <- data201 %>% 
+  group_by(location) %>% 
+  summarise(
+    total = n(),
+    successful_discharge = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+    perc_success_discharge = round(100 * successful_discharge / total, 1),
+    successful_outcome = sum(positive_outcomes %in% c("Yes"), na.rm = TRUE),
+    perc_success_outcome = round(100 * successful_outcome / total, 1)
+  )
+              
+perc_successful_table_pos_outcome %>% 
+  knitr::kable() %>% 
+  clipr::write_clip(allow_non_interactive = TRUE)
 
 #or
 p_yes = function(x) round(x[2]/sum(x), 2) # 1 in this line was doing p_no!
 
 table <- addmargins(xtabs(data=data201, ~location + positive_outcomes, subset = data201$reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)"), FUN = list(p_yes))
+
 table %>% 
   knitr::kable() %>% 
   clipr::write_clip(allow_non_interactive = TRUE)
 ```
 
-
-#Question 2.02: Did successful transition rates out of EBP/CDEP services differ by subpopulations?
-look at data201 by demographics
+#Question 2.02: Did successful transition rates out of EBP/CDEP services
+differ by subpopulations? look at data201 by demographics
 
 ##Race
+
 ```{r}
 detailed_race <- data201 %>% 
   group_by(race) %>% 
@@ -95,25 +120,19 @@ detailed_race %>%
   knitr::kable() %>% 
   clipr::write_clip(allow_non_interactive = TRUE)
 
-chisq.test(data201$positive_outcomes, data201$race)
+chisq.test(data201$positive_outcomes, data201$cleaned_race)
 
 model <- glm(positive_outcomes ~ race, data = data201, family = "binomial")
 summary(model)
-table(data201$insurance_status)
+
 ```
 
-##Race summary
-Roll detailed race variables, based on first answer, up into: 
-- Asian
-- Black or African American
-- Don't Know
-- Hispanic or Latino
-- Middle Eastern or North African
-- Native American/American Indian or Alaska Native
-- Native Hawaiian or Pacific Islander
-- Not Applicable
-- Prefer Not to Answer
-- White
+##Race summary Roll detailed race variables, based on first answer, up
+into: - Asian - Black or African American - Don't Know - Hispanic or
+Latino - Middle Eastern or North African - Native American/American
+Indian or Alaska Native - Native Hawaiian or Pacific Islander - Not
+Applicable - Prefer Not to Answer - White
+
 ```{r}
 #make new column of only the first race recorded
 data201 <- data201 %>% 
@@ -138,8 +157,8 @@ summary(model)
 table(data201$first_race)
 ```
 
-
 ##Ethnicity
+
 ```{r}
 detailed_ethnicity <- data201 %>% 
   group_by(ethnicity) %>% 
@@ -157,6 +176,7 @@ chisq.test(data201$positive_outcomes, data201$ethnicity)
 ```
 
 ##Gender Identity
+
 ```{r}
 gender_identity <- data201 %>% 
   group_by(gender_identity) %>% 
@@ -177,6 +197,7 @@ summary(model)
 ```
 
 ##Sexual orientation
+
 ```{r}
 sex_orientation <- data201 %>% 
   group_by(sexual_orientation) %>% 
@@ -194,6 +215,7 @@ chisq.test(data201$positive_outcomes, data201$sexual_orientation)
 ```
 
 ##Insurance status
+
 ```{r}
 insurance <- data201 %>% 
   group_by(insurance_status) %>% 
