@@ -27,8 +27,22 @@ Cross-tab of study population by relevant demographic data
 Total number of clients served and by demographics
 
 ###race
+Cleaned race variable (recoded_race): 
+- 0 if nothing is left after removal (or NA)
+- 1 if exactly one valid response remains
+- 2 if 2+ valid responses remain
+Recoded race variable (code_num): 
+codebook <- c("Asian" = 1, 
+              "Black or African American" = 2, 
+              "Hispanic or Latino" = 3,
+              "Middle Eastern or North African" = 4,
+              "Native American/American Indian or Alaska Native" = 5,
+              "Native Hawaiian or Pacific Islander" = 6,
+              "White" = 7,
+              2+ selected = 88
+              )
 ```{r}
-race_summary <- demographic_data_filtered %>%
+race_summary_all <- demographic_data_filtered %>%
   select(race) %>%
   pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
   count(variable, value) %>%
@@ -36,7 +50,7 @@ race_summary <- demographic_data_filtered %>%
   mutate(percent = round(n / sum(n) * 100, 1)) %>%
   arrange(variable, desc(n))
 
-race_summary %>% 
+race_summary_all %>% 
   knitr::kable() %>% 
   clipr::write_clip()
 
@@ -49,6 +63,21 @@ all_data_race_summary <- all_data %>%
   arrange(variable, desc(n))
 
 all_data_race_summary %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+
+#how many selected 2+ races? 
+table(demographic_data_filtered$recoded_race)
+
+race_summary_recoded <- demographic_data_filtered %>%
+  select(code_num) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  count(variable, value) %>%
+  group_by(variable) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  arrange(variable, desc(n))
+
+race_summary_recoded %>% 
   knitr::kable() %>% 
   clipr::write_clip()
 ```
