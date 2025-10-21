@@ -1,0 +1,128 @@
+---
+title: "Quarterly Report Results-10-20-2025"
+author: "Cristin Young"
+format: docx
+editor: visual
+---
+
+## Outcomes Data by Round
+
+|  |  |  |  |  |  |  |
+|-----------|-----------|-----------|-----------|-----------|-----------|-----------|
+| Round | Theme | Participants Served | Improved Outcomes | Satisfaction | Successful Discharges | Quote |
+| 1  | Parent/Caregivers Programs and Practices   |   |   |   |   |   |
+| 2  | Trauma-Informed Programs and Practices   |   |   |   |   |   |
+| 3  | Early Childhood Wraparound Services   |   |   |   |   |   |
+| 4  | Youth-Driven Programs   |   |   |   |   |   |
+| 5  | Early Intervention Programs and Practices   |   |   |   |   |   |
+
+### Participants Served
+
+**Data used**: Discharge data, which includes 338 clients that had more than one complete intervention.
+
+**Nitty gritty cleaning**: took out DEMO data; checked to see which `client_ids` had `pre_measure_s` AND `post_measure_s` per row (i.e., had a complete intervention); left those in
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+library(readr)
+discharge_data_filtered <- read_csv("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
+table(discharge_data_filtered$funding_round)
+```
+
+### Improved outcomes
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+library(janitor)
+library(tidyverse)
+# number of rows in discharge data 
+nrow(discharge_data_filtered)
+
+# number of rows with positive_outcomes != NA
+count_pos <- nrow(discharge_data_filtered %>% filter(!is.na(positive_outcomes)))
+count_pos
+
+# table of positive outcomes 
+tab <- discharge_data_filtered %>%
+  tabyl(positive_outcomes) %>%               
+  adorn_pct_formatting(digits = 1)
+tab
+
+# percent of positive outcomes
+yes_pct <- tab %>%
+  filter(positive_outcomes == "Yes") %>%
+  pull(valid_percent)
+```
+Out of `{r} nrow(discharge_data_filtered)` rows of clients in EInsight's discharge data dashboard, `{r} count_pos` had both a pre- and post-score. Of those clients with complete intervention data in EInsight, `{r} yes_pct` had a positive outcome.
+
+The results below show % of positive outcomes by round, once NA's are removed from the data.
+
+**Nitty gritty**: Positive outcome was defined as \[ this needs to be confirmed with Rebecca/Steve; this is a column from EInsight and I believe is just defined as "Is the post-score lower/higher than the pre-score, based on the relevant assessment scoring metrics given to Steve's team"\].
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# table of positive outcomes by funding round
+tab2 <- discharge_data_filtered %>% 
+  filter(!is.na(positive_outcomes)) %>% 
+  tabyl(positive_outcomes, funding_round) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+tab2
+```
+
+### Satisfaction
+
+```{r}
+
+```
+
+### Successful discharges
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+# number of rows with a reason for discharge
+count_rows <- nrow(discharge_data_filtered %>% filter(!is.na(reason_for_discharge)))
+
+# number of rows with successful discharge
+# table of positive outcomes 
+tab3 <- discharge_data_filtered %>%
+  tabyl(reason_for_discharge) %>%               
+  adorn_pct_formatting(digits = 0)
+tab3
+
+# count of successful discharge
+yes_count <- tab3 %>%
+  filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)") %>%
+  pull(n)
+yes_count
+
+# percent of successful discharge
+yes_pct3 <- tab3 %>%
+  filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)") %>%
+  pull(valid_percent)
+yes_pct3
+```
+Successful discharges were defined as those clients that had "Mutually agreed cessation of treatment (Successful Completion)" as the `reason_for_discharge` in the discharge data from EInsight. Of `{r} nrow(discharge_data_filtered)` rows of discharge data, `{r} count_rows` rows had a reason for discharge stated. Of individuals with a reason for discharge stated, `{r} yes_count` (`{r} yes_pct3`) were successfully discharged.
+
+The results below show % of successful discharges by round, once NA's are removed from the data.
+```{r}
+# total table of successful discharges by funding round
+tab4 <- discharge_data_filtered %>% 
+  filter(!is.na(reason_for_discharge)) %>% 
+  tabyl(reason_for_discharge, funding_round) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+tab4
+```
