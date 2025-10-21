@@ -159,15 +159,21 @@ write_csv(presence, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EIns
 ```{r}
 #testing to see which has more complete data between filtered and joined df's
 affected_all_complete <- affected_all_data_filter %>% 
-  filter(!is.na(intervention_start) & !is.na(intervention_end)) 
+  filter(!is.na(intervention_start)) 
 affected_all_complete_2 <- affected_all_data_join %>% 
-  filter(!is.na(intervention_start) & !is.na(intervention_end)) 
+  filter(!is.na(intervention_start)) 
 
 # should be zero
 setdiff(affected_all_complete_2$system_client_id, affected_clients$system_client_id)
 setdiff(affected_all_complete$client_id, affected_clients$system_client_id)
 # this is not zero, so using affected_all_complete
 setdiff(affected_all_complete$client_id, affected_all_complete_2$system_client_id)
+
+affected_clients_with_start_date <- affected_all_complete %>% 
+  select(client_id, provider_id, intervention_start) %>% 
+  distinct(client_id, provider_id)
+
+write_csv(affected_clients_with_start_date, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/affected_clients_with_start_date.csv")
 
 # have pre/post scores as well 
 affected_all_complete_score <- affected_all_complete %>% 
@@ -178,7 +184,13 @@ affected_all_complete_score <- affected_all_complete %>%
 I want to look at the affected_all_complete df and look at % of clients by grantee, based on updated_all data
 ```{r}
 # Just keep what we need
-all_clients <- updated_all_data %>% distinct(client_id, provider_id)
+updated_all_data_complete <- updated_all_data %>% 
+  filter(!is.na(intervention_start))
+
+intervention_start_data <- discharge_data %>% 
+  filter(!is.na(intervention_start))
+
+all_clients <- intervention_start_data %>% distinct(client_id, provider_id)
 affected    <- affected_clients %>% distinct(system_client_id) %>% 
   inner_join(all_clients, by = c("system_client_id" = "client_id"))
 
@@ -194,7 +206,7 @@ percent_by_grantee
 
 percent_by_grantee %>% arrange(desc(pct_affected))
 
-write_csv(percent_by_grantee, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/percent_affected_grantees.csv")
+write_csv(percent_by_grantee, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/percent_affected_grantees_with_start_date.csv")
 ```
 
 
