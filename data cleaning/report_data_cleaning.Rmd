@@ -17,6 +17,7 @@ ACTION ITEMS
 [ ] nrow(dup_clients_diff_time) + nrow(dup_clients_same_time) should equal nrow(dup_clients). It doesn't -- why??
 
 [ ] NEED to filter by client_id + assessment_date (see client_id == 3664 for example issue)
+  - need to verify, is this linking assessment + intervention because they intervention was done in that time frame? 
 
 # Read in data
 ```{r}
@@ -158,7 +159,7 @@ demographic_data_filtered <- demographic_data_filtered %>%
       str_detect(cleaned_race, ",") ~ 2L,   # multiple responses
       TRUE ~ 1L                             # single response
     ),
-    # assign numeric code to single values, 99 if 2+ values
+    # assign numeric code to single values, 88 if 2+ values
     code_num = case_when(
       is.na(cleaned_race) ~ 0L,
       str_detect(cleaned_race, ",") ~ 88L,
@@ -254,7 +255,7 @@ dup_clients <- discharge_data_filtered %>%
   filter(client_id %in% dup_client_id$client_id,
         !is.na(pre_measure_s) & !is.na(post_measure_s))
 
-length(unique(dup_clients$client_id)) #310 clients with more than one complete intervention 
+length(unique(dup_clients$client_id)) #338 clients with more than one complete intervention 
 ```
 
 ## Find clients that had >1 interventions AT THE SAME TIME
@@ -276,7 +277,6 @@ dup_clients_same_time_data <- discharge_data_filtered %>%
 
 ## find clients that had an intervention AT DIFFERENT TIMES
 - right now this is filtering only on pre-assessment name (not trimmed)
-- if 
 ```{r}
 dup_clients_diff_time <- dup_clients %>%
   group_by(client_id) %>%
