@@ -9,18 +9,6 @@ editor: visual
 
 ## Outcomes Data by Round
 
-<<<<<<< Updated upstream
-|  |  |  |  |  |  |  |
-|----|----|----|----|----|----|----|
-| Round | Theme | Participants Served | Improved Outcomes | Satisfaction | Successful Discharges | Quote |
-| 1  | Parent/Caregivers Programs and Practices   |   |   |   |   |   |
-| 2  | Trauma-Informed Programs and Practices   |   |   |   |   |   |
-| 3  | Early Childhood Wraparound Services   |   |   |   |   |   |
-| 4  | Youth-Driven Programs   |   |   |   |   |   |
-| 5  | Early Intervention Programs and Practices   |   |   |   |   |   |
-
-=======
->>>>>>> Stashed changes
 ### Participants Served
 
 **Data used**: Discharge data, which includes 338 clients that had more than one complete intervention.
