@@ -16,7 +16,7 @@ ACTION ITEMS
 
 [ ] nrow(dup_clients_diff_time) + nrow(dup_clients_same_time) should equal nrow(dup_clients). It doesn't -- why??
 
-[ ] NEED to filter by client_id + assessment_date (see client_id == 3664 for example issue)
+[ ] NEED to filter by client_system_id + assessment_date (see client_system_id == 3664 for example issue)
   - need to verify, is this linking assessment + intervention because they intervention was done in that time frame? 
 
 # Read in data
@@ -25,30 +25,33 @@ library(tidyverse)
 library(janitor)
 library(gt)
 
-discharge_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Discharge Report Export/2025-10-09-discharge_report.xlsx", na = c("-", "", "NA", "N/A")) %>% 
-  janitor::clean_names()
-demographic_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Admin Report Exports/2025-09-17-client_demographics.xlsx", na = c("-", "", "NA", "N/A")) %>% 
+discharge_data <- readxl::read_excel("/Users/cristin/Dropbox/Data/eInsight Exports/Discharge Report Export/2025-10-29-discharge_report.xlsx", na = c("-", "", "NA", "N/A"), ) %>% 
+  janitor::clean_names() 
+discharge_data$pre_completion_date <- janitor::convert_to_date(discharge_data$pre_completion_date)
+discharge_data$post_completion_date <- janitor::convert_to_date(discharge_data$post_completion_date)
+
+demographic_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Admin Report Exports/2025-10-29-client_demographics.xlsx", na = c("-", "", "NA", "N/A")) %>% 
   janitor::clean_names()
 
 # discharge_data <- readxl::read_xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Dishcharge_Report.xlsx", na = c("-", "", "NA"))
 # demographic_data <- readxl::read_xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Client_Demographics.xlsx", na = c("-", "", "NA"))
 
-length(discharge_data$client_id)
-length(demographic_data$client_id)
+length(discharge_data$client_system_id)
+length(demographic_data$client_system_id)
 ```
 
 # DEMOGRAPHIC DATA - Cleaning
 ```{r}
 # get rid of demo data
 demographic_data_filtered <- demographic_data %>%
-  filter(!if_any(c(provider_id, client_id), ~ str_detect(as.character(.x), "DEMO")))
+  filter(!if_any(c(provider_id, client_system_id), ~ str_detect(as.character(.x), "DEMO")))
 
 # are there unique client IDs? 
-length(unique(demographic_data_filtered$client_id)) == nrow(demographic_data_filtered)
+length(unique(demographic_data_filtered$client_system_idid)) == nrow(demographic_data_filtered)
 
 # which IDs have been repeated and how many times? 
 duplicates <- demographic_data_filtered %>% 
-  group_by(client_id) %>% 
+  group_by(client_system_id) %>% 
    filter(n() > 1) %>%
   tally() 
 
@@ -59,25 +62,25 @@ duplicates %>%
 # what data is repeating for each client?
 # appears to just be language selected? 
 demographic_data_filtered %>%
-  group_by(client_id) %>%
+  group_by(client_system_id) %>%
   filter(n() > 1) %>%
   summarise(across(everything(), ~ {
     u <- unique(.x)
     if(length(u) > 1) paste(u, collapse = ", ") else NA_character_
   }), .groups = "drop") %>%
-  select(client_id, where(~ any(!is.na(.))))
+  select(client_system_id, where(~ any(!is.na(.))))
 
 duplicate_list <- demographic_data_filtered %>% 
-  filter(client_id %in% duplicates$client_id)
+  filter(client_system_id %in% duplicates$client_system_id)
 
 write_csv(duplicate_list, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_duplicate_list.csv")
 
-#for now, drop the 45 clients (164 rows)
+#for now, drop the 53 clients (186 rows)
 demographic_data_filtered <- demographic_data_filtered %>% 
-  filter(!(client_id %in% duplicates$client_id))
+  filter(!(client_system_id %in% duplicates$client_system_id))
 
 #check again for duplicate ids, just in case
-length(unique(demographic_data_filtered$client_id)) == nrow(demographic_data_filtered)
+length(unique(demographic_data_filtered$client_system_id)) == nrow(demographic_data_filtered)
 ```
 
 ## DEMOGRAPHIC DATA - Recoding race
@@ -172,27 +175,27 @@ demographic_data_filtered <- demographic_data_filtered %>%
 ```{r}
 #get rid of demo data
 discharge_data_filtered <- discharge_data %>%
-  filter(!if_any(c(provider_id, client_id), ~ str_detect(as.character(.x), "DEMO"))) %>% 
+  filter(!if_any(c(provider_id, client_system_id), ~ str_detect(as.character(.x), "DEMO"))) %>% 
   janitor::clean_names()
 
 #are there unique client IDs? 
-length(unique(discharge_data_filtered$client_id)) == nrow(discharge_data_filtered)
+length(unique(discharge_data_filtered$client_system_id)) == nrow(discharge_data_filtered)
 
 #which IDs have been repeated and how many times? 
 discharge_data_filtered %>% 
-  group_by(client_id) %>% 
+  group_by(client_system_id) %>% 
   summarise(n=n()) %>% 
   filter(n>1)
 
 #what data is repeating for each client?
 discharge_data_filtered %>%
-  group_by(client_id) %>%
+  group_by(client_system_id) %>%
   filter(n() > 1) %>%
   summarise(across(everything(), ~ {
     u <- unique(.x)
     if(length(u) > 1) paste(u, collapse = ", ") else NA_character_
   }), .groups = "drop") %>%
-  select(client_id, where(~ any(!is.na(.))))
+  select(client_system_id, where(~ any(!is.na(.))))
 
 unique(discharge_data_filtered$pre_measure_s)
 unique(discharge_data_filtered$post_measure_s)
@@ -237,25 +240,25 @@ discharge_data_filtered %>%
 # DISCHARGE DATA EDA - Look at clients with >1 intervention
 ```{r}
 # filter to those who have a pre AND post measure
-dup_client_id <- discharge_data_filtered %>%
+dup_client_system_id <- discharge_data_filtered %>%
   filter(!is.na(pre_measure_s) & !is.na(post_measure_s)) 
 
 # create df where it shows you what was duplicated for each client ID
-dup_client_id <- dup_client_id %>% 
-  group_by(client_id) %>%
+dup_client_system_id <- dup_client_system_id %>% 
+  group_by(client_system_id) %>%
   filter(n() > 1) %>%
   summarise(across(everything(), ~ {
     u <- unique(.x)
     if(length(u) > 1) paste(u, collapse = ", ") else NA_character_
   }), .groups = "drop") %>%
-  select(client_id, where(~ any(!is.na(.))))
+  select(client_system_id, where(~ any(!is.na(.))))
 
 #filter discharge data to only clients with duplicate rows AND ones that hove both pre and post data
 dup_clients <- discharge_data_filtered %>% 
-  filter(client_id %in% dup_client_id$client_id,
+  filter(client_system_id %in% dup_client_system_id$client_system_id,
         !is.na(pre_measure_s) & !is.na(post_measure_s))
 
-length(unique(dup_clients$client_id)) #338 clients with more than one complete intervention 
+length(unique(dup_clients$client_system_id)) #338 clients with more than one complete intervention 
 ```
 
 ## Find clients that had >1 interventions AT THE SAME TIME
@@ -263,7 +266,7 @@ length(unique(dup_clients$client_id)) #338 clients with more than one complete i
 - this does not include people who had multiple follow-ups of the same intervention; this is filtered by pre-measure name (not trimmed)
 ```{r}
 dup_clients_same_time <- dup_clients %>% 
-  group_by(client_id, intervention_start) %>% 
+  group_by(client_system_id, intervention_start) %>% 
   summarise(across(pre_measure_s, ~ {
     u <- unique(.x)
     if(length(u) > 1) paste(u, collapse = ", ") else NA_character_
@@ -272,14 +275,14 @@ dup_clients_same_time <- dup_clients %>%
 
 #this is the data for the clients that had >1 intervention at the SAME time
 dup_clients_same_time_data <- discharge_data_filtered %>% 
-  filter(client_id %in% dup_clients_same_time$client_id)
+  filter(client_system_id %in% dup_clients_same_time$client_system_id)
 ```
 
 ## find clients that had an intervention AT DIFFERENT TIMES
 - right now this is filtering only on pre-assessment name (not trimmed)
 ```{r}
 dup_clients_diff_time <- dup_clients %>%
-  group_by(client_id) %>%
+  group_by(client_system_id) %>%
   filter(n_distinct(intervention_start, na.rm = TRUE) > 1) %>%
   summarise(
     n_intervention_start = n_distinct(intervention_start, na.rm = TRUE),
@@ -294,7 +297,7 @@ dup_clients_diff_time <- dup_clients %>%
 
 #this is the data for the clients that had an intervention at different times
 dup_clients_diff_time_data <- discharge_data_filtered %>% 
-  filter(client_id %in% dup_clients_diff_time$client_id)
+  filter(client_system_id %in% dup_clients_diff_time$client_system_id)
 
 nrow(dup_clients_diff_time) + nrow(dup_clients_same_time)
 ```
@@ -304,18 +307,18 @@ nrow(dup_clients_diff_time) + nrow(dup_clients_same_time)
 Now join demographic and discharge data by client ID
 ```{r}
 #assessment-level data
-all_data <- left_join(discharge_data_filtered, demographic_data_filtered, by = c("client_id", "provider_id"))
+all_data <- left_join(discharge_data_filtered, demographic_data_filtered, by = c("client_system_id", "provider_id", "provider_system_id"))
 head(all_data)
 ```
 
 #how many unique clients were served?
 ```{r}
-n_distinct(demographic_data_filtered$client_id)
+n_distinct(demographic_data_filtered$client_system_id)
 ```
 
 #how many clients had outcomes data? 
 ```{r}
-n_distinct(all_data$client_id)
+n_distinct(all_data$client_system_id)
 ```
 
 #write csvs
