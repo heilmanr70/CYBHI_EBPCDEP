@@ -8,7 +8,7 @@ editor: visual
 ## Outcomes Data by Round
 
 |  |  |  |  |  |  |  |
-|-----------|-----------|-----------|-----------|-----------|-----------|-----------|
+|----|----|----|----|----|----|----|
 | Round | Theme | Participants Served | Improved Outcomes | Satisfaction | Successful Discharges | Quote |
 | 1  | Parent/Caregivers Programs and Practices   |   |   |   |   |   |
 | 2  | Trauma-Informed Programs and Practices   |   |   |   |   |   |
@@ -32,6 +32,7 @@ table(discharge_data_filtered$funding_round)
 ```
 
 ### Improved outcomes
+
 ```{r}
 #| echo: false
 #| warning: false
@@ -57,6 +58,7 @@ yes_pct <- tab %>%
   filter(positive_outcomes == "Yes") %>%
   pull(valid_percent)
 ```
+
 Out of `{r} nrow(discharge_data_filtered)` rows of clients in EInsight's discharge data dashboard, `{r} count_pos` had both a pre- and post-score. Of those clients with complete intervention data in EInsight, `{r} yes_pct` had a positive outcome.
 
 The results below show % of positive outcomes by round, once NA's are removed from the data.
@@ -85,6 +87,7 @@ tab2
 ```
 
 ### Successful discharges
+
 ```{r}
 #| echo: false
 #| warning: false
@@ -112,9 +115,11 @@ yes_pct3 <- tab3 %>%
   pull(valid_percent)
 yes_pct3
 ```
+
 Successful discharges were defined as those clients that had "Mutually agreed cessation of treatment (Successful Completion)" as the `reason_for_discharge` in the discharge data from EInsight. Of `{r} nrow(discharge_data_filtered)` rows of discharge data, `{r} count_rows` rows had a reason for discharge stated. Of individuals with a reason for discharge stated, `{r} yes_count` (`{r} yes_pct3`) were successfully discharged.
 
 The results below show % of successful discharges by round, once NA's are removed from the data.
+
 ```{r}
 # total table of successful discharges by funding round
 tab4 <- discharge_data_filtered %>% 
