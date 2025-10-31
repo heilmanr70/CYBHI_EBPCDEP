@@ -1,0 +1,271 @@
+---
+title: "NOMS-Validating Positive Outcomes"
+author: "Cristin Young"
+format: docx
+editor: visual
+---
+
+## NOMS scoring
+
+The NOMS score and subscales seek to measure to what extent caregivers/parents or youths report improved mental health, daily life functioning, well-being, or social connectedness after receiving an intevention. An **increase** in score indicates a positive outcome. There are no benchmarks or clinical cutoffs established for NOMS scoring - if the follow-up assessment score is higher than the initial score, a positive outcome is indicated.
+
+```{r, reading_in_data}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+library(readr)
+library(tidyverse)
+library(readxl)
+# dealing with crazy header rows
+noms_child_raw <- read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/NOMS-child.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+h1 <- unlist(noms_child_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(noms_child_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+noms_child <- noms_child_raw[-c(1, 2), ]
+names(noms_child) <- new_names
+noms_child <- noms_child %>%
+  select(where(~ !all(is.na(.))))
+
+noms_self_raw <- read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/NOMS-self_report.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE)
+h1 <- unlist(noms_self_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(noms_self_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+noms_self <- noms_self_raw[-c(1, 2), ]
+names(noms_self) <- new_names
+noms_self <- noms_self %>%
+  select(where(~ !all(is.na(.))))
+```
+
+### Total score - CHILD
+
+Range: 21-105
+
+```{r, total_score}
+#| echo: false
+#| warning: false
+#| message: false
+
+# make sure columns are numeric and add a total score column and a column for if there was any missing data
+noms_child <- noms_child %>% 
+  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(any_missing_q1x = any(is.na(c_across(matches("^(q1|x).*_score$")))),
+         total_score = sum(c_across(matches("^(q1|x).*_score$")), na.rm = TRUE)) %>% 
+  ungroup
+
+# histogram to see if all values make sense
+hist(noms_child$total_score)
+max(noms_child$total_score)
+hist(noms_child$final_score_score)
+max(noms_child$final_score_score) #there are outliers here where there shouldn't be
+
+# does this match steve's final_score column? 
+noms_child %>%
+  filter(total_score != final_score_score)
+
+# create a positive outcome column 
+noms_child_outcomes <- noms_child %>%
+  select(system_id, collection, total_score) %>%
+  mutate(collection = str_to_lower(str_replace_all(collection, "[ -]+", "_"))) %>%
+  pivot_wider(
+    names_from = collection,
+    values_from = total_score,
+    names_glue = "{collection}_score") %>% 
+  unchop(everything())
+
+# are there any issues? no (yes if you # out unchop above)
+noms_child_outcomes %>% 
+  filter(str_detect(initial_score, ","))
+
+# filter out the repeat IDs (5 rows)
+length(unique(noms_child_outcomes$system_id)) == nrow(noms_child_outcomes)
+# which IDs have been repeated and how many times? 
+duplicates <- noms_child_outcomes %>% 
+  group_by(system_id) %>% 
+   filter(n() > 1) %>%
+  tally() 
+
+noms_child_outcomes <- noms_child_outcomes %>% 
+  filter(!(system_id %in% duplicates$system_id))
+  
+# this filters anyone with >1 initial score
+# noms_child_outcomes <- noms_child_outcomes %>% 
+#  filter(!str_detect(initial_score, ","))
+
+# breaking this out because I'm lazy
+noms_child_outcomes <- noms_child_outcomes %>%
+  rowwise() %>% 
+  mutate(
+    any_followup_higher = {
+      vals <- c_across(matches("^noms_child_follow_up_\\d+_score$"))
+      if (all(is.na(vals))) NA else any(vals > initial_score, na.rm = TRUE)
+    },
+    positive_outcome = case_when(
+      is.na(any_followup_higher) ~ NA_character_,
+      any_followup_higher ~ "Yes",
+      TRUE ~ "No"    
+      )
+    ) %>%
+  ungroup()
+
+# does this match steve's column? 
+noms_outcomes_compare <- noms_child_outcomes %>%
+  inner_join(noms_child, by = "system_id", suffix = c("_cy", "_steve")) %>%
+  mutate(match = positive_outcome == positive_outcome_response)
+
+# we need to figure these out
+false_matches <- noms_outcomes_compare %>%
+  filter(positive_outcome != positive_outcome_response) %>% 
+  select(system_id, initial_score, noms_child_follow_up_1_score, noms_child_follow_up_2_score, noms_child_follow_up_3_score, any_followup_higher, any_missing_q1x, positive_outcome, positive_outcome_response, total_score, final_score_score, match)
+```
+
+### Total score - SELF
+
+```{r, total_score}
+#| echo: false
+#| warning: false
+#| message: false
+
+# make sure columns are numeric and add a total score column and a column for if there was any missing data
+noms_self <- noms_self %>% 
+  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(any_missing_q1x = any(is.na(c_across(matches("^(q1|x).*_score$")))),
+         total_score = sum(c_across(matches("^(q1|x).*_score$")), na.rm = TRUE)) %>% 
+  ungroup
+
+# histogram to see if all values make sense
+hist(noms_self$total_score)
+max(noms_self$total_score)
+hist(noms_self$final_score_score)
+max(noms_self$final_score_score) #there are outliers here where there shouldn't be
+
+# does this match steve's final_score column? NO
+noms_self %>%
+  filter(total_score != final_score_score)
+
+# create a positive outcome column 
+noms_self_outcomes <- noms_self %>%
+  select(client_system_id, collection, total_score) %>%
+  mutate(collection = str_to_lower(str_replace_all(collection, "[ -]+", "_"))) %>%
+  pivot_wider(
+    names_from = collection,
+    values_from = total_score,
+    names_glue = "{collection}_score") %>% 
+  unchop(everything())
+
+# are there any issues?  
+noms_self_outcomes %>% 
+  filter(str_detect(initial_score, ","))
+
+# let's look at one of the issues
+noms_self %>% 
+  filter(client_system_id == "14659")
+
+# filter out the repeat IDs 
+length(unique(noms_self_outcomes$client_system_id)) == nrow(noms_self_outcomes)
+
+# which IDs have been repeated and how many times? 
+duplicates <- noms_self_outcomes %>% 
+  group_by(client_system_id) %>% 
+   filter(n() > 1) %>%
+  tally() 
+
+noms_child_outcomes <- noms_child_outcomes %>% 
+  filter(!(system_id %in% duplicates$system_id))
+  
+# this filters anyone with >1 initial score
+# noms_child_outcomes <- noms_child_outcomes %>% 
+#  filter(!str_detect(initial_score, ","))
+
+# breaking this out because I'm lazy
+noms_child_outcomes <- noms_child_outcomes %>%
+  rowwise() %>% 
+  mutate(
+    any_followup_higher = {
+      vals <- c_across(matches("^noms_child_follow_up_\\d+_score$"))
+      if (all(is.na(vals))) NA else any(vals > initial_score, na.rm = TRUE)
+    },
+    positive_outcome = case_when(
+      is.na(any_followup_higher) ~ NA_character_,
+      any_followup_higher ~ "Yes",
+      TRUE ~ "No"    
+      )
+    ) %>%
+  ungroup()
+
+# does this match steve's column? 
+noms_outcomes_compare <- noms_child_outcomes %>%
+  inner_join(noms_child, by = "system_id") %>%
+  mutate(match = positive_outcome == positive_outcome_response)
+
+# we need to figure these out
+false_matches <- noms_outcomes_compare %>%
+  filter(positive_outcome != positive_outcome_response) %>% 
+  select(system_id, initial_score, noms_child_follow_up_1_score, noms_child_follow_up_2_score, noms_child_follow_up_3_score, any_followup_higher, any_missing_q1x, positive_outcome, positive_outcome_response, total_score, final_score_score, match)
+```
+
+### 
+
+### Mental health
+
+Range: 1-5
+
+Sum = Q1
+
+```{r}
+
+```
+
+### Handling daily life
+
+Range: 7-35
+
+Sum = Q2a+...+Q2g
+
+```{r}
+
+```
+
+### General well-being
+
+Range: 7-35
+
+Sum = 3a+...+3g
+
+```{r}
+
+```
+
+### Social connectedness
+
+Range: 6-30
+
+Sum = Q4a+...+Q4f
+
+```{r}
+
+```
+
+# Checking against Steve's work
+
+Check my scoring against the `positive_outcome` column in the discharge data
+
+```{r}
+
+```
