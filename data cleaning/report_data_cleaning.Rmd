@@ -258,7 +258,7 @@ dup_clients <- discharge_data_filtered %>%
   filter(client_system_id %in% dup_client_system_id$client_system_id,
         !is.na(pre_measure_s) & !is.na(post_measure_s))
 
-length(unique(dup_clients$client_system_id)) #338 clients with more than one complete intervention 
+length(unique(dup_clients$client_system_id)) #358 clients with more than one complete intervention 
 ```
 
 ## Find clients that had >1 interventions AT THE SAME TIME
@@ -266,7 +266,7 @@ length(unique(dup_clients$client_system_id)) #338 clients with more than one com
 - this does not include people who had multiple follow-ups of the same intervention; this is filtered by pre-measure name (not trimmed)
 ```{r}
 dup_clients_same_time <- dup_clients %>% 
-  group_by(client_system_id, intervention_start) %>% 
+  group_by(client_system_id, pre_completion_date) %>% 
   summarise(across(pre_measure_s, ~ {
     u <- unique(.x)
     if(length(u) > 1) paste(u, collapse = ", ") else NA_character_
