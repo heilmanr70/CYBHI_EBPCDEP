@@ -452,7 +452,7 @@ tab4
 ## Final table
 
 |  |  |  |  |  |  |  |  |
-|---------|---------|---------|---------|---------|---------|---------|---------|
+|----|----|----|----|----|----|----|----|
 | Round | Theme | Participants Served | Improved Outcomes | Satisfaction - Q1 | Satisfaction - Overall | Successful Discharges | Quote |
 | 1 | Parent/Caregivers Programs and Practices | `{r} part_served[1]` | `{r} tab2[["1"]][2]` | `{r} pct_4_5_round[["pct_4_5"]][1]` | `{r} summary_agree_round$pct_meeting_80pct[1]` | `{r} tab4[["1"]][3]` |  |
 | 2 | Trauma-Informed Programs and Practices | `{r} part_served[2]` | `{r} tab2[["2"]][2]` | `{r} pct_4_5_round$pct_4_5[2]` | `{r} summary_agree_round$pct_meeting_80pct[2]` | `{r} tab4[["2"]][3]` |  |
