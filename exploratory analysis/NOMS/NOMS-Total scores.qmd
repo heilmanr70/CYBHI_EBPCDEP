@@ -17,6 +17,9 @@ The NOMS score and subscales seek to measure to what extent caregivers/parents o
 library(readr)
 library(tidyverse)
 library(readxl)
+library(zoo)
+library(ggridges)
+library(janitor)
 
 # dealing with crazy header rows
 noms_child_raw <- read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/NOMS-child.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
@@ -166,6 +169,8 @@ If there's a match within 3 days of the initial assessment, we will need to look
 
 We will create a new dataframe of all instances of individuals with multiple initial or multiple discharge assessments. If we can pair them easily (e.g., Joel/Joel and Sally/Sally), we will do so. If we cannot, we will filter out all unpaired assessments.
 
+The mean, median, and sd for total scores for the NOMS child assessment, grouped by initial versus discharge scores are: 
+
 ```{r, pair_data}
 #| echo: false
 #| warning: false
@@ -274,16 +279,7 @@ summary_stats_child <- score_diff %>%
     n = sum(!is.na(score_change))
   )
 
-summary_stats_child
-```
-
-Plot it now!
-
-```{r, plot}
-#| echo: false
-#| warning: false
-#| message: false
-
+# pivot longer
 score_long <- pairs_primary %>%
   select(system_id, initial_score, follow_up_score) %>% 
   pivot_longer(
@@ -306,6 +302,16 @@ summary_stats_child_score_type <- score_long %>%
     sd_score = sd(score_value, na.rm = TRUE), 
     n = sum(!is.na(score_value))
   )
+
+summary_stats_child_score_type
+```
+
+Plot it now!
+
+```{r, plot}
+#| echo: false
+#| warning: false
+#| message: false
 
 # Ridgeline plot
 ridge_plot_child <- ggplot(score_long, aes(x = score_value, y = 1, fill = score_type)) +
@@ -342,7 +348,8 @@ ridge_plot_child <- ggplot(score_long, aes(x = score_value, y = 1, fill = score_
     legend.justification = c("left", "top"),
     legend.title = element_blank(),
     legend.text = element_text(size = 8),
-    plot.margin = margin(5, 5, 5, 5)
+    plot.margin = margin(5, 5, 5, 5),
+    plot.title = element_text(size = 11)
   ) + 
   geom_segment(data = summary_stats_child_score_type, 
                aes(x = median_score, y = 1,
@@ -351,7 +358,7 @@ ridge_plot_child <- ggplot(score_long, aes(x = score_value, y = 1, fill = score_
   geom_text(data = summary_stats_child_score_type,
             aes(x = median_score, y = 1.062, 
                 label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
-                vjust = 2, hjust = 0.5, size = 3)
+                vjust = 2, hjust = 0.5, size = 2)
 
 ridge_plot_child
 ```
@@ -359,13 +366,16 @@ ridge_plot_child
 Look at positive outcomes.
 
 ```{r}
+#| echo: false
+#| warning: false
+#| message: false
 score_diff <- score_diff %>% 
   mutate(positive_outcome = ifelse(follow_up_score > initial_score, 1, 0))
 
 tabyl(score_diff$positive_outcome)  
 ```
 
-### SELF
+## SELF
 
 As with the child data, we're using date to assess follow-up scores instead of any of the columns currently in the data.
 
@@ -395,11 +405,11 @@ noms_self %>%
   filter(total_score != final_score_score)
 ```
 
+The mean, median, and sd for total scores for the NOMS child assessment, grouped by initial versus discharge scores are: 
 ```{r}
 #| echo: false
 #| warning: false
 #| message: false
-#| include: false
 
 #make sure it's date formatted
 noms_self <- noms_self %>%
@@ -513,15 +523,7 @@ summary_stats_self <- score_diff %>%
     n = sum(!is.na(score_change))
   )
 
-summary_stats_self
-```
-
-Plot it now!
-
-```{r}
-#| echo: false
-#| warning: false
-#| message: false
+# pivot longer
 score_long <- pairs_primary %>%
   filter(follow_up_score > 21,
          initial_score > 21) %>% 
@@ -547,6 +549,15 @@ summary_stats_self_score_type <- score_long %>%
     n = sum(!is.na(score_value))
   )
 
+summary_stats_self_score_type
+```
+
+Plot it now!
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
 # Ridgeline plot
 ridge_plot_self <- ggplot(score_long, aes(x = score_value, y = 1, fill = score_type)) +
   geom_density_ridges(
@@ -582,7 +593,8 @@ ridge_plot_self <- ggplot(score_long, aes(x = score_value, y = 1, fill = score_t
     legend.justification = c("left", "top"),
     legend.title = element_blank(),
     legend.text = element_text(size = 8),
-    plot.margin = margin(5, 5, 5, 5)
+    plot.margin = margin(5, 5, 5, 5),
+    plot.title = element_text(size = 11)
   ) + 
   geom_segment(data = summary_stats_self_score_type, 
                aes(x = median_score, y = 1,
@@ -612,7 +624,7 @@ tabyl(score_diff_self$positive_outcome)
 
 For this analysis, we:
 
--   filtered out all dates before 2024 and after the date we ran the analysis (e.g., assessments cannot be completed in the future)
+-   filtered out all dates before July 2023 and after the date we ran the analysis (e.g., assessments cannot be completed in the future)
 
 -   filtered the total score to \>21 and \<105 (the valid scoring range for the total NOMS score)
 
