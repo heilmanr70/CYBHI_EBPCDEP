@@ -1,0 +1,311 @@
+---
+title: "NOMS-Q2: Handling Daily Life"
+author: "Cristin Young"
+format: docx
+editor: visual
+---
+
+# NOMS scoring
+
+The NOMS score and subscales seek to measure to what extent caregivers/parents or youths report improved mental health, daily life functioning, well-being, or social connectedness after receiving an intevention. An **increase** in score indicates a positive outcome. There are no benchmarks or clinical cutoffs established for NOMS scoring - if the follow-up assessment score is higher than the initial score, a positive outcome is indicated.
+
+```{r, reading_in_data}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+library(readr)
+library(tidyverse)
+library(readxl)
+library(zoo)
+library(ggridges)
+library(janitor)
+
+# dealing with crazy header rows
+noms_child_raw <- read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/NOMS-child.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+h1 <- unlist(noms_child_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(noms_child_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+noms_child <- noms_child_raw[-c(1, 2), ]
+names(noms_child) <- new_names
+noms_child <- noms_child %>%
+  select(where(~ !all(is.na(.))))
+
+noms_self_raw <- read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/NOMS-self_report.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE)
+h1 <- unlist(noms_self_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(noms_self_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+noms_self <- noms_self_raw[-c(1, 2), ]
+names(noms_self) <- new_names
+noms_self <- noms_self %>%
+  select(where(~ !all(is.na(.))))
+```
+
+The following data answers the follow study sub-questions:
+
+-   **3.05: "To what extent did parents/caregivers report improved daily life functioning for themselves and their child after receiving the intervention?"**
+
+-   **3.06: "To what extent did the youth report improved mental health after receiving the intervention?"**
+
+## Handling daily life
+
+### CHILD
+
+Range: 7-35
+
+Sum = Q2a+...+Q2g
+
+Use the `pairs_primary_long` data frame to compute scores. The following had a positive outcome:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+
+#make sure columns are numeric
+#add a total score column
+#add a column for if there was any missing data, in case we want to exclude those rows later
+#make sure it's date formatted and get rid of the weird dates before 2024 for now
+noms_child <- noms_child %>% 
+  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(any_missing_q1x = any(is.na(c_across(matches("^(q1|x).*_score$")))),
+         total_score = sum(c_across(matches("^(q1|x).*_score$")), na.rm = TRUE)) %>% 
+  ungroup %>% 
+  mutate(
+    date_completed = as.Date(date_completed),
+    row_id = row_number()                # stable row id for disambiguation
+  ) %>% 
+  filter(date_completed <= Sys.Date(),     #date of running the code
+         date_completed >= "2023-01-01")   #date to filter out random issue dates   
+
+#pivot long to get individual question scores too
+noms_child_long <- noms_child %>% 
+  pivot_longer(
+    cols = matches("^(q1|x).*_score$"),
+    names_to = "question",
+    values_to = "score"
+  ) %>% 
+  mutate(score = as.numeric(score))
+
+#pair per question
+paired_outcomes_child <- noms_child_long %>% 
+  group_by(system_id, question) %>% 
+  arrange(date_completed, .by_group = TRUE) %>% 
+  mutate(
+    days_since_initial = as.integer(date_completed - first(date_completed)),
+    initial_date = first(date_completed),
+    initial_score = first(score)
+  ) %>% 
+  # flagging follow-ups
+  mutate(
+    is_within3 = days_since_initial <= 3 & days_since_initial >= 0,
+    is_after3 = days_since_initial >3
+  )
+
+# review queue
+review_queue_long <- paired_outcomes_child %>% 
+  filter(is_within3) %>% 
+  transmute(
+    system_id, question,
+    issue = "followup_within_3_days",
+    initial_date,
+    candidate_date = date_completed,
+    candidate_score = score,
+    days_since_initial
+  )
+
+# paired data
+pairs_primary_long <- paired_outcomes_child %>% 
+  filter(is_after3) %>% 
+  slice_tail(n = 1) %>% 
+  transmute(
+    system_id, question,
+    initial_date,
+    initial_score,
+    follow_up_date = date_completed,
+    follow_up_score = score,
+    days_since_initial
+  )
+
+# ones without follow-up
+no_followup_long <- paired_outcomes_child %>% 
+  ungroup() %>% 
+  summarise(has_followup = any(is_after3), .by = c(system_id, question)) %>% 
+  filter(!has_followup)
+```
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q2 <- pairs_primary_long %>% 
+  filter(str_detect(question, "^x2.*_score$"))
+
+#tabyl(pairs_primary_long_q2$initial_score)
+#tabyl(pairs_primary_long_q2$follow_up_score)
+
+# 8) compute differences in f/u and initial scores
+score_diff_child_q2 <- pairs_primary_long_q2 %>% 
+  group_by(system_id) %>% 
+  summarise(initial_total = sum(initial_score, na.rm = TRUE),
+            followup_total = sum(follow_up_score, na.rm = TRUE),
+            score_change = followup_total - initial_total,
+         positive_outcome = ifelse(followup_total > initial_total, 1, 0))
+
+# 9) summary stats
+summary_stats_child_q2 <- score_diff_child_q2 %>% 
+  ungroup() %>% 
+  summarise(
+    mean_diff = mean(score_change, na.rm = TRUE),
+    median_diff = median(score_change, na.rm = TRUE),
+    sd_diff = sd(score_change, na.rm = TRUE),
+    n = sum(!is.na(score_change))
+  )
+
+tabyl(score_diff_child_q2$positive_outcome)  
+```
+
+Plot it.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+q2_child_score_long <- score_diff_child_q2 %>%
+  ungroup() %>% 
+  select(system_id, initial_total, followup_total) %>% 
+  pivot_longer(
+    cols = c(initial_total, followup_total),
+    names_to = "score_type",
+    values_to = "score_value"
+  ) %>%
+  mutate(
+    score_type = recode(score_type,
+                        "initial_total" = "Initial",
+                        "followup_total" = "Follow-up")
+  )
+
+# Plot
+child_q2_plot <- ggplot(q2_child_score_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    #binwidth = 1, 
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width = 0.8,
+    alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Measure: Q2 Score (7-35)", 
+       y = "Count",
+       title = "Distribution of Initial and Follow-up Scores, NOMS Child Q2") +
+  theme_minimal()+
+  theme(
+     axis.title = element_text(size = 9),
+     axis.text = element_text(size = 9),
+     panel.grid.major = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+     legend.position = "inside",
+     legend.justification = c("left", "top"),
+     legend.title = element_blank(),
+     legend.text = element_text(size = 8),
+     plot.margin = margin(5, 5, 5, 5))  
+  
+child_q2_plot
+```
+
+#### Summary stats
+
+The average, median, and SD at initial and discharge time points were:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# summary stats by score type
+summary_stats_child_q2 <- q2_child_score_long %>% 
+  group_by(score_type) %>% 
+  summarise(
+    mean_score = mean(score_value, na.rm = TRUE), 
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score = sd(score_value, na.rm = TRUE), 
+    n = sum(!is.na(score_value))
+  )
+
+summary_stats_child_q2
+```
+
+The percent of those who selected ratings of 4 or higher (excellent or very good) across Q2 at initial and discharge time points, respectively, were:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+tab_init <- tabyl(pairs_primary_long_q2$initial_score)
+round(tab_init$valid_percent[4] + tab_init$valid_percent[5], 2)
+
+tab_followup <- tabyl(pairs_primary_long_q2$follow_up_score)
+round(tab_followup$valid_percent[4] + tab_followup$valid_percent[5], 2)
+```
+
+### SELF
+
+Range: 7-35
+
+Sum = Q2a+...+Q2g
+
+```{}
+```
+
+## 
+
+# Assumptions and data notes
+
+For this analysis, we:
+
+-   filtered out all dates before 2023 and after the date we ran the analysis (e.g., assessments cannot be completed in the future)
+
+-   did not delete rows with missing data for the total score
+
+-   dropped rows with missing `date_completed` data
+
+-   only assessed paired data, defined by individuals with both an initial and follow-up assessment
+
+To identify initial and follow-up assessment dates, we:
+
+-   identified the earliest initial date per `client_system_id` and used this as the initial assessment date
+
+-   chose a primary initial assessment date per `client_system_id`, based on the first row on that day by original data frame order
+
+    -   any other records on the initial day go to review to identify possible duplicate initial assessments
+
+    -   any records within +3 days of the initial date were sent to review to identify possible duplicate initial assessments
+
+-   follow-ups were defined as all rows except the chosen primary initial date
+
+    -   any follow-up within +3 days was sent to review and not used for pairing
+
+-   we paired the initial score with the LAST follow-up after the +3 day window
+
+-   we defined a positive outcome as: if follow-up score \> initial score, positive outcome == YES

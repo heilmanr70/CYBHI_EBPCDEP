@@ -1,0 +1,161 @@
+---
+title: "NOMS-Q2: Handling Daily Life"
+author: "Cristin Young"
+format: docx
+editor: visual
+---
+
+# NOMS scoring
+
+The NOMS score and subscales seek to measure to what extent caregivers/parents or youths report improved mental health, daily life functioning, well-being, or social connectedness after receiving an intevention. An **increase** in score indicates a positive outcome. There are no benchmarks or clinical cutoffs established for NOMS scoring - if the follow-up assessment score is higher than the initial score, a positive outcome is indicated.
+
+```{r, reading_in_data}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+library(readr)
+library(tidyverse)
+library(readxl)
+library(zoo)
+library(ggridges)
+library(janitor)
+
+# dealing with crazy header rows
+noms_child_raw <- read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/NOMS-child.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+h1 <- unlist(noms_child_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(noms_child_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+noms_child <- noms_child_raw[-c(1, 2), ]
+names(noms_child) <- new_names
+noms_child <- noms_child %>%
+  select(where(~ !all(is.na(.))))
+
+noms_self_raw <- read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/NOMS-self_report.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE)
+h1 <- unlist(noms_self_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(noms_self_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+noms_self <- noms_self_raw[-c(1, 2), ]
+names(noms_self) <- new_names
+noms_self <- noms_self %>%
+  select(where(~ !all(is.na(.))))
+```
+
+The following data answers the follow study sub-questions:
+
+-   **3.05: "To what extent did parents/caregivers report improved daily life functioning for themselves and their child after receiving the intervention?"**
+
+-   **3.06: "To what extent did the youth report improved mental health after receiving the intervention?"**
+
+## Handling daily life
+
+### CHILD
+
+Range: 7-35
+
+Sum = Q2a+...+Q2g
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+noms_child_q2 <- noms_child %>%
+  select(provider, provider_id, system_id, collection, date_completed, x2a_my_child_is_handling_daily_life_score, x2b_my_child_is_able_to_deal_with_unexpected_events_in_their_life_score, x2c_my_child_gets_along_with_friends_and_other_people_score, x2d_my_child_gets_along_with_family_members_score, x2e_my_child_does_well_in_social_situations_score, x2f_my_child_does_well_in_school_score, x2g_my_child_has_a_safe_place_to_live_score) %>% 
+  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(any_missing_q2x = any(is.na(c_across(matches("^(q2|x).*_score$")))),
+         total_score = sum(c_across(matches("^(q2|x).*_score$")), na.rm = TRUE)) %>% 
+  ungroup
+
+# histogram to see if all values make sense
+hist(noms_child_q2$total_score)
+```
+
+### SELF
+
+Range: 7-35
+
+Sum = Q2a+...+Q2g
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+noms_self_q2 <- noms_self %>%
+  select(provider_system_id, provider, provider_id, client_system_id, collection, date_completed, x2a_i_am_handling_daily_life_score, x2b_i_am_able_to_deal_with_unexpected_events_in_my_life_score, x2c_i_get_along_with_friends_and_other_people_score, x2d_i_get_along_with_family_members_score, x2e_i_do_well_in_social_situations_score, x2f_i_do_well_in_school_and_or_work_score, x2g_i_have_a_safe_place_to_live_score) %>% 
+  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(any_missing_q2x = any(is.na(c_across(matches("^(q2|x).*_score$")))),
+         total_score = sum(c_across(matches("^(q2|x).*_score$")), na.rm = TRUE)) %>% 
+  ungroup
+
+# histogram to see if all values make sense
+hist(noms_self_q2$total_score)
+```
+
+## General well-being 
+
+### CHILD
+
+Range: 7-35
+
+Sum = 3a+...+3g
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+noms_child_q3 <- noms_child %>%
+  select(provider, provider_id, system_id, collection, date_completed, x2a_my_child_is_handling_daily_life_score, x3a_nervous_score, x3b_hopeless_score, x3c_restless_or_fidgety_score, x3d_so_depressed_that_nothing_could_cheer_your_child_up_score, x3e_that_everything_was_an_effort_score, x3f_worthless_score, x3g_bothered_by_psychological_or_emotional_problems_score) %>% 
+  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(any_missing_q2x = any(is.na(c_across(matches("^(q2|x).*_score$")))),
+         total_score = sum(c_across(matches("^(q2|x).*_score$")), na.rm = TRUE)) %>% 
+  ungroup
+
+# histogram to see if all values make sense
+hist(noms_child_q3$total_score)
+```
+
+```{r}
+noms_self_q3 <- noms_self %>%
+  select(provider_system_id, provider, provider_id, client_system_id, collection, date_completed, x3a_nervous_score, x3b_hopeless_score, x3c_restless_or_fidgety_score, x3d_so_depressed_that_nothing_could_cheer_you_up_score, x3e_that_everything_was_an_effort_score, x3f_worthless_score, x3g_bothered_by_psychological_or_emotional_problems_score) %>% 
+  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(any_missing_q2x = any(is.na(c_across(matches("^(q2|x).*_score$")))),
+         total_score = sum(c_across(matches("^(q2|x).*_score$")), na.rm = TRUE)) %>% 
+  ungroup
+
+# histogram to see if all values make sense
+hist(noms_self_q3$total_score)
+```
+
+### SELF
+
+## Social connectedness
+
+### CHILD
+
+Range: 6-30
+
+Sum = Q4a+...+Q4f
+
+```{r}
+
+```
+
+### SELF

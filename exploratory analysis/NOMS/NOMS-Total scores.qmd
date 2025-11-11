@@ -1,0 +1,653 @@
+---
+title: "NOMS-Total Scores"
+author: "Cristin Young"
+format: docx
+editor: visual
+---
+
+# NOMS scoring
+
+The NOMS score and subscales seek to measure to what extent caregivers/parents or youths report improved mental health, daily life functioning, well-being, or social connectedness after receiving an intevention. An **increase** in score indicates a positive outcome. There are no benchmarks or clinical cutoffs established for NOMS scoring - if the follow-up assessment score is higher than the initial score, a positive outcome is indicated.
+
+```{r, reading_in_data}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+library(readr)
+library(tidyverse)
+library(readxl)
+library(zoo)
+library(ggridges)
+library(janitor)
+
+# dealing with crazy header rows
+noms_child_raw <- read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/NOMS-child.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+h1 <- unlist(noms_child_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(noms_child_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+noms_child <- noms_child_raw[-c(1, 2), ]
+names(noms_child) <- new_names
+noms_child <- noms_child %>%
+  select(where(~ !all(is.na(.))))
+
+noms_self_raw <- read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/NOMS-self_report.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE)
+h1 <- unlist(noms_self_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(noms_self_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+noms_self <- noms_self_raw[-c(1, 2), ]
+names(noms_self) <- new_names
+noms_self <- noms_self %>%
+  select(where(~ !all(is.na(.))))
+```
+
+```{r, long_df}
+#| echo: false
+#| warning: false
+#| message: false
+
+#make sure columns are numeric
+#add a total score column
+#add a column for if there was any missing data, in case we want to exclude those rows later
+#make sure it's date formatted and get rid of the weird dates before 2024 for now
+noms_child <- noms_child %>% 
+  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(any_missing_q1x = any(is.na(c_across(matches("^(q1|x).*_score$")))),
+         total_score = sum(c_across(matches("^(q1|x).*_score$")), na.rm = TRUE)) %>% 
+  ungroup %>% 
+  mutate(
+    date_completed = as.Date(date_completed),
+    row_id = row_number()                # stable row id for disambiguation
+  ) %>% 
+  filter(date_completed <= Sys.Date(),     #date of running the code
+         date_completed >= "2023-01-01")   #date to filter out random issue dates   
+
+#pivot long to get individual question scores too
+noms_child_long <- noms_child %>% 
+  pivot_longer(
+    cols = matches("^(q1|x).*_score$"),
+    names_to = "question",
+    values_to = "score"
+  ) %>% 
+  mutate(score = as.numeric(score))
+
+#pair per question
+paired_outcomes_child <- noms_child_long %>% 
+  group_by(system_id, question) %>% 
+  arrange(date_completed, .by_group = TRUE) %>% 
+  mutate(
+    days_since_initial = as.integer(date_completed - first(date_completed)),
+    initial_date = first(date_completed),
+    initial_score = first(score)
+  ) %>% 
+  # flagging follow-ups
+  mutate(
+    is_within3 = days_since_initial <= 3 & days_since_initial >= 0,
+    is_after3 = days_since_initial >3
+  )
+
+# review queue
+review_queue_long <- paired_outcomes_child %>% 
+  filter(is_within3) %>% 
+  transmute(
+    system_id, question,
+    issue = "followup_within_3_days",
+    initial_date,
+    candidate_date = date_completed,
+    candidate_score = score,
+    days_since_initial
+  )
+
+# paired data
+pairs_primary_long <- paired_outcomes_child %>% 
+  filter(is_after3) %>% 
+  slice_tail(n = 1) %>% 
+  transmute(
+    system_id, question,
+    initial_date,
+    initial_score,
+    follow_up_date = date_completed,
+    follow_up_score = score,
+    days_since_initial
+  )
+
+# ones without follow-up
+no_followup_long <- paired_outcomes_child %>% 
+  ungroup() %>% 
+  summarise(has_followup = any(is_after3), .by = c(system_id, question)) %>% 
+  filter(!has_followup)
+```
+
+# Total score 
+
+## CHILD
+
+Range: 21-105
+
+We will compute the total scores separately for children and for the self report. Both have the same possible scoring range.
+
+```{r, total_score}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+
+# histogram to see if all values make sense
+hist(noms_child$total_score)
+max(noms_child$total_score)
+min(noms_child$total_score) #there are outliers here where there shouldn't be
+hist(noms_child$final_score_score)
+max(noms_child$final_score_score) #there are outliers here where there shouldn't be
+
+# does this match steve's final_score column? 
+noms_child %>%
+  filter(total_score != final_score_score)
+
+# filter to total_score > 21
+noms_child <- noms_child %>% 
+  filter(total_score >= 21)
+```
+
+None of the columns in the raw output are reliable (e.g., `collection` ), so we're creating a positive outcome column based on the `total_score` and the date of the assessment, +3 days, to find initial and discharge time points.
+
+If there's a match within 3 days of the initial assessment, we will need to look at the parent field to assess, and if it's unclear, we will create a new initial assessment.
+
+We will create a new dataframe of all instances of individuals with multiple initial or multiple discharge assessments. If we can pair them easily (e.g., Joel/Joel and Sally/Sally), we will do so. If we cannot, we will filter out all unpaired assessments.
+
+The mean, median, and sd for total scores for the NOMS child assessment, grouped by initial versus discharge scores are: 
+
+```{r, pair_data}
+#| echo: false
+#| warning: false
+#| message: false
+
+# 1) Identify earliest (initial) date per system_id
+earliest <- noms_child %>%
+  group_by(system_id) %>%
+  summarise(initial_date = min(date_completed, na.rm = TRUE), .groups = "drop") %>% 
+  filter(initial_date != Inf) #NA dates are coming back as "Inf" so filtering those out
+
+# 2) Tag all assessments that occur on that earliest date
+on_initial_day <- noms_child %>% 
+  inner_join(earliest, by = "system_id") %>%
+  filter(date_completed == initial_date)
+
+# Choose ONE "primary initial" per system_id (first row on that day by original order)
+primary_initials <- on_initial_day %>%
+  arrange(system_id, date_completed, row_id) %>%
+  group_by(system_id) %>%
+  slice_head(n = 1) %>%
+  ungroup() %>%
+  transmute(
+    system_id,
+    initial_date  = date_completed,
+    initial_score = total_score,
+    initial_row_id = row_id
+  )
+
+# Any other records on the initial day go to review (possible duplicate initials)
+review_initial_same_day <- on_initial_day %>%
+  anti_join(primary_initials, by = c("system_id", "row_id" = "initial_row_id")) %>%
+  transmute(
+    system_id,
+    initial_date = date_completed,
+    issue = "multiple_assessments_on_initial_day",
+    candidate_date  = date_completed,
+    candidate_score = total_score,
+    candidate_row_id = row_id,
+    days_from_initial = 0L
+  )
+
+# 3) Define follow-ups = all rows except the chosen primary initial
+followups <- noms_child %>%
+  anti_join(primary_initials, by = c("system_id", "row_id" = "initial_row_id")) %>% 
+  inner_join(primary_initials %>% select(system_id, initial_date), by = "system_id") %>% 
+  mutate(days_from_initial = as.integer(date_completed - initial_date))
+
+# 4) Send any follow-up within +3 days to review (not used for pairing) - these are the same as the multiple assessments on the same day; there are no follow-ups within 3 days of the initial 
+review_followups_within3 <- followups %>% 
+  filter(days_from_initial >= 0, days_from_initial <= 3) %>% 
+  transmute(
+    system_id,
+    initial_date,
+    issue = "followup_within_3_days_of_initial", 
+    candidate_date = date_completed,
+    candidate_score = total_score,
+    candidate_row_id = row_id,
+    days_from_initial
+  )
+
+# 5) pair initial with LAST follow-up after +3-day window
+pairs_primary <- followups %>% 
+  filter(days_from_initial >3) %>% 
+  arrange(system_id, date_completed, row_id) %>% 
+  group_by(system_id, initial_date) %>% 
+  slice_tail(n = 1) %>% #choose last f/u date
+  ungroup() %>% 
+  inner_join(primary_initials,
+             by = c("system_id", "initial_date")) %>% 
+  transmute(
+    system_id,
+    initial_date,
+    initial_score,
+    follow_up_date = date_completed,
+    follow_up_score = total_score,
+    days_from_initial,
+    provider,
+    provider_id
+  )
+  
+# 6) Combine review items
+review_queue <- bind_rows(
+  review_initial_same_day,
+  review_followups_within3
+) %>%
+  arrange(system_id, initial_date, candidate_date) %>%
+  distinct()
+
+# 7) initials with no eligible follow-up after +3 days
+initials_no_match <- primary_initials %>%
+  anti_join(pairs_primary, by = c("system_id", "initial_date"))
+
+# 8) compute differences in f/u and initial scores
+score_diff <- pairs_primary %>% 
+  filter(follow_up_score > 21, 
+         initial_score > 21) %>%  
+  mutate(score_change = follow_up_score - initial_score)
+
+# 9) summary stats
+summary_stats_child <- score_diff %>% 
+  summarise(
+    mean_diff = mean(score_change, na.rm = TRUE),
+    median_diff = median(score_change, na.rm = TRUE),
+    sd_diff = sd(score_change, na.rm = TRUE),
+    n = sum(!is.na(score_change))
+  )
+
+# pivot longer
+score_long <- pairs_primary %>%
+  select(system_id, initial_score, follow_up_score) %>% 
+  pivot_longer(
+    cols = c(initial_score, follow_up_score),
+    names_to = "score_type",
+    values_to = "score_value"
+  ) %>%
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score" = "Initial",
+                        "follow_up_score" = "Follow-up")
+  )
+
+# 10) summary stats by score type
+summary_stats_child_score_type <- score_long %>% 
+  group_by(score_type) %>% 
+  summarise(
+    mean_score = mean(score_value, na.rm = TRUE), 
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score = sd(score_value, na.rm = TRUE), 
+    n = sum(!is.na(score_value))
+  )
+
+summary_stats_child_score_type
+```
+
+Plot it now!
+
+```{r, plot}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Ridgeline plot
+ridge_plot_child <- ggplot(score_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_x_continuous(limits = c(21, 105)) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Measure: Total Score (21-105)", 
+       y = NULL,
+       title = "Distribution of Initial and Follow-up Scores, NOMS Child") +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x = element_text(size = 9, hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 9),
+    panel.grid = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 5),
+    plot.title = element_text(size = 11)
+  ) + 
+  geom_segment(data = summary_stats_child_score_type, 
+               aes(x = median_score, y = 1,
+                   xend = median_score, yend = 1.05,
+                   color = score_type), linetype = "dotted") + 
+  geom_text(data = summary_stats_child_score_type,
+            aes(x = median_score, y = 1.062, 
+                label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+                vjust = 2, hjust = 0.5, size = 2)
+
+ridge_plot_child
+```
+
+Look at positive outcomes.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+score_diff <- score_diff %>% 
+  mutate(positive_outcome = ifelse(follow_up_score > initial_score, 1, 0))
+
+tabyl(score_diff$positive_outcome)  
+```
+
+## SELF
+
+As with the child data, we're using date to assess follow-up scores instead of any of the columns currently in the data.
+
+```{r, total_score_self}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+
+# make sure columns are numeric and add a total score column and a column for if there was any missing data
+noms_self <- noms_self %>% 
+  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(any_missing_q1x = any(is.na(c_across(matches("^(q1|x).*_score$")))),
+         total_score = sum(c_across(matches("^(q1|x).*_score$")), na.rm = TRUE)) %>% 
+  ungroup
+
+# histogram to see if all values make sense
+hist(noms_self$total_score)
+max(noms_self$total_score)
+min(noms_self$total_score)
+hist(noms_self$final_score_score)
+max(noms_self$final_score_score) 
+
+# does this match steve's final_score column? YES!
+noms_self %>%
+  filter(total_score != final_score_score)
+```
+
+The mean, median, and sd for total scores for the NOMS child assessment, grouped by initial versus discharge scores are: 
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+#make sure it's date formatted
+noms_self <- noms_self %>%
+  mutate(
+    date_completed = as.Date(date_completed),
+    row_id = row_number()                # stable row id for disambiguation
+  ) %>% 
+  filter(date_completed <= Sys.Date(),   #can't be a date in the future
+         date_completed >= "2023-01-01") #can't be a weird non-date 
+
+# 1) Identify earliest (initial) date per system_id
+earliest <- noms_self %>%
+  group_by(client_system_id) %>%
+  summarise(initial_date = min(date_completed, na.rm = TRUE), .groups = "drop") %>% 
+  filter(initial_date != Inf) #NA dates are coming back as "Inf" so filtering those out
+
+# 2) Tag all assessments that occur on that earliest date
+on_initial_day <- noms_self %>% 
+  inner_join(earliest, by = "client_system_id") %>%
+  filter(date_completed == initial_date)
+
+# Choose ONE "primary initial" per system_id (first row on that day by original order)
+primary_initials <- on_initial_day %>%
+  arrange(client_system_id, date_completed, row_id) %>%
+  group_by(client_system_id) %>%
+  slice_head(n = 1) %>%
+  ungroup() %>%
+  transmute(
+    client_system_id,
+    initial_date  = date_completed,
+    initial_score = total_score,
+    initial_row_id = row_id
+  )
+
+# Any other records on the initial day go to review (possible duplicate initials)
+review_initial_same_day <- on_initial_day %>%
+  anti_join(primary_initials, by = c("client_system_id", "row_id" = "initial_row_id")) %>%
+  transmute(
+    client_system_id,
+    initial_date = date_completed,
+    issue = "multiple_assessments_on_initial_day",
+    candidate_date  = date_completed,
+    candidate_score = total_score,
+    candidate_row_id = row_id,
+    days_from_initial = 0L
+  )
+
+# 3) Define follow-ups = all rows except the chosen primary initial
+followups <- noms_self %>%
+  anti_join(primary_initials, by = c("client_system_id", "row_id" = "initial_row_id")) %>% 
+  inner_join(primary_initials %>% select(client_system_id, initial_date), by = "client_system_id") %>% 
+  mutate(days_from_initial = as.integer(date_completed - initial_date))
+
+# 4) Send any follow-up within +3 days to review (not used for pairing)
+review_followups_within3 <- followups %>% 
+  filter(days_from_initial >= 0, days_from_initial <= 3) %>% 
+  transmute(
+    client_system_id,
+    initial_date,
+    issue = "followup_within_3_days_of_initial", 
+    candidate_date = date_completed,
+    candidate_score = total_score,
+    candidate_row_id = row_id,
+    days_from_initial
+  )
+
+# 5) pair initial with LAST follow-up after +3-day window
+pairs_primary <- followups %>% 
+  filter(days_from_initial >3) %>% 
+  arrange(client_system_id, date_completed, row_id) %>% 
+  group_by(client_system_id, initial_date) %>% 
+  slice_tail(n = 1) %>% #choose last f/u date
+  ungroup() %>% 
+  inner_join(primary_initials,
+             by = c("client_system_id", "initial_date")) %>% 
+  transmute(
+    client_system_id,
+    initial_date,
+    initial_score,
+    follow_up_date = date_completed,
+    follow_up_score = total_score,
+    days_from_initial,
+    provider,
+    provider_id
+  )
+  
+# 6) Combine review items
+review_queue_self <- bind_rows(
+  review_initial_same_day,
+  review_followups_within3
+) %>%
+  arrange(client_system_id, initial_date, candidate_date) %>%
+  distinct()
+
+# 7) initials with no eligible follow-up after +3 days
+initials_no_match <- primary_initials %>%
+  anti_join(pairs_primary, by = c("client_system_id", "initial_date"))
+
+# 8) compute differences in f/u and initial scores
+score_diff <- pairs_primary %>% 
+  filter(follow_up_score > 21, 
+         initial_score > 21) %>%  
+  mutate(score_change = follow_up_score - initial_score)
+
+# 9) summary stats
+summary_stats_self <- score_diff %>% 
+  summarise(
+    mean_diff = mean(score_change, na.rm = TRUE),
+    median_diff = median(score_change, na.rm = TRUE),
+    sd_diff = sd(score_change, na.rm = TRUE),
+    n = sum(!is.na(score_change))
+  )
+
+# pivot longer
+score_long <- pairs_primary %>%
+  filter(follow_up_score > 21,
+         initial_score > 21) %>% 
+  select(client_system_id, initial_score, follow_up_score) %>% 
+  pivot_longer(
+    cols = c(initial_score, follow_up_score),
+    names_to = "score_type",
+    values_to = "score_value"
+  ) %>%
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score" = "Initial",
+                        "follow_up_score" = "Follow-up")
+  )
+
+# 10) summary stats by score type
+summary_stats_self_score_type <- score_long %>% 
+  group_by(score_type) %>% 
+  summarise(
+    mean_score = mean(score_value, na.rm = TRUE), 
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score = sd(score_value, na.rm = TRUE), 
+    n = sum(!is.na(score_value))
+  )
+
+summary_stats_self_score_type
+```
+
+Plot it now!
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# Ridgeline plot
+ridge_plot_self <- ggplot(score_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_x_continuous(limits = c(21, 105)) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Measure: Total Score (21-105)", 
+       y = NULL,
+       title = "Distribution of Initial and Follow-up Scores, NOMS Self Report") +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x = element_text(size = 9, hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 9),
+    panel.grid = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 5),
+    plot.title = element_text(size = 11)
+  ) + 
+  geom_segment(data = summary_stats_self_score_type, 
+               aes(x = median_score, y = 1,
+                   xend = median_score, yend = 1.05,
+                   color = score_type), linetype = "dotted") + 
+  geom_text(data = summary_stats_self_score_type,
+            aes(x = median_score, y = 1.055, 
+                label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+                vjust = 3, hjust = 0.5, size = 2)
+
+ridge_plot_self
+```
+
+Look at positive outcomes.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+score_diff_self <- score_diff %>% 
+  mutate(positive_outcome = ifelse(follow_up_score > initial_score, 1, 0))
+
+tabyl(score_diff_self$positive_outcome)  
+```
+
+# Assumptions and data notes
+
+For this analysis, we:
+
+-   filtered out all dates before July 2023 and after the date we ran the analysis (e.g., assessments cannot be completed in the future)
+
+-   filtered the total score to \>21 and \<105 (the valid scoring range for the total NOMS score)
+
+-   did not delete rows with missing data for the total score
+
+-   dropped rows with missing `date_completed` data
+
+-   only assessed paired data, defined by individuals with both an initial and follow-up assessment
+
+To identify initial and follow-up assessment dates, we:
+
+-   identified the earliest initial date per `client_system_id` and used this as the initial assessment date
+
+-   chose a primary initial assessment date per `client_system_id`, based on the first row on that day by original data frame order
+
+    -   any other records on the initial day go to review to identify possible duplicate initial assessments
+
+    -   any records within +3 days of the initial date were sent to review to identify possible duplicate initial assessments
+
+-   follow-ups were defined as all rows except the chosen primary initial date
+
+    -   any follow-up within +3 days was sent to review and not used for pairing
+
+-   we paired the initial score with the LAST follow-up after the +3 day window
+
+-   we defined a positive outcome as: if follow-up score \> initial score, positive outcome == YES
