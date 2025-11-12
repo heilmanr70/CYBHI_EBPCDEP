@@ -1,0 +1,1199 @@
+---
+title: "Mathematica Report Results-11-12-2025"
+author: "Cristin Young"
+format: 
+  docx:
+    page-width: 7.5
+editor: visual
+---
+
+## Periods
+
+Q1_24: 2024-01-01 - 2024-03-31
+
+Q2_24: 2024-04-01 - 2024-06-30
+
+Q3_24: 2024-07-01 - 2024-09-30
+
+Q4_24: 2024-10-01 - 2024-12-31
+
+Q1_25: 2025-01-01 - 2025-03-31
+
+Q2_25: 2025-04-01 - 2025-06-30
+
+Q3_25: 2025-07-01 - 2025-09-30
+
+Q4_25: 2025-10-01 - 2025-12-31
+
+## Client_serve
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated timeframe, where “served” means that a client had a new intervention start date attached to them during the designated timeframe.
+
+**Calculation:** aggregated count of clients served by period with an intervention type and start date listed; intervention does not need to be completed; assumes dates before 2024 are correct and any rows with these dates have not been revised
+
+```{r, client_serve}
+#| echo: false
+#| warning: false
+#| message: false
+library(readr)
+library(tidyverse)
+
+discharge_data_filtered <- read_csv("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
+discharge_data_filtered <- discharge_data_filtered %>% 
+  filter(!is.na(intervention_start), # has to have an intervention start date
+         !is.na(intervention_name)) # has to have an intervention type named
+
+client_serve <- tabyl(discharge_data_filtered$intervention_start_quarter)
+client_serve 
+```
+
+## Client_sat
+
+**Definition:** Clients from the primary evaluation who indicate high satisfaction with services divided by the total number of clients served by the grantees who completed a satisfaction survey after an intervention during the designated timeframe.
+
+**Calculation:** This KPI represents ***the percent*** of clients that report high satisfaction with services out of the total that completed the satisfaction survey by period(s). Clients must have a record in the eInsight platform with an intervention type and start date, have discharged from services (with an intervention end date), and have completed a satisfaction survey to be included in this count. Calculation assumes dates before 2024 or after 2025 are correct and any rows with these dates have not been revised.
+
+```{r, client_sat}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+library(zoo)
+
+# caregiver
+caregiver_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-caregiver.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE) 
+h1 <- unlist(caregiver_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(caregiver_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+caregiver <- caregiver_raw[-c(1, 2), ]
+names(caregiver) <- new_names
+caregiver <- caregiver %>%
+  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+
+# child
+child_raw <- read.csv("/Users/cristin/Dropbox/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-child_13-17.csv", na = c("-", "", "NA", "N/A", "0"), header = FALSE) 
+h1 <- unlist(child_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(child_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+child <- child_raw[-c(1, 2), ]
+names(child) <- new_names
+child <- child %>%
+  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+
+# adult
+adult_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-adult_18-59.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE)
+h1 <- unlist(adult_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(adult_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+adult <- adult_raw[-c(1, 2), ]
+names(adult) <- new_names
+adult <- adult %>%
+  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+
+# senior
+senior_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-adult_60_plus.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE) 
+h1 <- unlist(senior_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(senior_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+senior <- senior_raw[-c(1, 2), ]
+names(senior) <- new_names
+senior <- senior %>%
+  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+```
+
+Satisfaction is defined two ways below. The first is the percent of individuals who answered question 1 as "Agree" or "Strongly Agree" on the satisfaction survey. The second definition is the percent of individuals who selected "Agree" or "Strongly Agree" on 80% or more of the questions completed.
+
+**Nitty gritty:** There are four satisfaction surveys: Caregiver (n=`{r} nrow(caregiver)`), Child (13-17) (n=`{r} nrow(child)`), Adult (18-59) (n=`{r} nrow(adult)`), and Adult (60+) (n=`{r} nrow(senior)`). A separate data frame was made for question 1, and high satisfaction was defined as the percent of individuals who answered a 4 or 5 for question 1.
+
+#### Question 1 Satisfaction
+
+```{r, client_sat_q1}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+combined_q1 <- bind_rows(
+  caregiver %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x1_")) %>% 
+    rename(q1 = matches("^x1_")) %>% 
+    mutate(source = "caregiver"),
+  child %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x1_")) %>% 
+    rename(q1 = matches("^x1_")) %>% 
+    mutate(source = "child"),
+  adult %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x1_")) %>% 
+    rename(q1 = matches("^x1_")) %>% 
+    mutate(source = "adult"),
+  senior %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x1_")) %>% 
+    rename(q1 = matches("^x1_")) %>% 
+    mutate(source = "senior"))
+```
+
+The following is the % of high satisfaction by source:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+combined_q1 %>%
+  group_by(source) %>%
+  summarise(
+    n_total = sum(!is.na(q12)),
+    n_4_5 = sum(q12 %in% c(4, 5), na.rm = TRUE),
+    pct_4_5 = round((100 * n_4_5 / n_total), 1)
+  )
+```
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+pct_4_5 <- combined_q1 %>%
+  summarise(
+    pct_4_5 = round((100 * sum(q12 %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q12))), 1)
+  ) %>%
+  pull(pct_4_5)
+
+pct_4_5
+```
+
+Overall, `{r} pct_4_5`% of survey respondents were highly satisfied based on question 1 answers. The following table shows high survey satisfaction by quarter.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# combining all satisfaction survey data
+combined_all <- bind_rows(
+  caregiver %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x")) %>% 
+    rename(q = matches("^x")) %>% 
+    mutate(source = "caregiver"),
+  child %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x")) %>% 
+    rename(q = matches("^x")) %>% 
+    mutate(source = "child"),
+  adult %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x")) %>% 
+    rename(q = matches("^x")) %>% 
+    mutate(source = "adult"),
+  senior %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x")) %>% 
+    rename(q = matches("^x")) %>% 
+    mutate(source = "senior"))
+
+# first clean date column
+unique(combined_all$date_completed)
+combined_all <- combined_all %>% 
+  mutate(
+    date_clean = str_replace(date_completed, "^00", "20"), # replace 00xx with 20xx
+    date_clean = str_replace(date_clean, "^29", "20"), # replace 29xx with 20xx
+    date_clean = as.Date(date_clean)
+  )
+unique(combined_all$date_clean)
+
+# add in a quarter column 
+combined_all <- combined_all %>% 
+  filter(!is.na(date_clean),
+         date_clean <= "2025-12-31") %>% 
+  mutate(quarter_label = paste0("Q", quarter(date_clean), " ", year(date_clean)),
+       quarter_label = factor(quarter_label, levels = unique(quarter_label)) #to sort chronologically
+  )
+
+# Question 1 satisfaction by round
+pct_4_5_round <- combined_all %>% 
+  filter(!is.na(quarter_label)) %>% 
+  group_by(quarter_label) %>% 
+  summarise(
+    pct_4_5 = round((100 * sum(q2 %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q2))), 1)
+  )
+
+pct_4_5_round 
+```
+
+#### Combined Survey Satisfaction
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+
+summary_agree <- combined_all %>%
+  # keep only question columns
+  select(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) %>%
+  mutate(across(everything(), ~ as.numeric(.))) 
+
+df2 <- summary_agree %>% 
+  mutate(across(everything(), ~ na_if(., 0))) %>% 
+  # calculate per-person proportion of "Agree"/"Strongly Agree"
+  rowwise() %>%
+  summarise(
+    n_answered = sum(!is.na(c_across(everything()))),
+    n_agree = sum(c_across(everything()) %in% c(4,5), na.rm = TRUE),
+    pct_agree = n_agree / n_answered
+  ) %>%
+  ungroup() %>% 
+  summarise(
+    n_total = n(),
+    n_meeting_80pct = sum(pct_agree >= 0.8, na.rm = TRUE),
+    pct_meeting_80pct = round((100 * n_meeting_80pct / n_total), 1)
+  )
+
+df2
+
+# CONFIRMED THIS WORKS THE SAME AS ABOVE
+df3 <- summary_agree %>%   
+  mutate(across(everything(), ~ na_if(., 0))) %>% 
+  rowwise() %>% 
+  mutate(count_4 = sum(c(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) == "4", na.rm = TRUE), 
+         count_5 = sum(c(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) == "5", na.rm = TRUE),
+         n_4_5 = sum(c(count_4, count_5), na.rm = TRUE),
+         n_total = sum(!is.na(c_across(starts_with("q")))),
+         perc_4_5 = n_4_5 / n_total
+         ) %>% 
+  ungroup() 
+
+df4 <- df3 %>% 
+  summarise(
+    n_total = n(),
+    n_meeting_80pct = sum(perc_4_5 >= 0.8, na.rm = TRUE),
+    pct_meeting_80pct = round((100 * n_meeting_80pct / n_total), 1)
+  )
+
+df4
+```
+
+Overall, `{r} df4$pct_meeting_80pct`% of survey respondents were highly satisfied, defined as selecting "Agree" or "Strongly Agree" on 80% or more of the questions completed, for those who completed a survey on or before September 30, 2025.
+
+The following table shows high survey satisfaction results by quarter, for data where both `client_id` and `quarter_label` were available.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+summary_agree_quarter <- combined_all %>%
+  filter(!is.na(quarter_label)) %>% 
+  group_by(quarter_label) %>% 
+  # keep only question columns
+  select(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) %>%
+  mutate(across(everything(), ~ as.numeric(.))) %>% 
+  # calculate per-person proportion of "Agree"/"Strongly Agree"
+  rowwise() %>%
+  summarise(
+    n_answered = sum(!is.na(c_across(everything()))),
+    n_agree = sum(c_across(everything()) %in% c(4, 5)),
+    pct_agree = n_agree / n_answered
+  ) %>%
+  summarise(
+    n_total = n(),
+    n_meeting_80pct = sum(pct_agree >= 0.8, na.rm = TRUE),
+    pct_meeting_80pct = round((100 * n_meeting_80pct / n_total), 1)
+  )
+
+summary_agree_quarter
+```
+
+## Client_end
+
+**Definition:** Clients from the primary evaluation whose discharge reason is “mutually agreed cessation of treatment” for clients who discharged from an intervention during the designated time frame, divided by the total number of clients from the primary evaluation served and who have a discharge reason recorded.
+
+**Calculation:** This KPI represents ***the percent*** of clients who have a disenrollment/discharge response as “mutually agreed cessation of treatment” out of the total number of clients with a discharge reason by period(s).
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+# number of rows with a reason for discharge
+count_rows <- nrow(discharge_data_filtered %>% filter(!is.na(reason_for_discharge)))
+
+# number of rows with successful discharge
+# table of positive outcomes 
+tab3 <- discharge_data_filtered %>%
+  tabyl(reason_for_discharge) %>%               
+  adorn_pct_formatting(digits = 0)
+
+# count of successful discharge
+yes_count <- tab3 %>%
+  filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)") %>%
+  pull(n)
+
+# percent of successful discharge
+yes_pct3 <- tab3 %>%
+  filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)") %>%
+  pull(valid_percent)
+```
+
+Successful discharges were defined as those clients that had "Mutually agreed cessation of treatment (Successful Completion)" as the `reason_for_discharge` in the discharge data from EInsight. Of `{r} nrow(discharge_data_filtered)` rows of discharge data, `{r} count_rows` rows had a reason for discharge stated. Of individuals with a reason for discharge stated, `{r} yes_count` (`{r} yes_pct3`) were successfully discharged.
+
+The results below show % of successful discharges by `intervention_end_quarter`, once NA's are removed from the data.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# total table of successful discharges by quarter of intervention start
+tab4 <- discharge_data_filtered %>% 
+  filter(!is.na(reason_for_discharge)) %>% 
+  tabyl(reason_for_discharge, intervention_end_quarter) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+tab4 %>% filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)")
+```
+
+## Client_lang
+
+**Definition:** Clients from the primary evaluation who indicate services received in their preferred language on the satisfaction survey divided by the total number of clients served by the grantees who completed a satisfaction survey after an intervention during the designated time frame.
+
+**Calculation:** This KPI represents ***the percent*** of clients that report services received in their preferred language on the satisfaction survey out of the total that completed the satisfaction survey by period(s).
+
+The following table shows the percent of clients who received services in their preferred language on the satisfaction survey by quarter:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# combining all satisfaction survey data
+client_lang_all <- bind_rows(
+  caregiver %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+    mutate(source = "caregiver"),
+  child %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+    mutate(source = "child"),
+  adult %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+    mutate(source = "adult"),
+  senior %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+    mutate(source = "senior"))
+
+# first clean date column
+client_lang_all <- client_lang_all %>% 
+  mutate(
+    date_clean = str_replace(date_completed, "^00", "20"), # replace 00xx with 20xx
+    date_clean = str_replace(date_clean, "^29", "20"), # replace 29xx with 20xx
+    date_clean = as.Date(date_clean)
+  )
+
+# add in a quarter column 
+client_lang_all <- client_lang_all %>% 
+  filter(!is.na(date_clean),
+         date_clean <= "2025-12-31") %>% 
+  mutate(quarter_label = paste0("Q", quarter(date_clean), " ", year(date_clean)),
+       quarter_label = factor(quarter_label, levels = unique(quarter_label)) #to sort chronologically
+  )
+
+tab <- client_lang_all %>% 
+  filter(!is.na(quarter_label)) %>% 
+  filter(!is.na(quarter_label)) %>% 
+  tabyl(quarter_label, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+```
+
+## Improved mental health (NOMS)
+
+### Child
+
+Range: 1-5
+
+Sum = Q1.
+
+Use the `pairs_primary_long` data frame to compute scores. The following had a positive outcome by follow-up quarter:
+
+```{r, reading_in_data}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+library(readr)
+library(tidyverse)
+library(readxl)
+library(zoo)
+library(janitor)
+
+# dealing with crazy header rows
+noms_child_raw <- read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/NOMS-child.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+h1 <- unlist(noms_child_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(noms_child_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+noms_child <- noms_child_raw[-c(1, 2), ]
+names(noms_child) <- new_names
+noms_child <- noms_child %>%
+  select(where(~ !all(is.na(.))))
+```
+
+```{r, long_df}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+
+#make sure columns are numeric
+#add a total score column
+#add a column for if there was any missing data, in case we want to exclude those rows later
+#make sure it's date formatted and get rid of the weird dates before 2024 for now
+noms_child <- noms_child %>% 
+  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(any_missing_q1x = any(is.na(c_across(matches("^(q1|x).*_score$")))),
+         total_score = sum(c_across(matches("^(q1|x).*_score$")), na.rm = TRUE)) %>% 
+  ungroup %>% 
+  mutate(
+    date_completed = as.Date(date_completed),
+    row_id = row_number()                # stable row id for disambiguation
+  ) %>% 
+  filter(date_completed <= Sys.Date(),     #date of running the code
+         date_completed >= "2023-01-01")   #date to filter out random issue dates   
+
+#pivot long to get individual question scores too
+noms_child_long <- noms_child %>% 
+  pivot_longer(
+    cols = matches("^(q1|x).*_score$"),
+    names_to = "question",
+    values_to = "score"
+  ) %>% 
+  mutate(score = as.numeric(score))
+
+#pair per question
+paired_outcomes_child <- noms_child_long %>% 
+  group_by(system_id, question) %>% 
+  arrange(date_completed, .by_group = TRUE) %>% 
+  mutate(
+    days_since_initial = as.integer(date_completed - first(date_completed)),
+    initial_date = first(date_completed),
+    initial_score = first(score)
+  ) %>% 
+  # flagging follow-ups
+  mutate(
+    is_within3 = days_since_initial <= 3 & days_since_initial >= 0,
+    is_after3 = days_since_initial >3
+  )
+
+# paired data
+pairs_primary_long <- paired_outcomes_child %>% 
+  filter(is_after3) %>% 
+  slice_tail(n = 1) %>% 
+  transmute(
+    system_id, question,
+    initial_date,
+    initial_score,
+    follow_up_date = date_completed,
+    follow_up_score = score,
+    days_since_initial
+  )
+```
+
+```{r}
+#| echo: false 
+#| warning: false 
+#| message: false 
+
+pairs_primary_long_q1 <- pairs_primary_long %>% filter(question == "q1_how_would_you_rate_your_child_s_overall_mental_health_right_now_score")
+
+# compute differences in f/u and initial scores
+score_diff_child_q1 <- pairs_primary_long_q1 %>% 
+  mutate(score_change = follow_up_score - initial_score, 
+         positive_outcome = ifelse(follow_up_score > initial_score, 1, 0), 
+         initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+         follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+
+# summary stats
+tab <- score_diff_child_q1 %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(follow_up_quarter, positive_outcome) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab
+```
+
+### Self
+
+Range: 1-5
+
+Sum = Q1
+
+Use the `pairs_primary_long` data frame to compute scores. The following had a positive outcome by follow-up quarter:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+noms_self_raw <- read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/NOMS-self_report.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE)
+h1 <- unlist(noms_self_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(noms_self_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+noms_self <- noms_self_raw[-c(1, 2), ]
+names(noms_self) <- new_names
+noms_self <- noms_self %>%
+  select(where(~ !all(is.na(.))))
+```
+
+```{r, self_long_df}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+
+#make sure columns are numeric
+#add a total score column
+#add a column for if there was any missing data, in case we want to exclude those rows later
+#make sure it's date formatted and get rid of the weird dates before 2024 for now
+noms_self <- noms_self %>% 
+  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(any_missing_q1x = any(is.na(c_across(matches("^(q1|x).*_score$")))),
+         total_score = sum(c_across(matches("^(q1|x).*_score$")), na.rm = TRUE)) %>% 
+  ungroup %>% 
+  mutate(
+    date_completed = as.Date(date_completed),
+    row_id = row_number()                # stable row id for disambiguation
+  ) %>% 
+  filter(date_completed <= Sys.Date(),     #date of running the code
+         date_completed >= "2023-01-01")   #date to filter out random issue dates   
+
+#pivot long to get individual question scores too
+noms_self_long <- noms_self %>% 
+  pivot_longer(
+    cols = matches("^(q1|x).*_score$"),
+    names_to = "question",
+    values_to = "score"
+  ) %>% 
+  mutate(score = as.numeric(score))
+
+#pair per question
+paired_outcomes_self <- noms_self_long %>% 
+  group_by(client_system_id, question) %>% 
+  arrange(date_completed, .by_group = TRUE) %>% 
+  mutate(
+    days_since_initial = as.integer(date_completed - first(date_completed)),
+    initial_date = first(date_completed),
+    initial_score = first(score)
+  ) %>% 
+  # flagging follow-ups
+  mutate(
+    is_within3 = days_since_initial <= 3 & days_since_initial >= 0,
+    is_after3 = days_since_initial >3
+  )
+
+# paired data
+pairs_primary_long_self <- paired_outcomes_self %>% 
+  filter(is_after3) %>% 
+  slice_tail(n = 1) %>% 
+  transmute(
+    client_system_id, question,
+    initial_date,
+    initial_score,
+    follow_up_date = date_completed,
+    follow_up_score = score,
+    days_since_initial
+  )
+```
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q1_self <- pairs_primary_long_self %>% 
+  filter(question == "q1_how_would_you_rate_your_overall_mental_health_right_now_score")
+
+# compute differences in f/u and initial scores
+score_diff_self_q1 <- pairs_primary_long_q1_self %>% 
+  mutate(score_change = follow_up_score - initial_score,
+         positive_outcome = ifelse(follow_up_score > initial_score, 1, 0),
+         initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+         follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+
+# summary stats
+tab <- score_diff_self_q1 %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(follow_up_quarter, positive_outcome) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+```
+
+## Improved daily life functioning (NOMS)
+
+### Child
+
+Range: 7-35
+
+Sum = Q2a+...+Q2g
+
+Use the `pairs_primary_long` data frame to compute scores. The following had a positive outcome by follow-up quarter:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q2 <- pairs_primary_long %>% 
+  filter(str_detect(question, "^x2.*_score$"))
+
+# 8) compute differences in f/u and initial scores
+score_diff_child_q2 <- pairs_primary_long_q2 %>% 
+  group_by(system_id) %>% 
+  summarise(initial_total = sum(initial_score, na.rm = TRUE),
+            followup_total = sum(follow_up_score, na.rm = TRUE),
+            score_change = followup_total - initial_total,
+            positive_outcome = ifelse(followup_total > initial_total, 1, 0),
+            initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+
+# summary stats
+tab <- score_diff_child_q2 %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(follow_up_quarter, positive_outcome) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+```
+
+### Self
+
+Range: 7-35
+
+Sum = Q2a+...+Q2g
+
+Use the `pairs_primary_long_self` data frame to compute scores. The following had a positive outcome by follow-up quarter:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q2_self <- pairs_primary_long_self %>% 
+  filter(str_detect(question, "^x2.*_score$"))
+
+# compute differences in f/u and initial scores
+score_diff_self_q2 <- pairs_primary_long_q2_self %>% 
+  group_by(client_system_id) %>% 
+  summarise(initial_total = sum(initial_score, na.rm = TRUE),
+            followup_total = sum(follow_up_score, na.rm = TRUE),
+            score_change = followup_total - initial_total,
+            positive_outcome = ifelse(followup_total > initial_total, 1, 0),
+            initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+
+# summary stats
+tab <- score_diff_self_q2 %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(follow_up_quarter, positive_outcome) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+```
+
+## Improved well-being (NOMS)
+
+### Child
+
+Range: 7-35
+
+Sum = Q3a+...+Q3g
+
+Use the `pairs_primary_long` data frame to compute scores. The following had a positive outcome by follow-up quarter:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q3 <- pairs_primary_long %>% 
+  filter(str_detect(question, "^x3.*_score$"))
+
+# compute differences in f/u and initial scores
+score_diff_child_q3 <- pairs_primary_long_q3 %>% 
+  group_by(system_id) %>% 
+  summarise(initial_total = sum(initial_score, na.rm = TRUE),
+            followup_total = sum(follow_up_score, na.rm = TRUE),
+            score_change = followup_total - initial_total,
+            positive_outcome = ifelse(followup_total > initial_total, 1, 0),
+            initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+
+# summary stats
+tab <- score_diff_child_q3 %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(follow_up_quarter, positive_outcome) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+```
+
+### Self
+
+Range: 7-35
+
+Sum = Q3a+...+Q3g
+
+Use the `pairs_primary_long_self` data frame to compute scores. The following had a positive outcome by follow-up quarter:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q3_self <- pairs_primary_long_self %>% 
+  filter(str_detect(question, "^x3.*_score$"))
+
+# compute differences in f/u and initial scores
+score_diff_self_q3 <- pairs_primary_long_q3_self %>% 
+  group_by(client_system_id) %>% 
+  summarise(initial_total = sum(initial_score, na.rm = TRUE),
+            followup_total = sum(follow_up_score, na.rm = TRUE),
+            score_change = followup_total - initial_total,
+            positive_outcome = ifelse(followup_total > initial_total, 1, 0),
+            initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+
+# summary stats
+tab <- score_diff_self_q3 %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(follow_up_quarter, positive_outcome) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+```
+
+## Improved social connectedness (NOMS)
+
+### Child
+
+Range: 6-30
+
+Sum = Q4a+...+Q4f
+
+Use the `pairs_primary_long` data frame to compute scores. The following had a positive outcome by follow-up quarter:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q4 <- pairs_primary_long %>% 
+  filter(str_detect(question, "^x4.*_score$"))
+
+# compute differences in f/u and initial scores
+score_diff_child_q4 <- pairs_primary_long_q4 %>% 
+  group_by(system_id) %>% 
+  summarise(initial_total = sum(initial_score, na.rm = TRUE),
+            followup_total = sum(follow_up_score, na.rm = TRUE),
+            score_change = followup_total - initial_total,
+            positive_outcome = ifelse(followup_total > initial_total, 1, 0),
+            initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+
+# summary stats
+tab <- score_diff_child_q4 %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(follow_up_quarter, positive_outcome) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+```
+
+### Self
+
+Range: 6-30
+
+Sum = Q4a+...+Q4f
+
+Use the `pairs_primary_long_self` data frame to compute scores. The following had a positive outcome by follow-up quarter:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q4_self <- pairs_primary_long_self %>% 
+  filter(str_detect(question, "^x4.*_score$"))
+
+# compute differences in f/u and initial scores
+score_diff_self_q4 <- pairs_primary_long_q4_self %>% 
+  group_by(client_system_id) %>% 
+  summarise(initial_total = sum(initial_score, na.rm = TRUE),
+            followup_total = sum(follow_up_score, na.rm = TRUE),
+            score_change = followup_total - initial_total,
+            positive_outcome = ifelse(followup_total > initial_total, 1, 0),
+            initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+
+# summary stats
+tab <- score_diff_self_q4 %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(follow_up_quarter, positive_outcome) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+```
+
+## Reductions in overall distress (YOQ)
+
+**Definition:** This KPI represents the percent of assessments that show clients who have improvement from pre-post time points out of the total number of assessments from clients who discharge from the intervention and complete pre-post measures by period(s).
+
+The YOQ total score reflects total distress in a client’s life, with a high score reflecting increased distress related to experiencing a high number of symptoms, interpersonal difficulties, and decreased satisfaction and quality of life.
+
+**Range:** 0 - 120
+
+**Calculation:** Sum of 30 items (0-4 scale); invalid if 3+ items missing; total score only calculated if 28+ items completed; including those doing reliably better / total who took YOQ by quarter RCI = baseline score - follow-up score - RCI ≤ -10 doing reliably worse - RCI ≥ 10 doing reliably better
+
+### Caregiver
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+raw_yoq_caregiver <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/YOQ-caregiver.csv", na = c("-", "", "NA", "N/A")) %>% janitor::clean_names()
+
+#make sure columns are numeric
+#add a column for if there was any missing data, in case we want to exclude those rows later
+#add a total score column, which = NA if 3+ items are missing
+#make sure it's date formatted
+yoq_caregiver <- raw_yoq_caregiver %>% 
+  mutate(across(matches("^x"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(
+    missing_count = sum(is.na(c_across(starts_with("x")))),
+    total_score = ifelse(missing_count >= 3, NA_real_, sum(c_across(starts_with("x")), na.rm = TRUE))) %>% 
+  ungroup %>% 
+  mutate(
+    date_completed = as.Date(date_completed),
+    row_id = row_number()                # stable row id for disambiguation
+  ) %>% 
+  select(client_system_id, collection, date_completed, total_score)
+
+yoq_caregiver_paired <- yoq_caregiver %>%
+  group_by(client_system_id) %>%
+  arrange(date_completed, .by_group = TRUE) %>%
+  summarise(
+    n_assessments = n(),
+    initial_date  = first(date_completed),
+    initial_score = first(total_score),
+    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
+    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
+  ) %>%
+  ungroup() %>% 
+  filter(
+    !is.na(follow_up_date)
+  ) %>% 
+  mutate(
+    rci = initial_score - follow_up_score, 
+    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)),
+    reliably_better = rci >= 10)
+    
+# summary stats
+tab <- yoq_caregiver_paired %>% 
+  filter(!is.na(reliably_better)) %>% 
+  tabyl(follow_up_quarter, reliably_better) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+```
+
+### Self
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+raw_yoq_self <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/YOQ-self_report.csv", na = c("-", "", "NA", "N/A")) %>% janitor::clean_names()
+
+#make sure columns are numeric
+#add a column for if there was any missing data, in case we want to exclude those rows later
+#add a total score column, which = NA if 3+ items are missing
+#make sure it's date formatted
+yoq_self <- raw_yoq_self %>% 
+  mutate(across(matches("^x"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(
+    missing_count = sum(is.na(c_across(starts_with("x")))),
+    total_score = ifelse(missing_count >= 3, NA_real_, sum(c_across(starts_with("x")), na.rm = TRUE))) %>% 
+  ungroup %>% 
+  mutate(
+    date_completed = as.Date(date_completed),
+    row_id = row_number()                # stable row id for disambiguation
+  ) %>% 
+  select(client_system_id, collection, date_completed, total_score)
+
+yoq_self_paired <- yoq_self %>%
+  group_by(client_system_id) %>%
+  arrange(date_completed, .by_group = TRUE) %>%
+  summarise(
+    n_assessments = n(),
+    initial_date  = first(date_completed),
+    initial_score = first(total_score),
+    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
+    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
+  ) %>%
+  ungroup() %>% 
+  filter(
+    !is.na(follow_up_date)
+  ) %>% 
+  mutate(
+    rci = initial_score - follow_up_score, 
+    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)),
+    reliably_better = rci >= 10)
+    
+# summary stats
+tab <- yoq_self_paired %>% 
+  filter(!is.na(reliably_better)) %>% 
+  tabyl(follow_up_quarter, reliably_better) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab
+```
+
+### POQ 
+
+We can't use this one - it only has 9 rows of data, all of which are unique clients (no follow-ups).
+
+## Reductions in parent-related stress (PSS) 
+
+**Definition:** PSS item(s) measuring reduction in parent/caregiver-related stress after the intervention. Assessments showing improvement from pre- to post-time point for clients who discharged from an intervention during the designated time frame.
+
+**Calculation:** Sum of Q1–Q18 (reverse Q4, Q5, Q7, Q8); this KPI represents the percent of assessments that show clients who have improvement from pre-post time points out of the total number of assessments from clients who discharge from the intervention and complete pre-post measures by period(s).
+
+**Scoring:** To calculate a total PSS score, items 1, 2, 5, 6, 7, 8, 17, and 18 should be reverse scored as follows: (1=5) (2=4) (3=3) (4=2) (5=1). The PSS score is then obtained by summing across all items. Higher scores indicate higher levels of perceived stress. If follow-up is LOWER than initial, that indicates a positive outcome.
+
+-   1 = Strongly disagree
+
+-   2 = Disagree
+
+-   3 = Undecided
+
+-   4 = Agree
+
+-   5 = Strongly Agree
+
+**Range:** 18 - 90
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+raw_pss <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/PSS.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+h1 <- unlist(raw_pss[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(raw_pss[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+pss <- raw_pss[-c(1, 2), ]
+names(pss) <- new_names
+pss <- pss %>%
+  select(where(~ !all(is.na(.))))
+
+#reverse scored q's
+rev_idx <- c(1, 2, 5, 6, 7, 8, 17, 18)
+
+#score cols
+score_cols <- names(pss)[endsWith(names(pss), "_score")]
+
+#make sure columns are numeric
+#add a total score column, which = NA if 2+ items are missing and reverse scoring correct items
+#make sure it's date formatted
+pss_scores <- pss %>% 
+  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(
+    missing_count = sum(is.na(c_across(all_of(score_cols)))),
+    total_score = {
+      vals <- c_across(all_of(score_cols))
+      vals[rev_idx] <- 6 - vals[rev_idx]
+      sum(vals, na.rm = TRUE)
+      }) %>% 
+  ungroup %>% 
+  mutate(
+    total_score = ifelse(missing_count >= 2, NA_real_, total_score),
+    date_completed = as.Date(date_completed),
+    row_id = row_number()                # stable row id for disambiguation
+  ) %>% 
+  select(client_system_id, collection, date_completed, total_score)
+  
+pss_paired <- pss_scores %>%
+  group_by(client_system_id) %>%
+  arrange(date_completed, .by_group = TRUE) %>%
+  summarise(
+    n_assessments = n(),
+    initial_date  = first(date_completed),
+    initial_score = first(total_score),
+    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
+    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
+  ) %>%
+  ungroup() %>% 
+  filter(
+    !is.na(follow_up_date)
+  ) %>% 
+  mutate(
+    positive_outcome = ifelse(follow_up_score < initial_score, 1, 0), 
+    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+    
+# summary stats
+tab <- pss_paired %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(follow_up_quarter, positive_outcome) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+```
+
+## Client_groups
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where “served” means that a client had a new intervention, grouped by race.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and race is recoded as follows:
+
+**Codebook:**
+
+0.  NA, don't know, prefer not to answer
+
+<!-- -->
+
+1.  Asian
+
+2.  Black or African American
+
+3.  Hispanic or Latino
+
+4.  Middle Eastern or North African
+
+5.  Native American/American Indian or Alaska Native
+
+6.  Native Hawaiian or Pacific Islander
+
+7.  White
+
+8.  2+ races selected
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+library(readr)
+library(tidyverse)
+
+# using all data to get quarters/interventions
+all_data <- read_csv("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
+
+all_data <- all_data %>% 
+  filter(!is.na(intervention_start), # has to have an intervention start date
+         !is.na(intervention_name)) # has to have an intervention type named
+
+tab <- all_data %>% 
+  filter(intervention_start >= "2024-01-01",
+         !is.na(code_num)) %>% 
+  tabyl(intervention_start_quarter, code_num) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+
+clipr::write_clip(tab)
+```
