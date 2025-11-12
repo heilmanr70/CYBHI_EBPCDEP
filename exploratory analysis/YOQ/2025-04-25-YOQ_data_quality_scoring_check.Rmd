@@ -40,16 +40,16 @@ yoq <- discharge_data %>%
   filter(pre_measure_s == "YOQ 30.2 Caregiver Initial" |
          pre_measure_s == "YOQ 30.2 Self Report Initial")
 
-raw_yoq_child <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Other exports/YOQ_data_2025-09-29.csv", na = c("-", "", "NA", "N/A")) %>% janitor::clean_names()
-raw_yoq_self <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Other exports/YOQ_data_self-2025-09-29.csv", na = c("-", "", "NA", "N/A")) %>% janitor::clean_names()
+raw_yoq_child <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/YOQ-caregiver.csv", na = c("-", "", "NA", "N/A")) %>% janitor::clean_names()
+raw_yoq_self <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/YOQ-self_report.csv", na = c("-", "", "NA", "N/A")) %>% janitor::clean_names()
 
-raw_yoq %>%
+raw_yoq_child %>%
   filter(rowSums(across(everything(), is.na)) >= 2)
 
 raw_yoq_self %>%
   filter(rowSums(across(everything(), is.na)) >= 2)
 
-raw_yoq %>%
+raw_yoq_child %>%
   mutate(na_count = rowSums(across(everything(), is.na))) %>% 
   filter(na_count >= 2)
 
@@ -57,7 +57,7 @@ raw_yoq_self %>%
   mutate(na_count = rowSums(across(everything(), is.na))) %>% 
   filter(na_count >= 2)
 
-hist(raw_yoq$x3_my_child_argues_or_speaks_rudely_to_others)
+hist(raw_yoq_child$x3_my_child_argues_or_speaks_rudely_to_others)
 hist(raw_yoq_self$x3_i_argue_or_speak_rudely_to_others)
 table(raw_yoq_self$x3_i_argue_or_speak_rudely_to_others, useNA = "ifany")
 ```
