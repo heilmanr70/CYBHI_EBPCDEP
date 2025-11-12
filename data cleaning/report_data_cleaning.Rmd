@@ -25,12 +25,12 @@ library(tidyverse)
 library(janitor)
 library(gt)
 
-discharge_data <- readxl::read_excel("/Users/cristin/Dropbox/Data/eInsight Exports/Discharge Report Export/2025-10-29-discharge_report.xlsx", na = c("-", "", "NA", "N/A"), ) %>% 
+discharge_data <- readxl::read_excel("/Users/cristin/Dropbox/Data/eInsight Exports/Discharge Report Export/2025-11-12-discharge_report.xlsx", na = c("-", "", "NA", "N/A"), ) %>% 
   janitor::clean_names() 
 discharge_data$pre_completion_date <- janitor::convert_to_date(discharge_data$pre_completion_date)
 discharge_data$post_completion_date <- janitor::convert_to_date(discharge_data$post_completion_date)
 
-demographic_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Admin Report Exports/2025-10-29-client_demographics.xlsx", na = c("-", "", "NA", "N/A")) %>% 
+demographic_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Admin Report Exports/2025-11-12-client_demographics.xlsx", na = c("-", "", "NA", "N/A")) %>% 
   janitor::clean_names()
 
 # discharge_data <- readxl::read_xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Dishcharge_Report.xlsx", na = c("-", "", "NA"))
@@ -119,50 +119,6 @@ demographic_data_filtered <- demographic_data_filtered %>%
       TRUE ~ 1L                             # single response
     ),
     # assign numeric code to single values, 99 if 2+ values
-    code_num = case_when(
-      is.na(cleaned_race) ~ 0L,
-      str_detect(cleaned_race, ",") ~ 88L,
-      TRUE ~ unname(codebook[cleaned_race])  # lookup from codebook
-    )
-  )
-```
-
-## DEMOGRAPHIC DATA - Recoding 
-1. Remove “don’t know”, “prefer not to answer”, and “not applicable” from the comma-separated responses.
-2. Then recode the remaining responses:
-- 0 if nothing is left after removal (or NA)
-- 1 if exactly one valid response remains
-- 2 if 2+ valid responses remain
-3. do an analysis to look within race: so duplicated --> single race dummy variable
-```{r}
-# Define coding for single responses
-codebook <- c("Asian" = 1, 
-              "Black or African American" = 2, 
-              "Hispanic or Latino" = 3,
-              "Middle Eastern or North African" = 4,
-              "Native American/American Indian or Alaska Native" = 5,
-              "Native Hawaiian or Pacific Islander" = 6,
-              "White" = 7
-              )
-
-demographic_data_filtered <- demographic_data_filtered %>% 
-  mutate(
-    # Remove "don't know", "prefer not to answer", "not applicable"
-    cleaned_race = str_remove_all(
-      race,
-      "\\b(Don't Know|Prefer Not To Answer|Not Applicable)\\b"
-    ) %>%
-      str_replace_all(",+", ",") %>%        # collapse extra commas
-      str_replace_all("^,|,$", "") %>%      # trim leading/trailing commas
-      na_if("")                             # convert empty string to NA
-  ) %>%
-  mutate(
-    recoded_race = case_when(
-      is.na(cleaned_race) ~ 0L,             # no valid response
-      str_detect(cleaned_race, ",") ~ 2L,   # multiple responses
-      TRUE ~ 1L                             # single response
-    ),
-    # assign numeric code to single values, 88 if 2+ values
     code_num = case_when(
       is.na(cleaned_race) ~ 0L,
       str_detect(cleaned_race, ",") ~ 88L,
