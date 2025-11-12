@@ -169,7 +169,9 @@ pairs_primary_long_q1 <- pairs_primary_long %>%
 # 8) compute differences in f/u and initial scores
 score_diff_child_q1 <- pairs_primary_long_q1 %>% 
   mutate(score_change = follow_up_score - initial_score,
-         positive_outcome = ifelse(follow_up_score > initial_score, 1, 0))
+         positive_outcome = ifelse(follow_up_score > initial_score, 1, 0),
+         initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+         follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
 
 # 9) summary stats
 summary_stats_child_q1 <- score_diff_child_q1 %>% 
@@ -182,6 +184,7 @@ summary_stats_child_q1 <- score_diff_child_q1 %>%
   )
 
 tabyl(score_diff_child_q1$positive_outcome)  
+tabyl(score_diff_child_q1, initial_quarter, positive_outcome)  
 ```
 
 Plot it.
