@@ -1,0 +1,122 @@
+---
+title: "SDQ"
+author: "Honestly 90% Cristin in the end I expect..."
+format: docx
+editor: visual
+---
+
+# SDQ scoring
+
+The Strengths and Difficulties Questionnaire (SDQ) is a brief behavioural screening questionnaire about 2-17 year olds. It exists in several versions to meet the needs of researchers, clinicians and educators. Each version includes between one and three of the following components: 1) Items on psychological attributes; 2) An impact supplement; 3) Follow-up questions. \
+An **increase** in score indicates a negative outcome. Published cut-points are available for both total score and sub-scales and a range of normative data distributions are also available.
+
+```{r, reading_in_data}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+library(readr)
+library(tidyverse)
+library(readxl)
+library(zoo)
+library(ggridges)
+library(janitor)
+
+# dealing with crazy header rows
+#sdq_P24_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/SDQ P2-4.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+sdq_P24_raw <- read_csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ P2-4.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE,show_col_types = FALSE) 
+h1 <- unlist(sdq_P24_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(sdq_P24_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+sdq_P24 <- sdq_P24_raw[-c(1, 2), ]
+names(sdq_P24) <- new_names
+sdq_P24 <- sdq_P24 %>%
+  select(where(~ !all(is.na(.))))
+
+# NOTE: All items appear present and correct, but three are in an odd column order, relocated to the start. Impact items have a score column, but it's all NAs. The impact items have a lot of missing data.
+
+
+
+# dealing with crazy header rows
+#sdq_P410_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/SDQ P4-10.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+sdq_P410_raw <- read_csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ P4-10.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE,show_col_types = FALSE) 
+h1 <- unlist(sdq_P410_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(sdq_P410_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+sdq_P410 <- sdq_P410_raw[-c(1, 2), ]
+names(sdq_P410) <- new_names
+sdq_P410 <- sdq_P410 %>%
+  select(where(~ !all(is.na(.))))
+
+# NOTE: All items appear present and correct and they're even in order! Sadly impact variables appear to be missing.
+
+
+
+# dealing with crazy header rows
+#sdq_P1117_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/SDQ P11-17.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+sdq_P1117_raw <- read_csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ P11-17.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE,show_col_types = FALSE) 
+h1 <- unlist(sdq_P1117_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(sdq_P1117_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+sdq_P1117 <- sdq_P1117_raw[-c(1, 2), ]
+names(sdq_P1117) <- new_names
+sdq_P1117 <- sdq_P1117 %>%
+  select(where(~ !all(is.na(.))))
+
+#NOTE: All score variables present, seemingly random column order. Impact variables present, but no score columns for these.
+
+# dealing with crazy header rows
+#sdq_S1117_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/SDQ S11-17.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+sdq_S1117_raw <- read_csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ S11-17.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE,show_col_types = FALSE) 
+h1 <- unlist(sdq_S1117_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(sdq_S1117_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+sdq_S1117 <- sdq_S1117_raw[-c(1, 2), ]
+names(sdq_S1117) <- new_names
+sdq_S1117 <- sdq_S1117 %>%
+  select(where(~ !all(is.na(.))))
+
+# NOTE: All items appear present and correct and they're even in order! Impact variables present and have score columns but the score columns are all NAs.
+```
+
+The following data answers the follow study sub-questions:
+
+-   **3.11: "**To what extent did parents/caregivers report reductions in disruptive behaviors after receiving the intervention?"
+
+-   **3.16: "**To what extent did children/youth report improvements in coping/handling overall difficulties after the intervention?**"**
+
+**Plan:**
+
+1.  Apply any inclusion criteria
+2.  Reverse-code the 5 reverse-coded items
+3.  Calculate scores
+4.  Report average, median, SD, ranges at initial and discharge time points \
+    Report percent of clients within 0-80 percentile, 81-90 percentile, \>90 percentile.
