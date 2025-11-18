@@ -5,9 +5,17 @@ format: docx
 editor: visual
 ---
 
+# TO DO
+
+-   external scores for empty one
+
+-   write out assumptions
+
 # SDQ scoring
 
-The Strengths and Difficulties Questionnaire (SDQ) is a brief behavioural screening questionnaire about 2-17 year olds. It exists in several versions to meet the needs of researchers, clinicians and educators. Each version includes between one and three of the following components: 1) Items on psychological attributes; 2) An impact supplement; 3) Follow-up questions. \
+The Strengths and Difficulties Questionnaire (SDQ) is a brief behavioral screening questionnaire about 2-17 year-olds. It exists in several versions to meet the needs of researchers, clinicians and educators. Each version includes between one and three of the following components: 1) Items on psychological attributes; 2) An impact supplement; 3) Follow-up questions.
+
+\
 An **increase** in score indicates a negative outcome. Published cut-points are available for both total score and sub-scales and a range of normative data distributions are also available.
 
 ```{r, reading_in_data}
@@ -22,9 +30,14 @@ library(zoo)
 library(ggridges)
 library(janitor)
 
+#sdq question lookup table to rename columns
+sdq_24_questions <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/sdq-24-scoring.csv")
+sdq_410_questions <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/sdq-410-scoring.csv")
+sdq_1117_questions <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/sdq-1117-scoring.csv")
+sdq_1117_self_questions <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/sdq-1117-self-scoring.csv")
 # dealing with crazy header rows
-#sdq_P24_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/SDQ P2-4.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
-sdq_P24_raw <- read_csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ P2-4.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE,show_col_types = FALSE) 
+sdq_P24_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/SDQ P2-4.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+# sdq_P24_raw <- read_csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ P2-4.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE,show_col_types = FALSE) 
 h1 <- unlist(sdq_P24_raw[1, ], use.names = FALSE)           # question text row
 h2 <- unlist(sdq_P24_raw[2, ], use.names = FALSE)           # subheaders
 h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
@@ -42,11 +55,9 @@ sdq_P24 <- sdq_P24 %>%
 
 # NOTE: All items appear present and correct, but three are in an odd column order, relocated to the start. Impact items have a score column, but it's all NAs. The impact items have a lot of missing data.
 
-
-
 # dealing with crazy header rows
-#sdq_P410_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/SDQ P4-10.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
-sdq_P410_raw <- read_csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ P4-10.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE,show_col_types = FALSE) 
+sdq_P410_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/SDQ P4-10.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+#sdq_P410_raw <- read_csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Data#/eInsight Exports/Individual Assessments/SDQ P4-10.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE,show_col_types = FALSE) 
 h1 <- unlist(sdq_P410_raw[1, ], use.names = FALSE)           # question text row
 h2 <- unlist(sdq_P410_raw[2, ], use.names = FALSE)           # subheaders
 h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
@@ -64,11 +75,9 @@ sdq_P410 <- sdq_P410 %>%
 
 # NOTE: All items appear present and correct and they're even in order! Sadly impact variables appear to be missing.
 
-
-
 # dealing with crazy header rows
-#sdq_P1117_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/SDQ P11-17.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
-sdq_P1117_raw <- read_csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ P11-17.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE,show_col_types = FALSE) 
+sdq_P1117_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/SDQ P11-17.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+#sdq_P1117_raw <- read_csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ P11-17.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE,show_col_types = FALSE) 
 h1 <- unlist(sdq_P1117_raw[1, ], use.names = FALSE)           # question text row
 h2 <- unlist(sdq_P1117_raw[2, ], use.names = FALSE)           # subheaders
 h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
@@ -87,8 +96,8 @@ sdq_P1117 <- sdq_P1117 %>%
 #NOTE: All score variables present, seemingly random column order. Impact variables present, but no score columns for these.
 
 # dealing with crazy header rows
-#sdq_S1117_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/SDQ S11-17.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
-sdq_S1117_raw <- read_csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ S11-17.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE,show_col_types = FALSE) 
+sdq_S1117_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/SDQ S11-17.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+#sdq_S1117_raw <- read_csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ S11-17.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE,show_col_types = FALSE) 
 h1 <- unlist(sdq_S1117_raw[1, ], use.names = FALSE)           # question text row
 h2 <- unlist(sdq_S1117_raw[2, ], use.names = FALSE)           # subheaders
 h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
@@ -113,10 +122,489 @@ The following data answers the follow study sub-questions:
 
 -   **3.16: "**To what extent did children/youth report improvements in coping/handling overall difficulties after the intervention?**"**
 
-**Plan:**
+## Reductions in disruptive behaviors (SDQ)
 
-1.  Apply any inclusion criteria
-2.  Reverse-code the 5 reverse-coded items
-3.  Calculate scores
-4.  Report average, median, SD, ranges at initial and discharge time points \
-    Report percent of clients within 0-80 percentile, 81-90 percentile, \>90 percentile.
+### 2-4 (Provider)
+
+**Scoring:** In most respects, the 2-4 year old version of the SDQ is scored in an identical way to the 4-17 year old version of the SDQ, and we therefore suggest that you start by reading those instructions. The only differences are:
+
+-   The wording of two items on the ‘conduct’ scales is markedly different in the questionnaire for 2-4 year olds compared to the questionnaire for 4-17 (but the scoring stays the same). One further hyperactivity item is softened slightly in the 2-4 year old questionnaire. These three items are highlighted in Table 1.
+
+-   Large population-based surveys in the UK suggest slightly different population norms for 2-4 year olds compared to older children. The banding of SDQ scores for the 2-4 year old version is shown in Table 3.
+
+**Total difficulties score**: This is generated by summing scores from all the scales except the prosocial scale. The resultant score ranges from 0 to 40, and is counted as missing if one of the 4 component scores is missing.
+
+don't sum: 1, 4, 9, 17, 20
+
+reverse code: 7, 21, 25, 11, 14
+
+**Assumptions:** used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# Create new column names like q1_stress_score, q2_rested_score, etc.
+sdq_24_questions <- sdq_24_questions %>%
+  mutate(new_name = paste0("q", item, "_", column_name))
+
+# Identify any metadata columns that aren't in lookup (e.g., id, date)
+meta_cols <- setdiff(names(sdq_P24), sdq_24_questions$column_name)
+
+# Reorder and rename in one go
+sdq_P24 <- sdq_P24 %>%
+  select(all_of(meta_cols), all_of(sdq_24_questions$column_name)) %>%
+  rename_with(~ sdq_24_questions$new_name, all_of(sdq_24_questions$column_name)) %>% 
+  mutate(across(all_of(sdq_24_questions$new_name), as.numeric))
+
+# reverse code 7, 21, 25, 11, 14
+# Define which items to reverse and which to exclude
+rev_items <- c(7, 11, 14, 21, 25)
+exclude_items <- c(1, 4, 9, 17, 20)
+
+# included questions from lookup table
+included <- sdq_24_questions %>% 
+  filter(item %in% 1:25, !item %in% exclude_items)
+
+# reverse code specific questions 
+rev_cols <- included$new_name[included$item %in% rev_items]
+
+# Create reversed columns (keep originals)
+sdq_P24 <- sdq_P24 %>%
+  mutate(
+    across(all_of(rev_cols),
+           ~ ifelse(is.na(.x), NA, 2 - .x),  # 0–2 ↔ 2–0
+           .names = "{.col}_rev"))
+
+# use reverse columns if applicable; otherwise originals
+effective_cols <- ifelse(included$new_name %in% rev_cols,
+                         paste0(included$new_name, "_rev"),
+                         included$new_name)
+
+sdq_P24 <- sdq_P24 %>%
+  mutate(
+    missing_count_included = rowSums(is.na(across(all_of(included$new_name)))),
+    total_score = rowSums(across(all_of(effective_cols)), na.rm = TRUE),
+    total_score = ifelse(missing_count_included >= 3, NA_real_, total_score),
+    cut_off_band = case_when(
+      total_score >= 0 & total_score <= 12 ~ "close to average",
+      total_score >= 13 & total_score <= 15 ~ "slightly raised/lowered", 
+      total_score >= 16 & total_score <= 18 ~ "high/low",
+      total_score >= 19 & total_score <= 40 ~ "very high/low",
+      TRUE ~ NA_character_
+    ))
+```
+
+#### Cut off bands
+
+We used the SDQ distribution data to propose the following banding of SDQ scores for 2-4 year olds. We have sought cut-points such that around 80% of children are ‘close to average’, 12% ‘slightly raised’, 4% ‘high’ and 4% ‘very high’ (or, for the prosocial scale, 80% are close to average, 12% ‘slightly lowered’, 4% ‘low’ and 4% ‘very low’).
+
+Similar cut-points were observed for parent SDQs collected in a smaller American sample (N=307) of 2-4 year olds, and for parent SDQs collected in the English ‘Mental Health of Children And Young People, 2017’ study.
+
+|   | Close to average | Slightly raised (/slightly lowered) | High (/Low) | Very high (/very low) |
+|---------------|:-------------:|:-------------:|:-------------:|:-------------:|
+| Parented completed SDQ total score | 0-12 | 13-15 | 16-18 | 19-40 |
+| Teacher completed SDQ total score | 0-10 | 11-14 | 15-17 | 18-40 |
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+hist(sdq_P24$total_score)
+min(sdq_P24$total_score, na.rm = TRUE)
+max(sdq_P24$total_score, na.rm = TRUE)
+
+sdq_p24_scores <- sdq_P24 %>% 
+  select(client_system_id, collection, date_completed, total_score, cut_off_band)
+
+sdq_p24_paired <- sdq_p24_scores %>%
+  mutate(date_completed = as.Date(date_completed)) %>% 
+  group_by(client_system_id) %>%
+  arrange(date_completed, .by_group = TRUE) %>%
+  summarise(
+    n_assessments = n(),
+    initial_date  = first(date_completed),
+    initial_score = first(total_score),
+    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
+    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
+  ) %>%
+  ungroup() %>% 
+  filter(
+    !is.na(follow_up_date)
+  ) %>% 
+  mutate(
+    positive_outcome = ifelse(follow_up_score < initial_score, 1, 0), 
+    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+    
+# summary stats
+tab <- sdq_p24_paired %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(follow_up_quarter, positive_outcome) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+```
+
+### 4-10 (Provider)
+
+**Scoring:** The 25 items in the SDQ comprise 5 scales of 5 items each. It is usually easiest to score all 5 scales first before working out the total difficulties score. ‘Somewhat True’ is always scored as 1, but the scoring of ‘Not True’ and ‘Certainly True’ varies with the item, as shown below scale by scale. For each of the 5 scales the score can range from 0 to 10 if all items were completed. These scores can be scaled up pro-rata if at least 3 items were completed, e.g. a score of 4 based on 3 completed items can be scaled up to a score of 7 (6.67 rounded up) for 5 items.
+
+**Total difficulties score**: This is generated by summing scores from all the scales except the prosocial scale. The resultant score ranges from 0 to 40, and is counted as missing of one of the 4 component scores is missing.
+
+don't sum: 1, 4, 9, 17, 20
+
+reverse code: 7, 21, 25, 11, 14
+
+**Assumptions:** used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# Create new column names like q1_stress_score, q2_rested_score, etc.
+sdq_410_questions <- sdq_410_questions %>%
+  mutate(new_name = paste0("q", item, "_", column_name))
+
+# Identify any metadata columns that aren't in lookup (e.g., id, date)
+meta_cols <- setdiff(names(sdq_P410), sdq_410_questions$column_name)
+
+# Reorder and rename in one go
+sdq_P410 <- sdq_P410 %>%
+  select(all_of(meta_cols), all_of(sdq_410_questions$column_name)) %>%
+  rename_with(~ sdq_410_questions$new_name, all_of(sdq_410_questions$column_name)) %>% 
+  mutate(across(all_of(sdq_410_questions$new_name), as.numeric))
+
+# reverse code 7, 21, 25, 11, 14
+# Define which items to reverse and which to exclude
+rev_items <- c(7, 11, 14, 21, 25)
+exclude_items <- c(1, 4, 9, 17, 20)
+
+# included questions from lookup table
+included <- sdq_410_questions %>% 
+  filter(item %in% 1:25, !item %in% exclude_items)
+
+# reverse code specific questions 
+rev_cols <- included$new_name[included$item %in% rev_items]
+
+# Create reversed columns (keep originals)
+sdq_P410 <- sdq_P410 %>%
+  mutate(
+    across(all_of(rev_cols),
+           ~ ifelse(is.na(.x), NA, 2 - .x),  # 0–2 ↔ 2–0
+           .names = "{.col}_rev"))
+
+# use reverse columns if applicable; otherwise originals
+effective_cols <- ifelse(included$new_name %in% rev_cols,
+                         paste0(included$new_name, "_rev"),
+                         included$new_name)
+
+sdq_P410 <- sdq_P410 %>%
+  mutate(
+    missing_count_included = rowSums(is.na(across(all_of(included$new_name)))),
+    total_score = rowSums(across(all_of(effective_cols)), na.rm = TRUE),
+    total_score = ifelse(missing_count_included >= 3, NA_real_, total_score),
+    cut_off_band = case_when(
+      total_score >= 0 & total_score <= 13 ~ "close to average",
+      total_score >= 14 & total_score <= 16 ~ "slightly raised/lowered", 
+      total_score >= 17 & total_score <= 19 ~ "high/low",
+      total_score >= 20 & total_score <= 40 ~ "very high/low",
+      TRUE ~ NA_character_
+    ))
+```
+
+#### Cut off bands
+
+|   | Close to average | Slightly raised (/slightly lowered) | High (/Low) | Very high (/very low) |
+|---------------|:-------------:|:-------------:|:-------------:|:-------------:|
+| Parented completed SDQ total score | 0-13 | 14-16 | 17-19 | 20-40 |
+| Teacher completed SDQ total score | 0-11 | 12-15 | 16-18 | 19-40 |
+| Self completed SDQ total score | 0-14 | 15-17 | 18-19 | 20-40 |
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+hist(sdq_P410$total_score)
+min(sdq_P410$total_score, na.rm = TRUE)
+max(sdq_P410$total_score, na.rm = TRUE)
+
+sdq_p410_scores <- sdq_P410 %>% 
+  select(client_system_id, collection, date_completed, total_score, cut_off_band)
+
+sdq_p410_paired <- sdq_p410_scores %>%
+  mutate(date_completed = as.Date(date_completed)) %>% 
+  group_by(client_system_id) %>%
+  arrange(date_completed, .by_group = TRUE) %>%
+  summarise(
+    n_assessments = n(),
+    initial_date  = first(date_completed),
+    initial_score = first(total_score),
+    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
+    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
+  ) %>%
+  ungroup() %>% 
+  filter(
+    !is.na(follow_up_date)
+  ) %>% 
+  mutate(
+    positive_outcome = ifelse(follow_up_score < initial_score, 1, 0), 
+    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+    
+# summary stats
+tab <- sdq_p410_paired %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(follow_up_quarter, positive_outcome) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+```
+
+### 11-17 (Provider)
+
+**Scoring:** The 25 items in the SDQ comprise 5 scales of 5 items each. It is usually easiest to score all 5 scales first before working out the total difficulties score. ‘Somewhat True’ is always scored as 1, but the scoring of ‘Not True’ and ‘Certainly True’ varies with the item, as shown below scale by scale. For each of the 5 scales the score can range from 0 to 10 if all items were completed. These scores can be scaled up pro-rata if at least 3 items were completed, e.g. a score of 4 based on 3 completed items can be scaled up to a score of 7 (6.67 rounded up) for 5 items.
+
+**Total difficulties score**: This is generated by summing scores from all the scales except the prosocial scale. The resultant score ranges from 0 to 40, and is counted as missing of one of the 4 component scores is missing.
+
+don't sum: 1, 4, 9, 17, 20
+
+reverse code: 7, 21, 25, 11, 14
+
+**Assumptions:** used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# Create new column names like q1_stress_score, q2_rested_score, etc.
+sdq_1117_questions <- sdq_1117_questions %>%
+  mutate(new_name = paste0("q", item, "_", column_name))
+
+# Identify any metadata columns that aren't in lookup (e.g., id, date)
+meta_cols <- setdiff(names(sdq_P1117), sdq_1117_questions$column_name)
+
+# Reorder and rename in one go
+sdq_P1117 <- sdq_P1117 %>%
+  select(all_of(meta_cols), all_of(sdq_1117_questions$column_name)) %>%
+  rename_with(~ sdq_1117_questions$new_name, all_of(sdq_1117_questions$column_name)) %>% 
+  mutate(across(all_of(sdq_1117_questions$new_name), as.numeric))
+
+# reverse code 7, 21, 25, 11, 14
+# Define which items to reverse and which to exclude
+rev_items <- c(7, 11, 14, 21, 25)
+exclude_items <- c(1, 4, 9, 17, 20)
+
+# included questions from lookup table
+included <- sdq_1117_questions %>% 
+  filter(item %in% 1:25, !item %in% exclude_items)
+
+# reverse code specific questions 
+rev_cols <- included$new_name[included$item %in% rev_items]
+
+# Create reversed columns (keep originals)
+sdq_P1117 <- sdq_P1117 %>%
+  mutate(
+    across(all_of(rev_cols),
+           ~ ifelse(is.na(.x), NA, 2 - .x),  # 0–2 ↔ 2–0
+           .names = "{.col}_rev"))
+
+# use reverse columns if applicable; otherwise originals
+effective_cols <- ifelse(included$new_name %in% rev_cols,
+                         paste0(included$new_name, "_rev"),
+                         included$new_name)
+
+sdq_P1117 <- sdq_P1117 %>%
+  mutate(
+    missing_count_included = rowSums(is.na(across(all_of(included$new_name)))),
+    total_score = rowSums(across(all_of(effective_cols)), na.rm = TRUE),
+    total_score = ifelse(missing_count_included >= 3, NA_real_, total_score),
+    cut_off_band = case_when(
+      total_score >= 0 & total_score <= 13 ~ "close to average",
+      total_score >= 14 & total_score <= 16 ~ "slightly raised/lowered", 
+      total_score >= 17 & total_score <= 19 ~ "high/low",
+      total_score >= 20 & total_score <= 40 ~ "very high/low",
+      TRUE ~ NA_character_
+    ))
+```
+
+#### Cut off bands
+
+|   | Close to average | Slightly raised (/slightly lowered) | High (/Low) | Very high (/very low) |
+|---------------|:-------------:|:-------------:|:-------------:|:-------------:|
+| Parented completed SDQ total score | 0-13 | 14-16 | 17-19 | 20-40 |
+| Teacher completed SDQ total score | 0-11 | 12-15 | 16-18 | 19-40 |
+| Self completed SDQ total score | 0-14 | 15-17 | 18-19 | 20-40 |
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+hist(sdq_P1117$total_score)
+min(sdq_P1117$total_score, na.rm = TRUE)
+max(sdq_P1117$total_score, na.rm = TRUE)
+
+sdq_p1117_scores <- sdq_P1117 %>% 
+  select(client_system_id, collection, date_completed, total_score, cut_off_band)
+
+sdq_p1117_paired <- sdq_p1117_scores %>%
+  mutate(date_completed = as.Date(date_completed)) %>% 
+  group_by(client_system_id) %>%
+  arrange(date_completed, .by_group = TRUE) %>%
+  summarise(
+    n_assessments = n(),
+    initial_date  = first(date_completed),
+    initial_score = first(total_score),
+    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
+    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
+  ) %>%
+  ungroup() %>% 
+  filter(
+    !is.na(follow_up_date)
+  ) %>% 
+  mutate(
+    positive_outcome = ifelse(follow_up_score < initial_score, 1, 0), 
+    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+    
+# summary stats
+tab <- sdq_p1117_paired %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(follow_up_quarter, positive_outcome) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+```
+
+### 11-17 (Self)
+
+**Scoring:** The 25 items in the SDQ comprise 5 scales of 5 items each. It is usually easiest to score all 5 scales first before working out the total difficulties score. ‘Somewhat True’ is always scored as 1, but the scoring of ‘Not True’ and ‘Certainly True’ varies with the item, as shown below scale by scale. For each of the 5 scales the score can range from 0 to 10 if all items were completed. These scores can be scaled up pro-rata if at least 3 items were completed, e.g. a score of 4 based on 3 completed items can be scaled up to a score of 7 (6.67 rounded up) for 5 items.
+
+**Total difficulties score**: This is generated by summing scores from all the scales except the prosocial scale. The resultant score ranges from 0 to 40, and is counted as missing of one of the 4 component scores is missing.
+
+don't sum: 1, 4, 9, 17, 20
+
+reverse code: 7, 21, 25, 11, 14
+
+**Assumptions:** used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# Create new column names like q1_stress_score, q2_rested_score, etc.
+sdq_1117_self_questions <- sdq_1117_self_questions %>%
+  mutate(new_name = paste0("q", item, "_", column_name))
+
+# Identify any metadata columns that aren't in lookup (e.g., id, date)
+meta_cols <- setdiff(names(sdq_S1117), sdq_1117_self_questions$column_name)
+
+# Reorder and rename in one go
+sdq_S1117 <- sdq_S1117 %>%
+  select(all_of(meta_cols), all_of(sdq_1117_self_questions$column_name)) %>%
+  rename_with(~ sdq_1117_self_questions$new_name, all_of(sdq_1117_self_questions$column_name)) %>% 
+  mutate(across(all_of(sdq_1117_self_questions$new_name), as.numeric))
+
+# reverse code 7, 21, 25, 11, 14
+# Define which items to reverse and which to exclude
+rev_items <- c(7, 11, 14, 21, 25)
+exclude_items <- c(1, 4, 9, 17, 20)
+
+# included questions from lookup table
+included <- sdq_1117_self_questions %>% 
+  filter(item %in% 1:25, !item %in% exclude_items)
+
+# reverse code specific questions 
+rev_cols <- included$new_name[included$item %in% rev_items]
+
+# Create reversed columns (keep originals)
+sdq_S1117 <- sdq_S1117 %>%
+  mutate(
+    across(all_of(rev_cols),
+           ~ ifelse(is.na(.x), NA, 2 - .x),  # 0–2 ↔ 2–0
+           .names = "{.col}_rev"))
+
+# use reverse columns if applicable; otherwise originals
+effective_cols <- ifelse(included$new_name %in% rev_cols,
+                         paste0(included$new_name, "_rev"),
+                         included$new_name)
+
+sdq_S1117 <- sdq_S1117 %>%
+  mutate(
+    missing_count_included = rowSums(is.na(across(all_of(included$new_name)))),
+    total_score = rowSums(across(all_of(effective_cols)), na.rm = TRUE),
+    total_score = ifelse(missing_count_included >= 3, NA_real_, total_score),
+    cut_off_band = case_when(
+      total_score >= 0 & total_score <= 14 ~ "close to average",
+      total_score >= 15 & total_score <= 17 ~ "slightly raised/lowered", 
+      total_score >= 18 & total_score <= 19 ~ "high/low",
+      total_score >= 20 & total_score <= 40 ~ "very high/low",
+      TRUE ~ NA_character_
+    ))
+```
+
+#### Cut off bands
+
+|   | Close to average | Slightly raised (/slightly lowered) | High (/Low) | Very high (/very low) |
+|---------------|:-------------:|:-------------:|:-------------:|:-------------:|
+| Parented completed SDQ total score | 0-13 | 14-16 | 17-19 | 20-40 |
+| Teacher completed SDQ total score | 0-11 | 12-15 | 16-18 | 19-40 |
+| Self completed SDQ total score | 0-14 | 15-17 | 18-19 | 20-40 |
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+hist(sdq_S1117$total_score)
+min(sdq_S1117$total_score, na.rm = TRUE)
+max(sdq_S1117$total_score, na.rm = TRUE)
+
+sdq_S1117_scores <- sdq_S1117 %>% 
+  select(client_system_id, collection, date_completed, total_score, cut_off_band)
+
+sdq_S1117_paired <- sdq_S1117_scores %>%
+  mutate(date_completed = as.Date(date_completed)) %>% 
+  group_by(client_system_id) %>%
+  arrange(date_completed, .by_group = TRUE) %>%
+  summarise(
+    n_assessments = n(),
+    initial_date  = first(date_completed),
+    initial_score = first(total_score),
+    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
+    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
+  ) %>%
+  ungroup() %>% 
+  filter(
+    !is.na(follow_up_date)
+  ) %>% 
+  mutate(
+    positive_outcome = ifelse(follow_up_score < initial_score, 1, 0), 
+    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+    
+# summary stats
+tab <- sdq_S1117_paired %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(follow_up_quarter, positive_outcome) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+```
+
+### 
