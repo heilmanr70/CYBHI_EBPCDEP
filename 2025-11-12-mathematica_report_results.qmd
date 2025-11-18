@@ -31,19 +31,24 @@ Q4_25: 2025-10-01 - 2025-12-31
 
 **Calculation:** aggregated count of clients served by period with an intervention type and start date listed; intervention does not need to be completed; assumes dates before 2024 are correct and any rows with these dates have not been revised
 
+**Assumptions:** This is discharge data from EInsight, so can have clients in here multiple times (they can have multiple interventions, or the same intervention on multiple dates). I filtered out dates before 2024-01-01, and did not clean dates at all.
+
 ```{r, client_serve}
 #| echo: false
 #| warning: false
 #| message: false
 library(readr)
 library(tidyverse)
+library(janitor)
 
 discharge_data_filtered <- read_csv("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
 discharge_data_filtered <- discharge_data_filtered %>% 
   filter(!is.na(intervention_start), # has to have an intervention start date
          !is.na(intervention_name)) # has to have an intervention type named
 
-client_serve <- tabyl(discharge_data_filtered$intervention_start_quarter)
+client_serve <- discharge_data_filtered %>% 
+  filter(intervention_start >= "2024-01-01") %>% 
+    tabyl(intervention_start_quarter)
 client_serve 
 ```
 
@@ -133,6 +138,8 @@ Satisfaction is defined two ways below. The first is the percent of individuals 
 
 **Nitty gritty:** There are four satisfaction surveys: Caregiver (n=`{r} nrow(caregiver)`), Child (13-17) (n=`{r} nrow(child)`), Adult (18-59) (n=`{r} nrow(adult)`), and Adult (60+) (n=`{r} nrow(senior)`). A separate data frame was made for question 1, and high satisfaction was defined as the percent of individuals who answered a 4 or 5 for question 1.
 
+**Assumptions:** I cleaned dates with "002X" and "292X" and replaced them with "202X." I also filtered dates in the future (\<= "2025-12-31").
+
 #### Question 1 Satisfaction
 
 ```{r, client_sat_q1}
@@ -163,37 +170,7 @@ combined_q1 <- bind_rows(
     mutate(source = "senior"))
 ```
 
-The following is the % of high satisfaction by source:
-
-```{r}
-#| echo: false
-#| warning: false
-#| message: false
-
-combined_q1 %>%
-  group_by(source) %>%
-  summarise(
-    n_total = sum(!is.na(q12)),
-    n_4_5 = sum(q12 %in% c(4, 5), na.rm = TRUE),
-    pct_4_5 = round((100 * n_4_5 / n_total), 1)
-  )
-```
-
-```{r}
-#| echo: false
-#| warning: false
-#| message: false
-#| include: false
-pct_4_5 <- combined_q1 %>%
-  summarise(
-    pct_4_5 = round((100 * sum(q12 %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q12))), 1)
-  ) %>%
-  pull(pct_4_5)
-
-pct_4_5
-```
-
-Overall, `{r} pct_4_5`% of survey respondents were highly satisfied based on question 1 answers. The following table shows high survey satisfaction by quarter.
+The following table shows high survey satisfaction by quarter.
 
 ```{r}
 #| echo: false
@@ -224,14 +201,14 @@ combined_all <- bind_rows(
     mutate(source = "senior"))
 
 # first clean date column
-unique(combined_all$date_completed)
+#unique(combined_all$date_completed)
 combined_all <- combined_all %>% 
   mutate(
     date_clean = str_replace(date_completed, "^00", "20"), # replace 00xx with 20xx
     date_clean = str_replace(date_clean, "^29", "20"), # replace 29xx with 20xx
     date_clean = as.Date(date_clean)
   )
-unique(combined_all$date_clean)
+#unique(combined_all$date_clean)
 
 # add in a quarter column 
 combined_all <- combined_all %>% 
@@ -305,8 +282,6 @@ df4 <- df3 %>%
 df4
 ```
 
-Overall, `{r} df4$pct_meeting_80pct`% of survey respondents were highly satisfied, defined as selecting "Agree" or "Strongly Agree" on 80% or more of the questions completed, for those who completed a survey on or before September 30, 2025.
-
 The following table shows high survey satisfaction results by quarter, for data where both `client_id` and `quarter_label` were available.
 
 ```{r}
@@ -342,13 +317,17 @@ summary_agree_quarter
 
 **Calculation:** This KPI represents ***the percent*** of clients who have a disenrollment/discharge response as “mutually agreed cessation of treatment” out of the total number of clients with a discharge reason by period(s).
 
+**Assumptions:** This is discharge data from EInsight, so can have clients in here multiple times (they can have multiple interventions, or the same intervention on multiple dates). I removed NA's from reason_for_discharge, but did not clean dates at all. I filtered by intervention_end date \>= "2024-01-1" and \<= "12-31-2025."
+
 ```{r}
 #| echo: false
 #| warning: false
 #| message: false
 #| include: false
+
 # number of rows with a reason for discharge
 count_rows <- nrow(discharge_data_filtered %>% filter(!is.na(reason_for_discharge)))
+count_rows
 
 # number of rows with successful discharge
 # table of positive outcomes 
@@ -367,17 +346,17 @@ yes_pct3 <- tab3 %>%
   pull(valid_percent)
 ```
 
-Successful discharges were defined as those clients that had "Mutually agreed cessation of treatment (Successful Completion)" as the `reason_for_discharge` in the discharge data from EInsight. Of `{r} nrow(discharge_data_filtered)` rows of discharge data, `{r} count_rows` rows had a reason for discharge stated. Of individuals with a reason for discharge stated, `{r} yes_count` (`{r} yes_pct3`) were successfully discharged.
-
 The results below show % of successful discharges by `intervention_end_quarter`, once NA's are removed from the data.
 
 ```{r}
 #| echo: false
 #| warning: false
 #| message: false
-# total table of successful discharges by quarter of intervention start
+# total table of successful discharges by quarter of intervention END
 tab4 <- discharge_data_filtered %>% 
-  filter(!is.na(reason_for_discharge)) %>% 
+  filter(!is.na(reason_for_discharge),
+         intervention_end >= "2024-01-01",
+         intervention_end <= "2025-12-31") %>% 
   tabyl(reason_for_discharge, intervention_end_quarter) %>% 
   adorn_totals("row") %>% 
   adorn_percentages("col") %>%
@@ -391,6 +370,8 @@ tab4 %>% filter(reason_for_discharge == "Mutually agreed cessation of treatment 
 **Definition:** Clients from the primary evaluation who indicate services received in their preferred language on the satisfaction survey divided by the total number of clients served by the grantees who completed a satisfaction survey after an intervention during the designated time frame.
 
 **Calculation:** This KPI represents ***the percent*** of clients that report services received in their preferred language on the satisfaction survey out of the total that completed the satisfaction survey by period(s).
+
+**Assumptions:** I cleaned dates with "002X" and "292X" and replaced them with "202X." I also filtered dates in the future (\<= "2025-12-31"). I filtered out NAs for both the quarter label and the question first before calculating %.
 
 The following table shows the percent of clients who received services in their preferred language on the satisfaction survey by quarter:
 
@@ -434,8 +415,8 @@ client_lang_all <- client_lang_all %>%
   )
 
 tab <- client_lang_all %>% 
-  filter(!is.na(quarter_label)) %>% 
-  filter(!is.na(quarter_label)) %>% 
+  filter(!is.na(quarter_label),
+         !is.na(were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response)) %>% 
   tabyl(quarter_label, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
   adorn_totals("row") %>% 
   adorn_percentages("row") %>%
@@ -446,6 +427,10 @@ tab
 ```
 
 ## Improved mental health (NOMS)
+
+**Scoring:** An **increase** in score indicates a positive outcome. There are no benchmarks or clinical cutoffs established for NOMS scoring - if the follow-up assessment score is higher than the initial score, a positive outcome is indicated.
+
+**Assumptions:** I filtered out dates before 2024-01-01 and after the date the code was run. I filtered data that's \>3 days from initial assessment and paired to the LAST follow-up. I filtered positive outcomes that had NA's before computing %.
 
 ### Child
 
@@ -482,13 +467,6 @@ noms_child <- noms_child_raw[-c(1, 2), ]
 names(noms_child) <- new_names
 noms_child <- noms_child %>%
   select(where(~ !all(is.na(.))))
-```
-
-```{r, long_df}
-#| echo: false
-#| warning: false
-#| message: false
-#| include: false
 
 #make sure columns are numeric
 #add a total score column
@@ -505,7 +483,7 @@ noms_child <- noms_child %>%
     row_id = row_number()                # stable row id for disambiguation
   ) %>% 
   filter(date_completed <= Sys.Date(),     #date of running the code
-         date_completed >= "2023-01-01")   #date to filter out random issue dates   
+         date_completed >= "2024-01-01")   #date to filter out random issue dates   
 
 #pivot long to get individual question scores too
 noms_child_long <- noms_child %>% 
@@ -516,7 +494,7 @@ noms_child_long <- noms_child %>%
   ) %>% 
   mutate(score = as.numeric(score))
 
-#pair per question
+#pair by system_id and question (because the data is in a long format)
 paired_outcomes_child <- noms_child_long %>% 
   group_by(system_id, question) %>% 
   arrange(date_completed, .by_group = TRUE) %>% 
@@ -533,8 +511,8 @@ paired_outcomes_child <- noms_child_long %>%
 
 # paired data
 pairs_primary_long <- paired_outcomes_child %>% 
-  filter(is_after3) %>% 
-  slice_tail(n = 1) %>% 
+  filter(is_after3 == TRUE) %>% #filter to data that's after 3 days from initial
+  slice_tail(n = 1) %>%  #pairing to the LAST follow-up
   transmute(
     system_id, question,
     initial_date,
@@ -577,7 +555,7 @@ Range: 1-5
 
 Sum = Q1
 
-Use the `pairs_primary_long` data frame to compute scores. The following had a positive outcome by follow-up quarter:
+Use the `pairs_primary_long_self` data frame to compute scores. The following had a positive outcome by follow-up quarter:
 
 ```{r}
 #| echo: false
@@ -599,13 +577,6 @@ noms_self <- noms_self_raw[-c(1, 2), ]
 names(noms_self) <- new_names
 noms_self <- noms_self %>%
   select(where(~ !all(is.na(.))))
-```
-
-```{r, self_long_df}
-#| echo: false
-#| warning: false
-#| message: false
-#| include: false
 
 #make sure columns are numeric
 #add a total score column
@@ -622,7 +593,7 @@ noms_self <- noms_self %>%
     row_id = row_number()                # stable row id for disambiguation
   ) %>% 
   filter(date_completed <= Sys.Date(),     #date of running the code
-         date_completed >= "2023-01-01")   #date to filter out random issue dates   
+         date_completed >= "2024-01-01")   #date to filter out random issue dates   
 
 #pivot long to get individual question scores too
 noms_self_long <- noms_self %>% 
@@ -650,8 +621,8 @@ paired_outcomes_self <- noms_self_long %>%
 
 # paired data
 pairs_primary_long_self <- paired_outcomes_self %>% 
-  filter(is_after3) %>% 
-  slice_tail(n = 1) %>% 
+  filter(is_after3 == TRUE) %>% #filtered for assessments >3 days from initial
+  slice_tail(n = 1) %>%  #paired on LAST assessment
   transmute(
     client_system_id, question,
     initial_date,
@@ -705,7 +676,7 @@ Use the `pairs_primary_long` data frame to compute scores. The following had a p
 pairs_primary_long_q2 <- pairs_primary_long %>% 
   filter(str_detect(question, "^x2.*_score$"))
 
-# 8) compute differences in f/u and initial scores
+# compute differences in f/u and initial scores
 score_diff_child_q2 <- pairs_primary_long_q2 %>% 
   group_by(system_id) %>% 
   summarise(initial_total = sum(initial_score, na.rm = TRUE),
@@ -713,7 +684,8 @@ score_diff_child_q2 <- pairs_primary_long_q2 %>%
             score_change = followup_total - initial_total,
             positive_outcome = ifelse(followup_total > initial_total, 1, 0),
             initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
-            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))) %>% 
+  distinct(system_id, .keep_all = TRUE)
 
 # summary stats
 tab <- score_diff_child_q2 %>% 
@@ -750,7 +722,8 @@ score_diff_self_q2 <- pairs_primary_long_q2_self %>%
             score_change = followup_total - initial_total,
             positive_outcome = ifelse(followup_total > initial_total, 1, 0),
             initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
-            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))) %>% 
+  distinct(client_system_id, .keep_all = TRUE)
 
 # summary stats
 tab <- score_diff_self_q2 %>% 
@@ -789,7 +762,8 @@ score_diff_child_q3 <- pairs_primary_long_q3 %>%
             score_change = followup_total - initial_total,
             positive_outcome = ifelse(followup_total > initial_total, 1, 0),
             initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
-            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))) %>% 
+  distinct(system_id, .keep_all = TRUE)
 
 # summary stats
 tab <- score_diff_child_q3 %>% 
@@ -826,7 +800,8 @@ score_diff_self_q3 <- pairs_primary_long_q3_self %>%
             score_change = followup_total - initial_total,
             positive_outcome = ifelse(followup_total > initial_total, 1, 0),
             initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
-            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))) %>% 
+  distinct(client_system_id, .keep_all = TRUE)
 
 # summary stats
 tab <- score_diff_self_q3 %>% 
@@ -865,7 +840,8 @@ score_diff_child_q4 <- pairs_primary_long_q4 %>%
             score_change = followup_total - initial_total,
             positive_outcome = ifelse(followup_total > initial_total, 1, 0),
             initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
-            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))) %>% 
+  distinct(system_id, .keep_all = TRUE)
 
 # summary stats
 tab <- score_diff_child_q4 %>% 
@@ -902,7 +878,8 @@ score_diff_self_q4 <- pairs_primary_long_q4_self %>%
             score_change = followup_total - initial_total,
             positive_outcome = ifelse(followup_total > initial_total, 1, 0),
             initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
-            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))) %>% 
+  distinct(client_system_id, .keep_all = TRUE)
 
 # summary stats
 tab <- score_diff_self_q4 %>% 
@@ -925,6 +902,8 @@ The YOQ total score reflects total distress in a client’s life, with a high sc
 **Range:** 0 - 120
 
 **Calculation:** Sum of 30 items (0-4 scale); invalid if 3+ items missing; total score only calculated if 28+ items completed; including those doing reliably better / total who took YOQ by quarter RCI = baseline score - follow-up score - RCI ≤ -10 doing reliably worse - RCI ≥ 10 doing reliably better
+
+**Assumptions:** A positive outcome was if a client was doing reliably better as defined by the YOQ RCI. I used follow-up quarter as the date. I used the LAST follow-up date if there were \>1 assessments. I filtered out NA's from "reliably better"
 
 ### Caregiver
 
@@ -974,7 +953,7 @@ yoq_caregiver_paired <- yoq_caregiver %>%
 # summary stats
 tab <- yoq_caregiver_paired %>% 
   filter(!is.na(reliably_better)) %>% 
-  tabyl(follow_up_quarter, reliably_better) %>% 
+  tabyl(follow_up_quarter, reliably_better) %>% # true = doing reliably better
   adorn_totals("row") %>% 
   adorn_percentages("row") %>%
   adorn_pct_formatting(digits = 0) %>%
@@ -1062,6 +1041,8 @@ We can't use this one - it only has 9 rows of data, all of which are unique clie
 
 -   5 = Strongly Agree
 
+**Assumptions:** Total score = NA if 2+ items are missing; used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
+
 **Range:** 18 - 90
 
 ```{r}
@@ -1142,7 +1123,7 @@ tab <- pss_paired %>%
 tab 
 ```
 
-## Client_groups
+## Client_groups: race
 
 **Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where “served” means that a client had a new intervention, grouped by race.
 
@@ -1170,6 +1151,8 @@ tab
 
 8.  2+ races selected
 
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have race characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients).
+
 ```{r}
 #| echo: false
 #| warning: false
@@ -1187,7 +1170,415 @@ all_data <- all_data %>%
 tab <- all_data %>% 
   filter(intervention_start >= "2024-01-01",
          !is.na(code_num)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
   tabyl(intervention_start_quarter, code_num) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+
+clipr::write_clip(tab)
+```
+
+## Client_groups: insurance status
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where “served” means that a client had a new intervention, grouped by insurance status.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and insurance is recoded as follows:
+
+**Codebook:**
+
+0.  NA, don't know, prefer not to answer
+
+<!-- -->
+
+1.  Private insurance
+
+2.  Medi-Cal/Medi-Care
+
+3.  No Insurance Status Selected
+
+4.  No insurance/Indigent
+
+5.  Other
+
+6.  Veterans Benefits
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have insurance status characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients).
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+library(readr)
+library(tidyverse)
+
+# Define coding for single responses
+codebook_insurance <- c("Private Insurance" = 1, 
+              "Medi-Cal/Medi-Care" = 2, 
+              "No Insurance Status Selected" = 3,
+              "No insurance/Indigent" = 4,
+              "Other" = 5,
+              "Veterans Benefits" = 6)
+
+all_data <- all_data %>% 
+  mutate(
+    # normalize text a bit
+    insurance_status_clean = str_squish(insurance_status),
+    # make 3 categories missing
+    insurance_status_clean = if_else(
+      insurance_status_clean %in% c("Don't Know", "Prefer Not To Answer",
+                                    "Not Applicable") |
+      insurance_status_clean == "",
+      NA_character_,
+      insurance_status_clean),
+    # numeric code (NA if not in codebook or was set to NA above)
+    insurance_num = unname(codebook_insurance[insurance_status_clean]) %>% 
+      as.integer())
+  
+
+tab <- all_data %>% 
+  filter(intervention_start >= "2024-01-01",
+         !is.na(insurance_num)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(intervention_start_quarter, insurance_num) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+
+clipr::write_clip(tab)
+```
+
+## Client_groups: sexual orientation
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where “served” means that a client had a new intervention, grouped by sexual orientation.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and sexual orientation is recoded as follows:
+
+**Codebook:**
+
+1.  NA, don't know, prefer not to answer, no sexual orientation selected
+
+<!-- -->
+
+1.  Asexual
+
+2.  Bisexual
+
+3.  Lesbian/Gay
+
+4.  Other
+
+5.  Pansexual
+
+6.  Same Gender Loving
+
+7.  Straight
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have sexual orientation characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients).
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Define coding for single responses
+codebook_sexual_orientation <- c("Asexual" = 1, 
+              "Bisexual" = 2, 
+              "Lesbian/Gay" = 3,
+              "Other" = 4,
+              "Pansexual" = 5,
+              "Same Gender Loving" = 6,
+              "Straight" = 7)
+
+all_data <- all_data %>% 
+  mutate(
+    # normalize text a bit
+    sexual_orientation_clean = str_squish(sexual_orientation),
+    # make 3 categories missing
+    sexual_orientation_clean = if_else(
+      sexual_orientation_clean %in% c("Don't Know", 
+                                      "No Sexual Orientation Selected",
+                                      "Prefer Not To Answer",
+                                    "Not Applicable") |
+      sexual_orientation_clean == "",
+      NA_character_,
+      sexual_orientation_clean),
+    # numeric code (NA if not in codebook or was set to NA above)
+    sexual_orientation_num = unname(codebook_sexual_orientation[sexual_orientation_clean]) %>% 
+      as.integer())
+  
+
+tab <- all_data %>% 
+  filter(intervention_start >= "2024-01-01",
+         !is.na(sexual_orientation_num)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(intervention_start_quarter, sexual_orientation_num) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+
+#clipr::write_clip(tab)
+```
+
+## Client_groups: gender identity
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where “served” means that a client had a new intervention, grouped by gender identity.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and gender identity is recoded as follows:
+
+**Codebook:**
+
+1.  NA, don't know, prefer not to answer
+
+<!-- -->
+
+1.  Genderqueer
+
+2.  Man/boy
+
+3.  No Gender Identity Selected
+
+4.  Non-binary
+
+5.  Transgender man/boy
+
+6.  Transgender woman/girl
+
+7.  Two-spirit
+
+8.  Woman/girl
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have gender identity characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients).
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Define coding for single responses
+codebook_gender_identity <- c("Genderqueer" = 1, 
+              "Man/boy" = 2, 
+              "No Gender Identify Selected" = 3,
+              "Non-binary" = 4,
+              "Transgender man/boy" = 5,
+              "Transgender woman/girl" = 6,
+              "Two-spirit" = 7,
+              "Woman/girl" = 8)
+
+all_data <- all_data %>% 
+  mutate(
+    # normalize text a bit
+    gender_identity_clean = str_squish(gender_identity),
+    # make 3 categories missing
+    gender_identity_clean = if_else(
+      gender_identity_clean %in% c("Don't Know", 
+                                      "Prefer Not To Answer",
+                                    "Not Applicable") |
+      gender_identity_clean == "",
+      NA_character_,
+      gender_identity_clean),
+    # numeric code (NA if not in codebook or was set to NA above)
+    gender_identity_num = unname(codebook_gender_identity[gender_identity_clean]) %>% 
+      as.integer())
+  
+
+tab <- all_data %>% 
+  filter(intervention_start >= "2024-01-01",
+         !is.na(gender_identity_num)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(intervention_start_quarter, gender_identity_num) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+
+clipr::write_clip(tab)
+```
+
+## Client_groups: preferred language
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where “served” means that a client had a new intervention, grouped by preferred language.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and preferred language is recoded as follows:
+
+**Codebook:**
+
+1.  NA, don't know, prefer not to answer, no preferred language selected
+
+<!-- -->
+
+1.  English
+
+2.  Spanish
+
+3.  Other
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have preferred language characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients). Any language with \<200 rows of data is grouped into "Other" category
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+all_data <- all_data %>% 
+  mutate(
+    # normalize text a bit
+    preferred_language_clean = str_squish(preferred_language),
+    # make 3 categories missing
+    preferred_language_clean = case_when(
+      preferred_language_clean %in% c("Don't Know", 
+                                      "Prefer Not To Answer",
+                                      "Not Applicable", 
+                                      "") ~ NA_character_,
+      preferred_language_clean %in% c("English", "Spanish") ~ preferred_language_clean,
+      TRUE ~ "Other"),
+    # numeric code (NA if not in codebook or was set to NA above)
+    preferred_language_num = case_when(
+      preferred_language_clean == "English" ~ 1,
+      preferred_language_clean == "Spanish" ~ 2,
+      preferred_language_clean == "Other" ~ 3,
+      TRUE ~ NA_integer_
+    ))
+  
+
+tab <- all_data %>% 
+  filter(intervention_start >= "2024-01-01",
+         !is.na(preferred_language_clean)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(intervention_start_quarter, preferred_language_clean) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+
+clipr::write_clip(tab)
+```
+
+## Client_groups: primary language
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where “served” means that a client had a new intervention, grouped by primary language.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and primary language is recoded as follows:
+
+**Codebook:**
+
+0.  NA, don't know, prefer not to answer, no primary language selected
+
+<!-- -->
+
+1.  English
+
+2.  Spanish
+
+3.  Other
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have primary language characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients). Any language with \<200 rows of data is grouped into "Other" category
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+all_data <- all_data %>% 
+  mutate(
+    # normalize text a bit
+    primary_language_clean = str_squish(primary_language),
+    # make 3 categories missing
+    primary_language_clean = case_when(
+      primary_language_clean %in% c("Don't Know", 
+                                      "Prefer Not To Answer",
+                                      "Not Applicable", 
+                                      "") ~ NA_character_,
+      primary_language_clean %in% c("English", "Spanish") ~ primary_language_clean,
+      TRUE ~ "Other"),
+    # numeric code (NA if not in codebook or was set to NA above)
+    primary_language_num = case_when(
+      primary_language_clean == "English" ~ 1,
+      primary_language_clean == "Spanish" ~ 2,
+      primary_language_clean == "Other" ~ 3,
+      TRUE ~ NA_integer_
+    ))
+  
+
+tab <- all_data %>% 
+  filter(intervention_start >= "2024-01-01",
+         !is.na(primary_language_clean)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(intervention_start_quarter, primary_language_clean) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+
+#clipr::write_clip(tab)
+```
+
+## Client_groups: housing status
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where “served” means that a client had a new intervention, grouped by housing status.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and housing status is recoded as follows:
+
+**Codebook:**
+
+0.  NA, don't know, prefer not to answer, no housing status selected
+
+<!-- -->
+
+1.  Housed
+
+2.  Unhoused
+
+3.  Other (i.e. treatment facility)
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have housing status characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients).
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+all_data <- all_data %>% 
+  mutate(
+    # normalize text a bit
+    housing_status_clean = str_squish(housing_status),
+    # make 3 categories missing
+    housing_status_clean = case_when(
+      housing_status_clean %in% c("Don't Know", 
+                                      "Prefer Not To Answer",
+                                      "Not Applicable", 
+                                      "") ~ NA_character_,
+      housing_status_clean %in% c("Housed", "Unhoused") ~ housing_status_clean,
+      TRUE ~ "Other (i.e. treatment facility)"),
+    # numeric code (NA if not in codebook or was set to NA above)
+    housing_status_num = case_when(
+      housing_status_clean == "Housed" ~ 1,
+      housing_status_clean == "Unhoused" ~ 2,
+      housing_status_clean == "Other (i.e. treatment facility)" ~ 3,
+      TRUE ~ NA_integer_
+    ))
+  
+
+tab <- all_data %>% 
+  filter(intervention_start >= "2024-01-01",
+         !is.na(housing_status_clean)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(intervention_start_quarter, housing_status_clean) %>% 
   adorn_totals("row") %>% 
   adorn_percentages("row") %>%
   adorn_pct_formatting(digits = 0) %>%
