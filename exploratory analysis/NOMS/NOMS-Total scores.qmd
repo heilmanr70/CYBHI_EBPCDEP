@@ -133,7 +133,7 @@ no_followup_long <- paired_outcomes_child %>%
   filter(!has_followup)
 ```
 
-# Total score 
+# Total score
 
 ## CHILD
 
@@ -169,7 +169,7 @@ If there's a match within 3 days of the initial assessment, we will need to look
 
 We will create a new dataframe of all instances of individuals with multiple initial or multiple discharge assessments. If we can pair them easily (e.g., Joel/Joel and Sally/Sally), we will do so. If we cannot, we will filter out all unpaired assessments.
 
-The mean, median, and sd for total scores for the NOMS child assessment, grouped by initial versus discharge scores are: 
+The mean, median, and sd for total scores for the NOMS child assessment, grouped by initial versus discharge scores are:
 
 ```{r, pair_data}
 #| echo: false
@@ -405,7 +405,8 @@ noms_self %>%
   filter(total_score != final_score_score)
 ```
 
-The mean, median, and sd for total scores for the NOMS child assessment, grouped by initial versus discharge scores are: 
+The mean, median, and sd for total scores for the NOMS child assessment, grouped by initial versus discharge scores are:
+
 ```{r}
 #| echo: false
 #| warning: false
