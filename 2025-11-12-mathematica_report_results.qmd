@@ -1179,6 +1179,18 @@ tab <- all_data %>%
 
 tab 
 
+tab <- all_data %>% 
+   filter(!is.na(client_type),
+          !is.na(code_num)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(client_type, code_num) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+
 clipr::write_clip(tab)
 ```
 
@@ -1249,7 +1261,20 @@ tab <- all_data %>%
   adorn_pct_formatting(digits = 0) %>%
   adorn_ns() 
 
+tab
+
+tab <- all_data %>% 
+  filter(!is.na(client_type),
+         !is.na(insurance_num)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(client_type, insurance_num) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
 tab 
+
 
 clipr::write_clip(tab)
 ```
@@ -1326,6 +1351,17 @@ tab <- all_data %>%
 
 tab 
 
+tab <- all_data %>% 
+  filter(intervention_start >= "2024-01-01",
+         !is.na(sexual_orientation_num)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(client_type, sexual_orientation_num) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
 #clipr::write_clip(tab)
 ```
 
@@ -1464,6 +1500,18 @@ tab <- all_data %>%
 
 tab 
 
+tab <- all_data %>% 
+  filter(!is.na(client_type),
+         !is.na(preferred_language_clean)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(client_type, preferred_language_clean) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+
 clipr::write_clip(tab)
 ```
 
@@ -1525,7 +1573,18 @@ tab <- all_data %>%
 
 tab 
 
-#clipr::write_clip(tab)
+tab <- all_data %>% 
+  filter(!is.na(client_type),
+         !is.na(primary_language_clean)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(client_type, primary_language_clean) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+clipr::write_clip(tab)
 ```
 
 ## Client_groups: housing status
@@ -1575,10 +1634,10 @@ all_data <- all_data %>%
   
 
 tab <- all_data %>% 
-  filter(intervention_start >= "2024-01-01",
+  filter(!is.na(client_type),
          !is.na(housing_status_clean)) %>% 
   distinct(client_system_id, .keep_all = TRUE) %>% 
-  tabyl(intervention_start_quarter, housing_status_clean) %>% 
+  tabyl(client_type, housing_status_clean) %>% 
   adorn_totals("row") %>% 
   adorn_percentages("row") %>%
   adorn_pct_formatting(digits = 0) %>%
