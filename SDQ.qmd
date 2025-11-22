@@ -5,12 +5,6 @@ format: docx
 editor: visual
 ---
 
-# TO DO
-
--   external scores for empty one
-
--   write out assumptions
-
 # SDQ scoring
 
 The Strengths and Difficulties Questionnaire (SDQ) is a brief behavioral screening questionnaire about 2-17 year-olds. It exists in several versions to meet the needs of researchers, clinicians and educators. Each version includes between one and three of the following components: 1) Items on psychological attributes; 2) An impact supplement; 3) Follow-up questions.
@@ -25,9 +19,6 @@ An **increase** in score indicates a negative outcome. Published cut-points are 
 #| include: false
 library(readr)
 library(tidyverse)
-library(readxl)
-library(zoo)
-library(ggridges)
 library(janitor)
 
 #sdq question lookup table to rename columns
@@ -122,7 +113,311 @@ The following data answers the follow study sub-questions:
 
 -   **3.16: "**To what extent did children/youth report improvements in coping/handling overall difficulties after the intervention?**"**
 
+## Functions to score SDQ datasets
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+score_sdq <- function(df, lookup, cutoffs_total, cutoffs_externalizing, rev_items,
+                      exclude_items, externalizing_items) {
+  
+  # 1. Create standardized new column names, e.g., q1_itemname_score
+  lookup <- lookup %>%
+    mutate(new_name = paste0("q", item, "_", column_name))
+  
+  # 2. Metadata columns vs SDQ columns
+  meta_cols <- setdiff(names(df), lookup$column_name)
+  
+  # 3. Reorder and rename
+  df <- df %>%
+    dplyr::select(all_of(meta_cols), all_of(lookup$column_name)) %>%
+    rename_with(~ lookup$new_name, all_of(lookup$column_name)) %>%
+    mutate(across(all_of(lookup$new_name), as.numeric))
+  
+  # 4. Handle reverse coding
+  included <- lookup %>% filter(item %in% 1:25, !item %in% exclude_items)
+  
+  rev_cols <- included$new_name[included$item %in% rev_items]
+  
+  df <- df %>%
+    mutate(across(all_of(rev_cols),
+                  ~ ifelse(is.na(.x), NA, 2 - .x), # 0–2 => 2–0
+                  .names = "{.col}_rev"))
+  
+  # 5. Build effective scoring set (rev where needed)
+  effective_cols <- ifelse(included$new_name %in% rev_cols,
+                           paste0(included$new_name, "_rev"),
+                           included$new_name)
+
+  # 6. Total score
+  df <- df %>%
+    mutate(
+      missing_count_total = rowSums(is.na(across(all_of(included$new_name)))),
+      total_score = rowSums(across(all_of(effective_cols)), na.rm = TRUE),
+      total_score = ifelse(missing_count_total >= 3, NA_real_, total_score),
+      cut_off_band = case_when(
+        total_score >= cutoffs_total$close_min  & 
+          total_score <= cutoffs_total$close_max ~ "close to average",
+        total_score >= cutoffs_total$slight_min & 
+          total_score <= cutoffs_total$slight_max ~ "slightly raised/lowered",
+        total_score >= cutoffs_total$high_min   & 
+          total_score <= cutoffs_total$high_max   ~ "high/low",
+        total_score >= cutoffs_total$very_min   & 
+          total_score <= cutoffs_total$very_max   ~ "very high/low",
+        TRUE ~ NA_character_
+      )
+    )
+  
+  # 7. Externalizing score
+  ext_lookup <- lookup %>% filter(item %in% externalizing_items)
+  ext_effective_cols <- ifelse(ext_lookup$new_name %in% rev_cols,
+                               paste0(ext_lookup$new_name, "_rev"),
+                               ext_lookup$new_name)
+  
+  df <- df %>%
+    mutate(
+      missing_count_externalizing = rowSums(is.na(across(all_of(ext_lookup$new_name)))),
+      externalizing_score = rowSums(across(all_of(ext_effective_cols)), na.rm = TRUE),
+      externalizing_score = ifelse(missing_count_externalizing >= 3,
+                                   NA_real_, externalizing_score),
+      externalizing_band = case_when(
+        externalizing_score >= cutoffs_externalizing$close_min & 
+          externalizing_score <= cutoffs_externalizing$close_max ~ "close to average",
+        externalizing_score >= cutoffs_externalizing$slight_min & 
+          externalizing_score <= cutoffs_externalizing$slight_max ~ "slightly raised/lowered",
+        externalizing_score >= cutoffs_externalizing$high_min & 
+          externalizing_score <= cutoffs_externalizing$high_max ~ "high/low",
+        externalizing_score >= cutoffs_externalizing$very_min & 
+          externalizing_score <= cutoffs_externalizing$very_max ~ "very high/low",
+        TRUE ~ NA_character_
+      )
+    )
+  
+  return(df)
+}
+```
+
+```{r, defining_params_and_bands}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+
+# Reverse-coded items
+rev_items <- c(7, 11, 14, 21, 25)
+
+# Excluded from total scoring
+exclude_items <- c(1, 4, 9, 17, 20)
+
+# Externalizing items
+externalizing_items <- c(2, 5, 7, 10, 12, 15, 18, 21, 22, 25)
+
+# cutoff bands
+cutoffs_total_P24 <- list(
+  close_min = 0, close_max = 12,
+  slight_min = 13, slight_max = 15,
+  high_min = 16, high_max = 18,
+  very_min = 19, very_max = 40
+)
+
+cutoffs_externalizing_P24 <- list(
+  close_min = 0, close_max = 8,
+  slight_min = 9, slight_max = 11,
+  high_min = 12, high_max = 13,
+  very_min = 14, very_max = 20
+)
+
+cutoffs_total_P410 <- list(
+  close_min = 0, close_max = 13,
+  slight_min = 14, slight_max = 16,
+  high_min = 17, high_max = 19,
+  very_min = 20, very_max = 40
+)
+
+cutoffs_externalizing_P410 <- list(
+  close_min = 0, close_max = 8,
+  slight_min = 9, slight_max = 10,
+  high_min = 11, high_max = 12,
+  very_min = 13, very_max = 20
+)
+
+cutoffs_total_P1117 <- list(
+  close_min = 0, close_max = 13,
+  slight_min = 14, slight_max = 16,
+  high_min = 17, high_max = 19,
+  very_min = 20, very_max = 40
+)
+
+cutoffs_externalizing_P1117 <- list(
+  close_min = 0, close_max = 8,
+  slight_min = 9, slight_max = 10,
+  high_min = 11, high_max = 12,
+  very_min = 13, very_max = 20
+)
+
+cutoffs_total_S1117 <- list(
+  close_min = 0, close_max = 14,
+  slight_min = 15, slight_max = 17,
+  high_min = 18, high_max = 19,
+  very_min = 20, very_max = 40
+)
+
+cutoffs_externalizing_S1117 <- list(
+  close_min = 0, close_max = 8,
+  slight_min = 9, slight_max = 10,
+  high_min = 11, high_max = 12,
+  very_min = 13, very_max = 20
+)
+```
+
+```{r, calculating_scores}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+sdq_P24 <- score_sdq(sdq_P24, sdq_24_questions,
+                     cutoffs_total_P24, cutoffs_externalizing_P24,
+                     rev_items, exclude_items,
+                     externalizing_items)
+
+sdq_P410 <- score_sdq(sdq_P410, sdq_410_questions,
+                      cutoffs_total_P410, cutoffs_externalizing_P410, 
+                      rev_items, exclude_items,
+                      externalizing_items)
+
+sdq_P1117 <- score_sdq(sdq_P1117, sdq_1117_questions,
+                       cutoffs_total_P1117, cutoffs_externalizing_P1117,
+                       rev_items, exclude_items,
+                       externalizing_items)
+
+sdq_S1117 <- score_sdq(sdq_S1117, sdq_1117_self_questions,
+                       cutoffs_total_S1117, cutoffs_externalizing_S1117,
+                       rev_items, exclude_items,
+                       externalizing_items)
+```
+
+```{r, creating_summary_tables}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+analyze_sdq <- function(df, label = NULL) {
+  
+  message("---- Running analysis for: ", label, " ----")
+  
+  # 1. Histograms
+  print(hist(df$total_score, 
+             main = paste("Total Score:", label),
+             xlab = "Total Score", col = "steelblue"))
+  
+  print(hist(df$externalizing_score, 
+             main = paste("Externalizing Score:", label),
+             xlab = "Externalizing Score", col = "steelblue"))
+  
+  # 2. Min & max
+  print(paste("Total Min:", min(df$total_score, na.rm = TRUE)))
+  print(paste("Total Max:", max(df$total_score, na.rm = TRUE)))
+  print(paste("Externalizing Min:", min(df$externalizing_score, na.rm = TRUE)))
+  print(paste("Externalizing Max:", max(df$externalizing_score, na.rm = TRUE)))
+
+    # 3. Extract key columns
+  scores <- df %>%
+    select(client_system_id, collection, date_completed, total_score, 
+           externalizing_score, cut_off_band, externalizing_band)
+  
+  # 4. Pair by client
+  paired <- scores %>%
+    mutate(date_completed = as.Date(date_completed)) %>% 
+    group_by(client_system_id) %>%
+    arrange(date_completed, .by_group = TRUE) %>%
+    summarise(
+      n_assessments = n(),
+      initial_date  = first(date_completed),
+      follow_up_date  = if_else(n_assessments >= 2, 
+                                last(date_completed), as.Date(NA)),
+      initial_total = first(total_score),
+      follow_up_total = if_else(n_assessments >= 2, 
+                                last(total_score), NA_real_),
+      initial_ext = first(externalizing_score),
+      follow_up_ext = if_else(n_assessments >= 2, last(externalizing_score), NA_real_)
+    ) %>%
+    ungroup() %>% 
+    filter(!is.na(follow_up_date)) %>% 
+    mutate(
+      positive_outcome_total = ifelse(follow_up_total < initial_total, 1, 0), 
+      positive_outcome_ext = ifelse(follow_up_ext < initial_ext, 1, 0), 
+      initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+      follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))
+    )
+  
+  # 5. Summary table: TOTAL
+  tab_total <- paired %>% 
+    filter(!is.na(positive_outcome_total)) %>% 
+    tabyl(follow_up_quarter, positive_outcome_total) %>% 
+    adorn_totals("row") %>% 
+    adorn_percentages("row") %>%
+    adorn_pct_formatting(digits = 0) %>%
+    adorn_ns()
+  
+   # 6. Summary table: EXTERNALIZING
+  tab_ext <- paired %>% 
+    filter(!is.na(positive_outcome_ext)) %>% 
+    tabyl(follow_up_quarter, positive_outcome_ext) %>% 
+    adorn_totals("row") %>% 
+    adorn_percentages("row") %>%
+    adorn_pct_formatting(digits = 0) %>%
+    adorn_ns()
+  
+  # print both tabs
+  message("---- Total score outcomes by follow-up quarter ----")
+  print(tab_total)
+  message("---- Externalizing outcomes by follow-up quarter ----")
+  print(tab_ext)
+  
+  return(list(
+    paired = paired,
+    summary_total = tab_total,
+    summary_externalizing = tab_ext
+  ))
+}
+```
+
+## Scoring the datasets
+
+```{r, running_for_each_df}
+#| echo: false
+#| warning: false
+#| message: false
+
+# run analysis for each dataset 
+res_P24   <- analyze_sdq(sdq_P24,   label = "Parent SDQ (2–4)")
+res_P24$summary_total
+res_P24$summary_externalizing
+
+res_P410  <- analyze_sdq(sdq_P410,  label = "Parent SDQ (4–10)")
+res_P410$summary_total
+res_P410$summary_externalizing
+
+res_P1117 <- analyze_sdq(sdq_P1117, label = "Parent SDQ (11–17)")
+res_P1117$summary_total
+res_P1117$summary_externalizing
+
+res_S1117 <- analyze_sdq(sdq_S1117, label = "Self SDQ (11–17)")
+res_S1117$summary_total
+res_S1117$summary_externalizing
+```
+
 ## Reductions in disruptive behaviors (SDQ)
+
+### 2-4 (Provider)
+
+**‘Internalising’ and ‘externalising’ scores**: The internalising score ranges from 0 to 20 and is the sum of the emotional and peer difficulties scales. The externalising score ranges from 0 to 20 and is the sum of the conduct and hyperactivity scales. We will be using the externalising score for this KPI.
+
+**Calculation:** Hyperactivity scale (2, 10, 15, 21, 25) + conduct scale (5, 7, 12, 18, 22) Cut off bands
+
+## Improvements in coping and handling overall difficulties (SDQ) 
 
 ### 2-4 (Provider)
 
@@ -140,61 +435,6 @@ reverse code: 7, 21, 25, 11, 14
 
 **Assumptions:** used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
 
-```{r}
-#| echo: false
-#| warning: false
-#| message: false
-# Create new column names like q1_stress_score, q2_rested_score, etc.
-sdq_24_questions <- sdq_24_questions %>%
-  mutate(new_name = paste0("q", item, "_", column_name))
-
-# Identify any metadata columns that aren't in lookup (e.g., id, date)
-meta_cols <- setdiff(names(sdq_P24), sdq_24_questions$column_name)
-
-# Reorder and rename in one go
-sdq_P24 <- sdq_P24 %>%
-  select(all_of(meta_cols), all_of(sdq_24_questions$column_name)) %>%
-  rename_with(~ sdq_24_questions$new_name, all_of(sdq_24_questions$column_name)) %>% 
-  mutate(across(all_of(sdq_24_questions$new_name), as.numeric))
-
-# reverse code 7, 21, 25, 11, 14
-# Define which items to reverse and which to exclude
-rev_items <- c(7, 11, 14, 21, 25)
-exclude_items <- c(1, 4, 9, 17, 20)
-
-# included questions from lookup table
-included <- sdq_24_questions %>% 
-  filter(item %in% 1:25, !item %in% exclude_items)
-
-# reverse code specific questions 
-rev_cols <- included$new_name[included$item %in% rev_items]
-
-# Create reversed columns (keep originals)
-sdq_P24 <- sdq_P24 %>%
-  mutate(
-    across(all_of(rev_cols),
-           ~ ifelse(is.na(.x), NA, 2 - .x),  # 0–2 ↔ 2–0
-           .names = "{.col}_rev"))
-
-# use reverse columns if applicable; otherwise originals
-effective_cols <- ifelse(included$new_name %in% rev_cols,
-                         paste0(included$new_name, "_rev"),
-                         included$new_name)
-
-sdq_P24 <- sdq_P24 %>%
-  mutate(
-    missing_count_included = rowSums(is.na(across(all_of(included$new_name)))),
-    total_score = rowSums(across(all_of(effective_cols)), na.rm = TRUE),
-    total_score = ifelse(missing_count_included >= 3, NA_real_, total_score),
-    cut_off_band = case_when(
-      total_score >= 0 & total_score <= 12 ~ "close to average",
-      total_score >= 13 & total_score <= 15 ~ "slightly raised/lowered", 
-      total_score >= 16 & total_score <= 18 ~ "high/low",
-      total_score >= 19 & total_score <= 40 ~ "very high/low",
-      TRUE ~ NA_character_
-    ))
-```
-
 #### Cut off bands
 
 We used the SDQ distribution data to propose the following banding of SDQ scores for 2-4 year olds. We have sought cut-points such that around 80% of children are ‘close to average’, 12% ‘slightly raised’, 4% ‘high’ and 4% ‘very high’ (or, for the prosocial scale, 80% are close to average, 12% ‘slightly lowered’, 4% ‘low’ and 4% ‘very low’).
@@ -205,50 +445,6 @@ Similar cut-points were observed for parent SDQs collected in a smaller American
 |---------------|:-------------:|:-------------:|:-------------:|:-------------:|
 | Parented completed SDQ total score | 0-12 | 13-15 | 16-18 | 19-40 |
 | Teacher completed SDQ total score | 0-10 | 11-14 | 15-17 | 18-40 |
-
-```{r}
-#| echo: false
-#| warning: false
-#| message: false
-
-hist(sdq_P24$total_score)
-min(sdq_P24$total_score, na.rm = TRUE)
-max(sdq_P24$total_score, na.rm = TRUE)
-
-sdq_p24_scores <- sdq_P24 %>% 
-  select(client_system_id, collection, date_completed, total_score, cut_off_band)
-
-sdq_p24_paired <- sdq_p24_scores %>%
-  mutate(date_completed = as.Date(date_completed)) %>% 
-  group_by(client_system_id) %>%
-  arrange(date_completed, .by_group = TRUE) %>%
-  summarise(
-    n_assessments = n(),
-    initial_date  = first(date_completed),
-    initial_score = first(total_score),
-    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
-    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
-  ) %>%
-  ungroup() %>% 
-  filter(
-    !is.na(follow_up_date)
-  ) %>% 
-  mutate(
-    positive_outcome = ifelse(follow_up_score < initial_score, 1, 0), 
-    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
-    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
-    
-# summary stats
-tab <- sdq_p24_paired %>% 
-  filter(!is.na(positive_outcome)) %>% 
-  tabyl(follow_up_quarter, positive_outcome) %>% 
-  adorn_totals("row") %>% 
-  adorn_percentages("row") %>%
-  adorn_pct_formatting(digits = 0) %>%
-  adorn_ns() 
-
-tab 
-```
 
 ### 4-10 (Provider)
 
@@ -262,61 +458,6 @@ reverse code: 7, 21, 25, 11, 14
 
 **Assumptions:** used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
 
-```{r}
-#| echo: false
-#| warning: false
-#| message: false
-# Create new column names like q1_stress_score, q2_rested_score, etc.
-sdq_410_questions <- sdq_410_questions %>%
-  mutate(new_name = paste0("q", item, "_", column_name))
-
-# Identify any metadata columns that aren't in lookup (e.g., id, date)
-meta_cols <- setdiff(names(sdq_P410), sdq_410_questions$column_name)
-
-# Reorder and rename in one go
-sdq_P410 <- sdq_P410 %>%
-  select(all_of(meta_cols), all_of(sdq_410_questions$column_name)) %>%
-  rename_with(~ sdq_410_questions$new_name, all_of(sdq_410_questions$column_name)) %>% 
-  mutate(across(all_of(sdq_410_questions$new_name), as.numeric))
-
-# reverse code 7, 21, 25, 11, 14
-# Define which items to reverse and which to exclude
-rev_items <- c(7, 11, 14, 21, 25)
-exclude_items <- c(1, 4, 9, 17, 20)
-
-# included questions from lookup table
-included <- sdq_410_questions %>% 
-  filter(item %in% 1:25, !item %in% exclude_items)
-
-# reverse code specific questions 
-rev_cols <- included$new_name[included$item %in% rev_items]
-
-# Create reversed columns (keep originals)
-sdq_P410 <- sdq_P410 %>%
-  mutate(
-    across(all_of(rev_cols),
-           ~ ifelse(is.na(.x), NA, 2 - .x),  # 0–2 ↔ 2–0
-           .names = "{.col}_rev"))
-
-# use reverse columns if applicable; otherwise originals
-effective_cols <- ifelse(included$new_name %in% rev_cols,
-                         paste0(included$new_name, "_rev"),
-                         included$new_name)
-
-sdq_P410 <- sdq_P410 %>%
-  mutate(
-    missing_count_included = rowSums(is.na(across(all_of(included$new_name)))),
-    total_score = rowSums(across(all_of(effective_cols)), na.rm = TRUE),
-    total_score = ifelse(missing_count_included >= 3, NA_real_, total_score),
-    cut_off_band = case_when(
-      total_score >= 0 & total_score <= 13 ~ "close to average",
-      total_score >= 14 & total_score <= 16 ~ "slightly raised/lowered", 
-      total_score >= 17 & total_score <= 19 ~ "high/low",
-      total_score >= 20 & total_score <= 40 ~ "very high/low",
-      TRUE ~ NA_character_
-    ))
-```
-
 #### Cut off bands
 
 |   | Close to average | Slightly raised (/slightly lowered) | High (/Low) | Very high (/very low) |
@@ -324,50 +465,6 @@ sdq_P410 <- sdq_P410 %>%
 | Parented completed SDQ total score | 0-13 | 14-16 | 17-19 | 20-40 |
 | Teacher completed SDQ total score | 0-11 | 12-15 | 16-18 | 19-40 |
 | Self completed SDQ total score | 0-14 | 15-17 | 18-19 | 20-40 |
-
-```{r}
-#| echo: false
-#| warning: false
-#| message: false
-
-hist(sdq_P410$total_score)
-min(sdq_P410$total_score, na.rm = TRUE)
-max(sdq_P410$total_score, na.rm = TRUE)
-
-sdq_p410_scores <- sdq_P410 %>% 
-  select(client_system_id, collection, date_completed, total_score, cut_off_band)
-
-sdq_p410_paired <- sdq_p410_scores %>%
-  mutate(date_completed = as.Date(date_completed)) %>% 
-  group_by(client_system_id) %>%
-  arrange(date_completed, .by_group = TRUE) %>%
-  summarise(
-    n_assessments = n(),
-    initial_date  = first(date_completed),
-    initial_score = first(total_score),
-    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
-    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
-  ) %>%
-  ungroup() %>% 
-  filter(
-    !is.na(follow_up_date)
-  ) %>% 
-  mutate(
-    positive_outcome = ifelse(follow_up_score < initial_score, 1, 0), 
-    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
-    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
-    
-# summary stats
-tab <- sdq_p410_paired %>% 
-  filter(!is.na(positive_outcome)) %>% 
-  tabyl(follow_up_quarter, positive_outcome) %>% 
-  adorn_totals("row") %>% 
-  adorn_percentages("row") %>%
-  adorn_pct_formatting(digits = 0) %>%
-  adorn_ns() 
-
-tab 
-```
 
 ### 11-17 (Provider)
 
@@ -381,61 +478,6 @@ reverse code: 7, 21, 25, 11, 14
 
 **Assumptions:** used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
 
-```{r}
-#| echo: false
-#| warning: false
-#| message: false
-# Create new column names like q1_stress_score, q2_rested_score, etc.
-sdq_1117_questions <- sdq_1117_questions %>%
-  mutate(new_name = paste0("q", item, "_", column_name))
-
-# Identify any metadata columns that aren't in lookup (e.g., id, date)
-meta_cols <- setdiff(names(sdq_P1117), sdq_1117_questions$column_name)
-
-# Reorder and rename in one go
-sdq_P1117 <- sdq_P1117 %>%
-  select(all_of(meta_cols), all_of(sdq_1117_questions$column_name)) %>%
-  rename_with(~ sdq_1117_questions$new_name, all_of(sdq_1117_questions$column_name)) %>% 
-  mutate(across(all_of(sdq_1117_questions$new_name), as.numeric))
-
-# reverse code 7, 21, 25, 11, 14
-# Define which items to reverse and which to exclude
-rev_items <- c(7, 11, 14, 21, 25)
-exclude_items <- c(1, 4, 9, 17, 20)
-
-# included questions from lookup table
-included <- sdq_1117_questions %>% 
-  filter(item %in% 1:25, !item %in% exclude_items)
-
-# reverse code specific questions 
-rev_cols <- included$new_name[included$item %in% rev_items]
-
-# Create reversed columns (keep originals)
-sdq_P1117 <- sdq_P1117 %>%
-  mutate(
-    across(all_of(rev_cols),
-           ~ ifelse(is.na(.x), NA, 2 - .x),  # 0–2 ↔ 2–0
-           .names = "{.col}_rev"))
-
-# use reverse columns if applicable; otherwise originals
-effective_cols <- ifelse(included$new_name %in% rev_cols,
-                         paste0(included$new_name, "_rev"),
-                         included$new_name)
-
-sdq_P1117 <- sdq_P1117 %>%
-  mutate(
-    missing_count_included = rowSums(is.na(across(all_of(included$new_name)))),
-    total_score = rowSums(across(all_of(effective_cols)), na.rm = TRUE),
-    total_score = ifelse(missing_count_included >= 3, NA_real_, total_score),
-    cut_off_band = case_when(
-      total_score >= 0 & total_score <= 13 ~ "close to average",
-      total_score >= 14 & total_score <= 16 ~ "slightly raised/lowered", 
-      total_score >= 17 & total_score <= 19 ~ "high/low",
-      total_score >= 20 & total_score <= 40 ~ "very high/low",
-      TRUE ~ NA_character_
-    ))
-```
-
 #### Cut off bands
 
 |   | Close to average | Slightly raised (/slightly lowered) | High (/Low) | Very high (/very low) |
@@ -443,50 +485,6 @@ sdq_P1117 <- sdq_P1117 %>%
 | Parented completed SDQ total score | 0-13 | 14-16 | 17-19 | 20-40 |
 | Teacher completed SDQ total score | 0-11 | 12-15 | 16-18 | 19-40 |
 | Self completed SDQ total score | 0-14 | 15-17 | 18-19 | 20-40 |
-
-```{r}
-#| echo: false
-#| warning: false
-#| message: false
-
-hist(sdq_P1117$total_score)
-min(sdq_P1117$total_score, na.rm = TRUE)
-max(sdq_P1117$total_score, na.rm = TRUE)
-
-sdq_p1117_scores <- sdq_P1117 %>% 
-  select(client_system_id, collection, date_completed, total_score, cut_off_band)
-
-sdq_p1117_paired <- sdq_p1117_scores %>%
-  mutate(date_completed = as.Date(date_completed)) %>% 
-  group_by(client_system_id) %>%
-  arrange(date_completed, .by_group = TRUE) %>%
-  summarise(
-    n_assessments = n(),
-    initial_date  = first(date_completed),
-    initial_score = first(total_score),
-    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
-    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
-  ) %>%
-  ungroup() %>% 
-  filter(
-    !is.na(follow_up_date)
-  ) %>% 
-  mutate(
-    positive_outcome = ifelse(follow_up_score < initial_score, 1, 0), 
-    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
-    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
-    
-# summary stats
-tab <- sdq_p1117_paired %>% 
-  filter(!is.na(positive_outcome)) %>% 
-  tabyl(follow_up_quarter, positive_outcome) %>% 
-  adorn_totals("row") %>% 
-  adorn_percentages("row") %>%
-  adorn_pct_formatting(digits = 0) %>%
-  adorn_ns() 
-
-tab 
-```
 
 ### 11-17 (Self)
 
@@ -500,61 +498,6 @@ reverse code: 7, 21, 25, 11, 14
 
 **Assumptions:** used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
 
-```{r}
-#| echo: false
-#| warning: false
-#| message: false
-# Create new column names like q1_stress_score, q2_rested_score, etc.
-sdq_1117_self_questions <- sdq_1117_self_questions %>%
-  mutate(new_name = paste0("q", item, "_", column_name))
-
-# Identify any metadata columns that aren't in lookup (e.g., id, date)
-meta_cols <- setdiff(names(sdq_S1117), sdq_1117_self_questions$column_name)
-
-# Reorder and rename in one go
-sdq_S1117 <- sdq_S1117 %>%
-  select(all_of(meta_cols), all_of(sdq_1117_self_questions$column_name)) %>%
-  rename_with(~ sdq_1117_self_questions$new_name, all_of(sdq_1117_self_questions$column_name)) %>% 
-  mutate(across(all_of(sdq_1117_self_questions$new_name), as.numeric))
-
-# reverse code 7, 21, 25, 11, 14
-# Define which items to reverse and which to exclude
-rev_items <- c(7, 11, 14, 21, 25)
-exclude_items <- c(1, 4, 9, 17, 20)
-
-# included questions from lookup table
-included <- sdq_1117_self_questions %>% 
-  filter(item %in% 1:25, !item %in% exclude_items)
-
-# reverse code specific questions 
-rev_cols <- included$new_name[included$item %in% rev_items]
-
-# Create reversed columns (keep originals)
-sdq_S1117 <- sdq_S1117 %>%
-  mutate(
-    across(all_of(rev_cols),
-           ~ ifelse(is.na(.x), NA, 2 - .x),  # 0–2 ↔ 2–0
-           .names = "{.col}_rev"))
-
-# use reverse columns if applicable; otherwise originals
-effective_cols <- ifelse(included$new_name %in% rev_cols,
-                         paste0(included$new_name, "_rev"),
-                         included$new_name)
-
-sdq_S1117 <- sdq_S1117 %>%
-  mutate(
-    missing_count_included = rowSums(is.na(across(all_of(included$new_name)))),
-    total_score = rowSums(across(all_of(effective_cols)), na.rm = TRUE),
-    total_score = ifelse(missing_count_included >= 3, NA_real_, total_score),
-    cut_off_band = case_when(
-      total_score >= 0 & total_score <= 14 ~ "close to average",
-      total_score >= 15 & total_score <= 17 ~ "slightly raised/lowered", 
-      total_score >= 18 & total_score <= 19 ~ "high/low",
-      total_score >= 20 & total_score <= 40 ~ "very high/low",
-      TRUE ~ NA_character_
-    ))
-```
-
 #### Cut off bands
 
 |   | Close to average | Slightly raised (/slightly lowered) | High (/Low) | Very high (/very low) |
@@ -562,49 +505,3 @@ sdq_S1117 <- sdq_S1117 %>%
 | Parented completed SDQ total score | 0-13 | 14-16 | 17-19 | 20-40 |
 | Teacher completed SDQ total score | 0-11 | 12-15 | 16-18 | 19-40 |
 | Self completed SDQ total score | 0-14 | 15-17 | 18-19 | 20-40 |
-
-```{r}
-#| echo: false
-#| warning: false
-#| message: false
-
-hist(sdq_S1117$total_score)
-min(sdq_S1117$total_score, na.rm = TRUE)
-max(sdq_S1117$total_score, na.rm = TRUE)
-
-sdq_S1117_scores <- sdq_S1117 %>% 
-  select(client_system_id, collection, date_completed, total_score, cut_off_band)
-
-sdq_S1117_paired <- sdq_S1117_scores %>%
-  mutate(date_completed = as.Date(date_completed)) %>% 
-  group_by(client_system_id) %>%
-  arrange(date_completed, .by_group = TRUE) %>%
-  summarise(
-    n_assessments = n(),
-    initial_date  = first(date_completed),
-    initial_score = first(total_score),
-    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
-    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
-  ) %>%
-  ungroup() %>% 
-  filter(
-    !is.na(follow_up_date)
-  ) %>% 
-  mutate(
-    positive_outcome = ifelse(follow_up_score < initial_score, 1, 0), 
-    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
-    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
-    
-# summary stats
-tab <- sdq_S1117_paired %>% 
-  filter(!is.na(positive_outcome)) %>% 
-  tabyl(follow_up_quarter, positive_outcome) %>% 
-  adorn_totals("row") %>% 
-  adorn_percentages("row") %>%
-  adorn_pct_formatting(digits = 0) %>%
-  adorn_ns() 
-
-tab 
-```
-
-### 
