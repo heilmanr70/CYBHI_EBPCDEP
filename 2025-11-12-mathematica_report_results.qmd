@@ -1019,11 +1019,11 @@ tab <- yoq_self_paired %>%
 tab
 ```
 
-### POQ 
+### POQ
 
 We can't use this one - it only has 9 rows of data, all of which are unique clients (no follow-ups).
 
-## Reductions in parent-related stress (PSS) 
+## Reductions in parent-related stress (PSS)
 
 **Definition:** PSS item(s) measuring reduction in parent/caregiver-related stress after the intervention. Assessments showing improvement from pre- to post-time point for clients who discharged from an intervention during the designated time frame.
 
@@ -1191,7 +1191,7 @@ tab <- all_data %>%
 
 tab 
 
-clipr::write_clip(tab)
+#clipr::write_clip(tab)
 ```
 
 ## Client_groups: insurance status
@@ -1276,7 +1276,7 @@ tab <- all_data %>%
 tab 
 
 
-clipr::write_clip(tab)
+#clipr::write_clip(tab)
 ```
 
 ## Client_groups: sexual orientation
@@ -1439,7 +1439,7 @@ tab <- all_data %>%
 
 tab 
 
-clipr::write_clip(tab)
+#clipr::write_clip(tab)
 ```
 
 ## Client_groups: preferred language
@@ -1512,7 +1512,7 @@ tab <- all_data %>%
 
 tab 
 
-clipr::write_clip(tab)
+#clipr::write_clip(tab)
 ```
 
 ## Client_groups: primary language
@@ -1584,7 +1584,7 @@ tab <- all_data %>%
   adorn_ns() 
 
 tab 
-clipr::write_clip(tab)
+#clipr::write_clip(tab)
 ```
 
 ## Client_groups: housing status
@@ -1634,6 +1634,18 @@ all_data <- all_data %>%
   
 
 tab <- all_data %>% 
+  filter(intervention_start >= "2024-01-01",
+         !is.na(housing_status_clean)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(intervention_start_quarter, housing_status_clean) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+
+tab <- all_data %>% 
   filter(!is.na(client_type),
          !is.na(housing_status_clean)) %>% 
   distinct(client_system_id, .keep_all = TRUE) %>% 
@@ -1645,5 +1657,5 @@ tab <- all_data %>%
 
 tab 
 
-clipr::write_clip(tab)
+#clipr::write_clip(tab)
 ```
