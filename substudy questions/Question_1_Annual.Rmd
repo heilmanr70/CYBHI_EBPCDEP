@@ -1,0 +1,200 @@
+---
+title: "Annual Report Data Analysis - Question 1"
+author: "Cristin Young"
+date: "2025-12-07"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  html_notebook: default
+---
+
+#Read in data
+```{r}
+library(tidyverse)
+library(janitor)
+library(gt)
+
+demographic_data_filtered <- read_csv("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv", show_col_types = FALSE)
+all_data <- read_csv("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
+```
+#1. Did the EBP/CDEP Workstream increase access to services for targeted populations?
+
+##1.01 Did improved access to services affect all subpopulations?
+
+Cross-tab of study population by relevant demographic data
+
+Total number of clients served and by demographics
+
+###race
+Cleaned race variable (recoded_race): 
+- 0 if nothing is left after removal (or NA)
+- 1 if exactly one valid response remains
+- 2 if 2+ valid responses remain
+Recoded race variable (code_num): 
+codebook <- c("Asian" = 1, 
+              "Black or African American" = 2, 
+              "Hispanic or Latino" = 3,
+              "Middle Eastern or North African" = 4,
+              "Native American/American Indian or Alaska Native" = 5,
+              "Native Hawaiian or Pacific Islander" = 6,
+              "White" = 7,
+              2+ selected = 88
+              )
+```{r}
+race_summary_all <- demographic_data_filtered %>%
+  select(race) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  count(variable, value) %>%
+  group_by(variable) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  arrange(variable, desc(n))
+
+race_summary_all %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+
+all_data_race_summary <- all_data %>%
+  select(race) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  count(variable, value) %>%
+  group_by(variable) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  arrange(variable, desc(n))
+
+all_data_race_summary %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+
+#how many selected 2+ races? 
+table(demographic_data_filtered$recoded_race)
+
+race_summary_recoded <- demographic_data_filtered %>%
+  select(code_num) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  count(variable, value) %>%
+  group_by(variable) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  arrange(variable, desc(n))
+
+race_summary_recoded %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+```
+
+###ethnicity
+```{r}
+ethnicity_summary <- demographic_data_filtered %>%
+  select(ethnicity) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  count(variable, value) %>%
+  group_by(variable) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  arrange(variable, desc(n))
+
+ethnicity_summary %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+
+all_data_ethnicity_summary <- all_data %>%
+  select(ethnicity) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  count(variable, value) %>%
+  group_by(variable) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  arrange(variable, desc(n))
+
+all_data_ethnicity_summary %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+```
+
+###gender identity
+```{r}
+gender_summary <- demographic_data_filtered %>%
+  select(gender_identity) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  count(variable, value) %>%
+  group_by(variable) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  arrange(variable, desc(n))
+
+gender_summary %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+
+all_data_gender_summary <- all_data %>%
+  select(gender_identity) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  count(variable, value) %>%
+  group_by(variable) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  arrange(variable, desc(n))
+
+all_data_gender_summary %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+```
+
+###sexual orientation
+```{r}
+sex_summary <- demographic_data_filtered %>%
+  select(sexual_orientation) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  count(variable, value) %>%
+  group_by(variable) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  arrange(variable, desc(n))
+
+sex_summary %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+
+all_data_sex_summary <- all_data %>%
+  select(sexual_orientation) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  count(variable, value) %>%
+  group_by(variable) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  arrange(variable, desc(n))
+
+all_data_sex_summary %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+```
+
+###insurance status
+```{r}
+insurance_summary <- demographic_data_filtered %>%
+  select(insurance_status) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  count(variable, value) %>%
+  group_by(variable) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  arrange(variable, desc(n))
+
+insurance_summary %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+
+all_data_insurance_summary <- all_data %>%
+  select(insurance_status) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  count(variable, value) %>%
+  group_by(variable) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  arrange(variable, desc(n))
+
+all_data_insurance_summary %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+```
+
+
+##1.02 How does access differ compared to previous access to services before EBP/CDEP funding? For each subpopulation?
+
+Cross-tab of demographics and grant types: Total number of clients served and by demographic, and by whether grant was start up or expansion
+```{r}
+glimpse(all_data)
+```
+
