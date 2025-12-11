@@ -15,7 +15,7 @@ library(tidyverse)
 library(janitor)
 library(gt)
 
-all_data <- read_csv("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
+all_data <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
 ```
 
 #3.14 To what extent did children/youth report reductions in overall distress after receiving the intervention?
