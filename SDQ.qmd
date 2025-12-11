@@ -22,12 +22,12 @@ library(tidyverse)
 library(janitor)
 
 #sdq question lookup table to rename columns
-sdq_24_questions <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/sdq-24-scoring.csv")
-sdq_410_questions <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/sdq-410-scoring.csv")
-sdq_1117_questions <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/sdq-1117-scoring.csv")
-sdq_1117_self_questions <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/sdq-1117-self-scoring.csv")
+sdq_24_questions <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/sdq-24-scoring.csv")
+sdq_410_questions <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/sdq-410-scoring.csv")
+sdq_1117_questions <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/sdq-1117-scoring.csv")
+sdq_1117_self_questions <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/sdq-1117-self-scoring.csv")
 # dealing with crazy header rows
-sdq_P24_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/SDQ P2-4.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+sdq_P24_raw <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ P2-4.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
 # sdq_P24_raw <- read_csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ P2-4.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE,show_col_types = FALSE) 
 h1 <- unlist(sdq_P24_raw[1, ], use.names = FALSE)           # question text row
 h2 <- unlist(sdq_P24_raw[2, ], use.names = FALSE)           # subheaders
@@ -47,7 +47,7 @@ sdq_P24 <- sdq_P24 %>%
 # NOTE: All items appear present and correct, but three are in an odd column order, relocated to the start. Impact items have a score column, but it's all NAs. The impact items have a lot of missing data.
 
 # dealing with crazy header rows
-sdq_P410_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/SDQ P4-10.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+sdq_P410_raw <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ P4-10.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
 #sdq_P410_raw <- read_csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Data#/eInsight Exports/Individual Assessments/SDQ P4-10.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE,show_col_types = FALSE) 
 h1 <- unlist(sdq_P410_raw[1, ], use.names = FALSE)           # question text row
 h2 <- unlist(sdq_P410_raw[2, ], use.names = FALSE)           # subheaders
@@ -67,7 +67,7 @@ sdq_P410 <- sdq_P410 %>%
 # NOTE: All items appear present and correct and they're even in order! Sadly impact variables appear to be missing.
 
 # dealing with crazy header rows
-sdq_P1117_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/SDQ P11-17.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+sdq_P1117_raw <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ P11-17.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
 #sdq_P1117_raw <- read_csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ P11-17.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE,show_col_types = FALSE) 
 h1 <- unlist(sdq_P1117_raw[1, ], use.names = FALSE)           # question text row
 h2 <- unlist(sdq_P1117_raw[2, ], use.names = FALSE)           # subheaders
@@ -87,7 +87,7 @@ sdq_P1117 <- sdq_P1117 %>%
 #NOTE: All score variables present, seemingly random column order. Impact variables present, but no score columns for these.
 
 # dealing with crazy header rows
-sdq_S1117_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/SDQ S11-17.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+sdq_S1117_raw <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ S11-17.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
 #sdq_S1117_raw <- read_csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ S11-17.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE,show_col_types = FALSE) 
 h1 <- unlist(sdq_S1117_raw[1, ], use.names = FALSE)           # question text row
 h2 <- unlist(sdq_S1117_raw[2, ], use.names = FALSE)           # subheaders
@@ -365,6 +365,15 @@ analyze_sdq <- function(df, label = NULL) {
   tab_ext <- paired %>% 
     filter(!is.na(positive_outcome_ext)) %>% 
     tabyl(follow_up_quarter, positive_outcome_ext) %>% 
+    adorn_totals("row") %>% 
+    adorn_percentages("row") %>%
+    adorn_pct_formatting(digits = 0) %>%
+    adorn_ns()
+  
+  # 7. Summary table: TOTAL - NOT BY QUARTER
+  tab_total_ <- paired %>% 
+    filter(!is.na(positive_outcome_total)) %>% 
+    tabyl(follow_up_quarter, positive_outcome_total) %>% 
     adorn_totals("row") %>% 
     adorn_percentages("row") %>%
     adorn_pct_formatting(digits = 0) %>%
