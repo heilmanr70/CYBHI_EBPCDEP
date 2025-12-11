@@ -1,7 +1,7 @@
 ---
 title: "Annual Report Data Analysis - Question 2.01"
 author: "Cristin Young and Tristan Burgess"
-date: '2025-05-17'
+date: '2025-12-10'
 output:
   html_notebook: default
   word_document: default
@@ -26,7 +26,7 @@ library(janitor)
 library(gt)
 library(clipr)
 
-all_data <- read_csv("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
+all_data <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
 #all_data <- read_csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
 ```
 
@@ -64,8 +64,7 @@ perc_successful_table %>%
   knitr::kable() %>% 
   clipr::write_clip(allow_non_interactive = TRUE)
 
-xlsx::write.xlsx(perc_successful_table,"/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.01/perc_successful_table.xlsx")
-
+openxlsx::write.xlsx(perc_successful_table,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.01/perc_successful_table.xlsx")
 ```
 
 ## % of those who met Tx goals (% successful completion + improved score) by location"
@@ -117,7 +116,7 @@ differ by subpopulations? look at data201 by demographics
 
 ```{r}
 detailed_race <- data201 %>% 
-  group_by(race) %>% 
+  group_by(code_num) %>% 
   summarise(
     total = n(),
     successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
@@ -128,14 +127,12 @@ detailed_race %>%
   knitr::kable() %>% 
   clipr::write_clip(allow_non_interactive = TRUE)
 
-chisq.test(data201$positive_outcomes, data201$cleaned_race)
+chisq.test(data201$positive_outcomes, data201$code_num)
 
-model <- glm(positive_outcomes ~ race, data = data201, family = "binomial")
+model <- glm(positive_outcomes ~ factor(code_num), data = data201, family = "binomial")
 summary(model)
 
-xlsx::write.xlsx(summary(model)$coefficients,"/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/detailed race (model).xlsx")
-
-
+openxlsx::write.xlsx(summary(model)$coefficients,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/detailed race (model).xlsx")
 ```
 
 ##Race summary Roll detailed race variables, based on first answer, up
@@ -161,7 +158,7 @@ summary_race %>%
   knitr::kable() %>% 
   clipr::write_clip(allow_non_interactive = TRUE)
 
-xlsx::write.xlsx(summary_race,"/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/summary_race.xlsx")
+openxlsx::write.xlsx(summary_race,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/summary_race.xlsx")
 
 chisq.test(data201$positive_outcomes, data201$first_race)
 
@@ -208,14 +205,15 @@ gender_identity %>%
   knitr::kable() %>% 
   clipr::write_clip(allow_non_interactive = TRUE)
 
-xlsx::write.xlsx(gender_identity,"/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/gender_identity.xlsx")
+openxlsx::write.xlsx(gender_identity,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/gender_identity.xlsx")
 
 chisq.test(data201$gender_identity, data201$positive_outcomes)
 
 model <- glm(positive_outcomes ~ gender_identity, data = data201, family = "binomial")
+
 summary(model)
 
-xlsx::write.xlsx(summary(model)$coefficients,"/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/gender_identity(model).xlsx")
+openxlsx::write.xlsx(summary(model)$coefficients,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/gender_identity(model).xlsx")
 ```
 
 ##Sexual orientation
@@ -233,9 +231,14 @@ sex_orientation %>%
   knitr::kable() %>% 
   clipr::write_clip(allow_non_interactive = TRUE)
 
-xlsx::write.xlsx(sex_orientation,"/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/sex_orientation.xlsx")
+openxlsx::write.xlsx(sex_orientation,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/sex_orientation.xlsx")
 
 chisq.test(data201$positive_outcomes, data201$sexual_orientation)
+
+model <- glm(positive_outcomes ~ sexual_orientation, data = data201, family = "binomial")
+
+summary(model)
+
 ```
 
 ##Insurance status
@@ -253,13 +256,13 @@ insurance %>%
   knitr::kable() %>% 
   clipr::write_clip(allow_non_interactive = TRUE)
 
-xlsx::write.xlsx(insurance,"/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/insurance.xlsx")
+openxlsx::write.xlsx(insurance,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/insurance.xlsx")
 
 chisq.test(data201$positive_outcomes, data201$insurance_status)
 
 model <- glm(positive_outcomes ~ insurance_status, data = data201, family = "binomial")
 summary(model)
 
-xlsx::write.xlsx(summary(model)$coefficients,"/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/insurance(model).xlsx")
+openxlsx::write.xlsx(summary(model)$coefficients,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/insurance(model).xlsx")
 
 ```
