@@ -25,12 +25,12 @@ library(tidyverse)
 library(janitor)
 library(gt)
 
-discharge_data <- readxl::read_excel("/Users/cristin/Dropbox/Data/eInsight Exports/Discharge Report Export/2025-11-12-discharge_report.xlsx", na = c("-", "", "NA", "N/A"), ) %>% 
+discharge_data <- readxl::read_excel("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Discharge Report Export/2025-12-08-discharge_report.xlsx", na = c("-", "", "NA", "N/A"), ) %>% 
   janitor::clean_names() 
 discharge_data$pre_completion_date <- janitor::convert_to_date(discharge_data$pre_completion_date)
 discharge_data$post_completion_date <- janitor::convert_to_date(discharge_data$post_completion_date)
 
-demographic_data <- readxl::read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Admin Report Exports/2025-11-12-client_demographics.xlsx", na = c("-", "", "NA", "N/A")) %>% 
+demographic_data <- readxl::read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Admin Report Exports/2025-12-08-client_demographics.xlsx", na = c("-", "", "NA", "N/A")) %>% 
   janitor::clean_names()
 
 # discharge_data <- readxl::read_xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Dishcharge_Report.xlsx", na = c("-", "", "NA"))
@@ -73,7 +73,7 @@ demographic_data_filtered %>%
 duplicate_list <- demographic_data_filtered %>% 
   filter(client_system_id %in% duplicates$client_system_id)
 
-write_csv(duplicate_list, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_duplicate_list.csv")
+write_csv(duplicate_list, "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_duplicate_list.csv")
 
 #for now, drop the 53 clients (186 rows)
 demographic_data_filtered <- demographic_data_filtered %>% 
@@ -281,13 +281,13 @@ n_distinct(all_data$client_system_id)
 ```{r}
 #all data 
 # write_csv(all_data, "/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
-write_csv(all_data, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
+write_csv(all_data, "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
 
 #clean demo data
 # write_csv(demographic_data_filtered, "/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
-write_csv(demographic_data_filtered, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
+write_csv(demographic_data_filtered, "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
 
 #clean dishcarge data
 # write_csv(discharge_data_filtered, "/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
-write_csv(discharge_data_filtered, "/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
+write_csv(discharge_data_filtered, "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
 ```
