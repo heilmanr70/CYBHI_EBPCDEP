@@ -129,6 +129,18 @@ detailed_race %>%
 
 chisq.test(data201$positive_outcomes, data201$code_num)
 
+data201$code_num %>% 
+  mutate(race_factor = fct_recode(code_num,
+                                  "Asian" = 1, 
+              "Black or African American" = 2, 
+                     "Hispanic or Latino" = 3,
+        "Middle Eastern or North African" = 4,
+              "Native American/American Indian or Alaska Native" = 5,
+              "Native Hawaiian or Pacific Islander" = 6,
+              "White" = 7,
+              "2+ selected" = 88
+              ))
+
 model <- glm(positive_outcomes ~ factor(code_num), data = data201, family = "binomial")
 summary(model)
 
