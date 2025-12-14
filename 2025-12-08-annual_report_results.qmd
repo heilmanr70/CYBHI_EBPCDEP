@@ -1378,7 +1378,6 @@ tab5 <- pairs_primary_long_q2 %>%
 tab5
 ```
 
-
 ### Self
 
 Range: 7-35
@@ -1642,7 +1641,6 @@ dot_and_arrow_plot_4_5_q2 <- ggplot(dfq2, aes(y = group)) +
 
 dot_and_arrow_plot_4_5_q2
 ```
-
 
 ## Improved well-being (NOMS)
 
