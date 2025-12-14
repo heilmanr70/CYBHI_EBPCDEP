@@ -42,29 +42,12 @@ codebook <- c("Asian" = 1,
               2+ selected = 88
               )
 ```{r}
-race_summary_all <- demographic_data_filtered %>%
-  select(code_num) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  count(variable, value) %>%
-  group_by(variable) %>%
-  mutate(percent = round(n / sum(n) * 100, 1)) %>%
-  arrange(variable, desc(n))
 
-race_summary_all %>% 
-  knitr::kable() %>% 
-  clipr::write_clip()
+filter(!is.na(intervention_start), # has to have an intervention start date
+         !is.na(intervention_name)) # has to have an intervention type named
 
-race_all <- demographic_data_filtered %>%
-  select(race) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  count(variable, value) %>%
-  group_by(variable) %>%
-  mutate(percent = round(n / sum(n) * 100, 1)) %>%
-  arrange(variable, desc(n))
-
-race_all %>% 
-  knitr::kable() %>% 
-  clipr::write_clip()
+tab <- all_data %>% 
+  filter(intervention_start >= "2024-01-01"
 
 all_data_race_summary <- all_data %>%
   select(race) %>%
