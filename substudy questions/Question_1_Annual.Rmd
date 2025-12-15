@@ -42,147 +42,53 @@ codebook <- c("Asian" = 1,
               2+ selected = 88
               )
 ```{r}
+all_data_filtered <- all_data %>% 
+  filter(intervention_start >= "2024-01-01", 
+         !is.na(intervention_start), # has to have an intervention start date
+         !is.na(intervention_name))
 
-filter(!is.na(intervention_start), # has to have an intervention start date
-         !is.na(intervention_name)) # has to have an intervention type named
-
-tab <- all_data %>% 
-  filter(intervention_start >= "2024-01-01"
-
-all_data_race_summary <- all_data %>%
-  select(race) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  count(variable, value) %>%
-  group_by(variable) %>%
-  mutate(percent = round(n / sum(n) * 100, 1)) %>%
-  arrange(variable, desc(n))
-
-all_data_race_summary %>% 
-  knitr::kable() %>% 
-  clipr::write_clip()
-
-#how many selected 2+ races? 
-table(demographic_data_filtered$recoded_race)
-
-race_summary_recoded <- demographic_data_filtered %>%
-  select(code_num) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  count(variable, value) %>%
-  group_by(variable) %>%
-  mutate(percent = round(n / sum(n) * 100, 1)) %>%
-  arrange(variable, desc(n))
-
-race_summary_recoded %>% 
-  knitr::kable() %>% 
-  clipr::write_clip()
+all_data_filtered %>% 
+  tabyl(code_num) %>% 
+  adorn_pct_formatting(digits = 1) %>% 
+  adorn_totals("row")
 ```
 
 ###ethnicity
+Cleaned race variable (recoded_race): 
+- 0 if nothing is left after removal (or NA)
+- 1 if exactly one valid response remains
+- 2 if 2+ valid responses remain
+Recoded race variable (code_num): 
+codebook_eth <- c("Chinese" = 1, "Asian Indian" = 2, "Filipino" = 3, "Vietnamese" = 4, "Korean" = 5,"Japanese" = 6, "African American" = 7,"Jamaican" = 8, "Haitian" = 9, "Nigerian" = 10, "Somali" = 11, "Mexican" = 12, "Puerto Rican" = 13, "Salvadoran" = 14, "Cuban" = 15, "Dominican" = 16, "Guatemalan" = 17, "Native Hawaiian" = 18, "Samoan" = 19, "Chamorro" = 20, "English" = 21, "German" = 22, "Irish" = 23, "Italian" = 24, "Polish" = 25, "Scottish" = 26, "2+ ethnicities selected" = 88)
 ```{r}
-ethnicity_summary <- demographic_data_filtered %>%
-  select(ethnicity) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  count(variable, value) %>%
-  group_by(variable) %>%
-  mutate(percent = round(n / sum(n) * 100, 1)) %>%
-  arrange(variable, desc(n))
-
-ethnicity_summary %>% 
-  knitr::kable() %>% 
-  clipr::write_clip()
-
-all_data_ethnicity_summary <- all_data %>%
-  select(ethnicity) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  count(variable, value) %>%
-  group_by(variable) %>%
-  mutate(percent = round(n / sum(n) * 100, 1)) %>%
-  arrange(variable, desc(n))
-
-all_data_ethnicity_summary %>% 
-  knitr::kable() %>% 
-  clipr::write_clip()
+all_data_filtered %>% 
+  tabyl(ethn_num) %>% 
+  adorn_pct_formatting(digits = 1) %>% 
+  adorn_totals("row")
 ```
 
 ###gender identity
 ```{r}
-gender_summary <- demographic_data_filtered %>%
-  select(gender_identity) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  count(variable, value) %>%
-  group_by(variable) %>%
-  mutate(percent = round(n / sum(n) * 100, 1)) %>%
-  arrange(variable, desc(n))
-
-gender_summary %>% 
-  knitr::kable() %>% 
-  clipr::write_clip()
-
-all_data_gender_summary <- all_data %>%
-  select(gender_identity) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  count(variable, value) %>%
-  group_by(variable) %>%
-  mutate(percent = round(n / sum(n) * 100, 1)) %>%
-  arrange(variable, desc(n))
-
-all_data_gender_summary %>% 
-  knitr::kable() %>% 
-  clipr::write_clip()
+all_data_filtered %>% 
+  tabyl(gender_identity) %>% 
+  adorn_pct_formatting(digits = 1) %>% 
+  adorn_totals("row")
 ```
 
 ###sexual orientation
 ```{r}
-sex_summary <- demographic_data_filtered %>%
-  select(sexual_orientation) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  count(variable, value) %>%
-  group_by(variable) %>%
-  mutate(percent = round(n / sum(n) * 100, 1)) %>%
-  arrange(variable, desc(n))
-
-sex_summary %>% 
-  knitr::kable() %>% 
-  clipr::write_clip()
-
-all_data_sex_summary <- all_data %>%
-  select(sexual_orientation) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  count(variable, value) %>%
-  group_by(variable) %>%
-  mutate(percent = round(n / sum(n) * 100, 1)) %>%
-  arrange(variable, desc(n))
-
-all_data_sex_summary %>% 
-  knitr::kable() %>% 
-  clipr::write_clip()
+all_data_filtered %>% 
+  tabyl(sexual_orientation) %>% 
+  adorn_pct_formatting(digits = 1) %>% 
+  adorn_totals("row")
 ```
 
 ###insurance status
 ```{r}
-insurance_summary <- demographic_data_filtered %>%
-  select(insurance_status) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  count(variable, value) %>%
-  group_by(variable) %>%
-  mutate(percent = round(n / sum(n) * 100, 1)) %>%
-  arrange(variable, desc(n))
-
-insurance_summary %>% 
-  knitr::kable() %>% 
-  clipr::write_clip()
-
-all_data_insurance_summary <- all_data %>%
-  select(insurance_status) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
-  count(variable, value) %>%
-  group_by(variable) %>%
-  mutate(percent = round(n / sum(n) * 100, 1)) %>%
-  arrange(variable, desc(n))
-
-all_data_insurance_summary %>% 
-  knitr::kable() %>% 
-  clipr::write_clip()
+all_data_filtered %>% 
+  tabyl(insurance_status) %>% 
+  adorn_pct_formatting(digits = 1) %>% 
+  adorn_totals("row")
 ```
 
 
