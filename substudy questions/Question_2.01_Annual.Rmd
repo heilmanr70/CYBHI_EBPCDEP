@@ -80,19 +80,24 @@ data201_txgoals <- data201 %>%
   filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)" | reason_for_discharge == "Clinically referred out",
          positive_outcomes == "Yes")
 
-perc_successful_table_pos_outcome <- data201 %>% 
-  group_by(location) %>% 
-  summarise(
-    total = n(),
-    successful_discharge = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
-    perc_success_discharge = round(100 * successful_discharge / total, 1),
-    successful_outcome = sum(positive_outcomes %in% c("Yes"), na.rm = TRUE),
-    perc_success_outcome = round(100 * successful_outcome / total, 1)
-  )
-              
-perc_successful_table_pos_outcome %>% 
-  knitr::kable() %>% 
-  clipr::write_clip(allow_non_interactive = TRUE)
+data201 %>% 
+  tabyl(reason_for_discharge) %>% 
+  adorn_pct_formatting(digits = 1) %>% 
+  adorn_totals("row")
+
+# perc_successful_table_pos_outcome <- data201 %>% 
+#   group_by(location) %>% 
+#   summarise(
+#     total = n(),
+#     successful_discharge = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+#     perc_success_discharge = round(100 * successful_discharge / total, 1),
+#     successful_outcome = sum(positive_outcomes %in% c("Yes"), na.rm = TRUE),
+#     perc_success_outcome = round(100 * successful_outcome / total, 1)
+#   )
+#               
+# perc_successful_table_pos_outcome %>% 
+#   knitr::kable() %>% 
+#   clipr::write_clip(allow_non_interactive = TRUE)
 
 xlsx::write.xlsx(perc_successful_table,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.01/perc_successful_table_pos_outcome.xlsx")
 
@@ -126,23 +131,23 @@ detailed_race <- data201 %>%
 detailed_race %>% 
   knitr::kable() %>% 
   clipr::write_clip(allow_non_interactive = TRUE)
-
+  
 chisq.test(data201$positive_outcomes, data201$code_num)
 
-data201$code_num %>% 
-  mutate(race_factor = fct_recode(code_num,
-                                  "Asian" = 1, 
-              "Black or African American" = 2, 
-                     "Hispanic or Latino" = 3,
-        "Middle Eastern or North African" = 4,
-              "Native American/American Indian or Alaska Native" = 5,
-              "Native Hawaiian or Pacific Islander" = 6,
-              "White" = 7,
-              "2+ selected" = 88
-              ))
+# data201$code_num %>% 
+#   mutate(race_factor = fct_recode(code_num,
+#                                   "Asian" = 1, 
+#               "Black or African American" = 2, 
+#                      "Hispanic or Latino" = 3,
+#         "Middle Eastern or North African" = 4,
+#               "Native American/American Indian or Alaska Native" = 5,
+#               "Native Hawaiian or Pacific Islander" = 6,
+#               "White" = 7,
+#               "2+ selected" = 88
+#               ))
 
-model <- glm(positive_outcomes ~ factor(code_num), data = data201, family = "binomial")
-summary(model)
+# model <- glm(positive_outcomes ~ factor(code_num), data = data201, family = "binomial")
+# summary(model)
 
 openxlsx::write.xlsx(summary(model)$coefficients,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/detailed race (model).xlsx")
 ```
@@ -183,10 +188,10 @@ xlsx::write.xlsx(summary(model)$coefficients,"/Users/cristin/CWS Dropbox/Cristin
 ```
 
 ##Ethnicity
-
+codebook_eth <- c("Chinese" = 1, "Asian Indian" = 2, "Filipino" = 3, "Vietnamese" = 4, "Korean" = 5,"Japanese" = 6, "African American" = 7,"Jamaican" = 8, "Haitian" = 9, "Nigerian" = 10, "Somali" = 11, "Mexican" = 12, "Puerto Rican" = 13, "Salvadoran" = 14, "Cuban" = 15, "Dominican" = 16, "Guatemalan" = 17, "Native Hawaiian" = 18, "Samoan" = 19, "Chamorro" = 20, "English" = 21, "German" = 22, "Irish" = 23, "Italian" = 24, "Polish" = 25, "Scottish" = 26, "2+ ethnicities selected" = 88)
 ```{r}
 detailed_ethnicity <- data201 %>% 
-  group_by(ethnicity) %>% 
+  group_by(ethn_num) %>% 
   summarise(
     total = n(),
     successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
