@@ -1,0 +1,90 @@
+---
+title: "Annual Report Data Analysis - Question 3.01"
+author: "Tristan Burgess and Cristin Young"
+date: '2025-12-15'
+output:
+  html_notebook: default
+  word_document: default
+  html_document: default
+  pdf_document: default
+editor_options: 
+  chunk_output_type: inline
+  markdown: 
+    wrap: 72
+---
+
+This notebook answers Question 3.01: DAre there factors such as race, ethnicity, age, gender identity, sexual orientation, language barriers, etc. that are associated with differences in clinical and functional outcomes after the intervention?
+
+
+#Read in data
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(gt)
+library(clipr)
+library(gtsummary)
+
+all_data <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
+```
+
+# Question 3.01: Are there factors such as race, ethnicity, age, gender identity, sexual orientation, language barriers, etc. that are associated with differences in clinical and functional outcomes after the intervention?
+
+THREE inclusion criteria: 1. must have initial time point data (i.e., be
+enrolled in an intervention), 2. must have a valid assessment collected at both intake and discharge time points and 3. must have reported information in the demographic variables of interest.
+
+##Make a table of participation and completion rates by location
+
+```{r}
+data301 <- all_data %>% 
+  filter(!is.na(location) & 
+           !is.na(pre_score) & 
+           !is.na(post_score))
+
+data301$positive_outcomes <- factor(data301$positive_outcomes, levels = c("No", "Yes"))
+```
+
+#Question 2.02: Did successful transition rates out of EBP/CDEP services
+differ by subpopulations? look at data301 by demographics
+
+##Race
+
+```{r}
+detailed_race <- data301 %>% 
+  group_by(code_num) %>% 
+  summarise(
+    total = n(),
+    successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+    perc_success = round(100* successful / total, 1)
+  )
+
+# detailed_race %>% 
+#   knitr::kable() %>% 
+#   clipr::write_clip(allow_non_interactive = TRUE)
+
+chisq.test(data301$positive_outcomes, data301$code_num)
+
+data301$simple_race <- "Other"
+data301$simple_race[is.na(data301$cleaned_race)] <- NA
+data301$simple_race[data301$cleaned_race=='Asian'] <- "Asian"
+data301$simple_race[data301$cleaned_race=='White'] <- "White"
+data301$simple_race[data301$cleaned_race=='Native American/American Indian or Alaska Native'] <- "Native American/American Indian or Alaska Native"
+data301$simple_race[data301$cleaned_race=='Hispanic or Latino'] <- "Hispanic or Latino"
+data301$simple_race[data301$cleaned_race=='Black or African American'] <- "Black or African American"
+
+data301$simple_race <- relevel(as.factor(data301$simple_race),ref="White")
+
+model <- glm(positive_outcomes ~ simple_race, data = data301, family = "binomial")
+summary(model)
+
+tab <- table(data301$simple_race,data301$positive_outcomes)
+tab <- addmargins(tab)
+tab <- as.data.frame.matrix(tab)
+
+modtab <- tbl_regression(model, exponentiate = TRUE)
+modtab %>%
+  as_tibble() %>%
+  xlsx::write.xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple race model.xlsx",sheetName = "model")
+
+xlsx::write.xlsx(tab,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple race model.xlsx",sheetName = "table",append=T)
+```
