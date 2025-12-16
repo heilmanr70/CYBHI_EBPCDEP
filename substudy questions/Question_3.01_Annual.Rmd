@@ -50,6 +50,7 @@ differ by subpopulations? look at data301 by demographics
 ##Race
 
 ```{r}
+library(gtsummary)
 detailed_race <- data301 %>% 
   group_by(code_num) %>% 
   summarise(
@@ -58,9 +59,9 @@ detailed_race <- data301 %>%
     perc_success = round(100* successful / total, 1)
   )
 
-# detailed_race %>% 
-#   knitr::kable() %>% 
-#   clipr::write_clip(allow_non_interactive = TRUE)
+#detailed_race %>% 
+ #  knitr::kable() %>% 
+  # clipr::write_clip(allow_non_interactive = TRUE)
 
 chisq.test(data301$positive_outcomes, data301$code_num)
 
@@ -82,9 +83,10 @@ tab <- addmargins(tab)
 tab <- as.data.frame.matrix(tab)
 
 modtab <- tbl_regression(model, exponentiate = TRUE)
+
 modtab %>%
   as_tibble() %>%
-  xlsx::write.xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple race model.xlsx",sheetName = "model")
+  openxlsx::write.xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple race model.xlsx",sheetName = "model")
 
-xlsx::write.xlsx(tab,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple race model.xlsx",sheetName = "table",append=T)
+openxlsx::write.xlsx(tab,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple race model.xlsx",sheetName = "table",append=T)
 ```
