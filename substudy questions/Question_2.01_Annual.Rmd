@@ -1,5 +1,5 @@
 ---
-title: "Annual Report Data Analysis - Question 2.01"
+title: "Annual Report Data Analysis - Question 2.01 and 2.02"
 author: "Cristin Young and Tristan Burgess"
 date: '2025-12-10'
 output:
@@ -13,10 +13,9 @@ editor_options:
     wrap: 72
 ---
 
-This notebook answers Question 2.01: Did successful transition rates out
-of EBP/CDEP services differ by location? and Question 2.02: Did
-successful transition rates out of EBP/CDEP services differ by
-subpopulations?
+This notebook answers Question 2.01: Did successful transition rates out of EBP/CDEP services differ by location? 
+
+and Question 2.02: Did successful transition rates out of EBP/CDEP services differ by subpopulations?
 
 #Read in data
 
