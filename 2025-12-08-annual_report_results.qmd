@@ -11,7 +11,7 @@ editor: visual
 
 2024-01-01 - 2025-11-30
 
-## Client_serve
+## Question 1.00 clients served
 
 **Definition:** The number of new clients served by grantees within the primary evaluation in the designated timeframe, where "served" means that a client had a new intervention start date attached to them during the designated timeframe.
 
@@ -515,7 +515,7 @@ openxlsx::write.xlsx(tab,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project
 #xlsx::write.xlsx(tab,"/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Client_Lang.xlsx",sheetName="lang_overall",append=T)
 ```
 
-## Improved mental health (NOMS)
+## 3.03/3.04 NOMS Q1: Improved mental health
 
 **Scoring:** An **increase** in score indicates a positive outcome. There are no benchmarks or clinical cutoffs established for NOMS scoring - if the follow-up assessment score is higher than the initial score, a positive outcome is indicated.
 
@@ -745,7 +745,7 @@ ridge_plot_child <- ggplot(q1_child_score_long, aes(x = score_value, y = 1, fill
   geom_segment(data = summary_stats_child_score_type, 
                aes(x = median_score, y = 1,
                    xend = median_score, yend = 1.05,
-                   color = score_type), linetype = "dotted") + 
+                   color = "grey30"), linetype = "dotted") + 
   geom_text(data = summary_stats_child_score_type,
             aes(x = median_score, y = 1.062, 
                 label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
@@ -1125,24 +1125,28 @@ df <- tribble(
   ~group, ~ initial, ~followup,
   "Child", 25.15, 53.46,
   "Self", 30.23, 46
-)
+) 
 
 dot_and_arrow_plot_4_5 <- ggplot(df, aes(y = group)) + 
   geom_segment(aes(x = initial, xend = followup, yend = group),
                arrow = arrow(length = unit(0.2, "cm")),
                color = "gray40", linewidth = 0.8) + 
   #initial
-  geom_point(aes(x = initial), size = 12, color = "#8A8C8E") + 
+  geom_point(aes(x = initial, color = "Initial"), size = 12, show.legend = TRUE) + 
   geom_text(aes(x = initial, label = paste0(round(initial), "%")),
             size = 3.5, color = "grey20") +
   #followup
-  geom_point(aes(x = followup), size = 12, color = "#BBDB49")+
+  geom_point(aes(x = followup, color = "Follow-up"), size = 12, show.legend = TRUE)+
   geom_text(aes(x = followup, label = paste0(round(followup), "%")),
             size = 3.5, color = "grey20") +
   scale_x_continuous(
     limits = c(0, 100),
     labels = label_percent(scale = 1)
   ) +
+  scale_color_manual(
+    name = "Timepoint",
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49")
+  )+
   labs(
     x = "Score",
     y = "",
@@ -1155,12 +1159,14 @@ dot_and_arrow_plot_4_5 <- ggplot(df, aes(y = group)) +
      panel.grid.minor.x = element_blank(),
      axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
      legend.text = element_text(size = 8),
+     legend.position =c(0.98, 0.98),
+     legend.justification = c("right", "top"),
      plot.margin = margin(5, 5, 5, 5))  
 
 dot_and_arrow_plot_4_5
 ```
 
-## Improved daily life functioning (NOMS)
+## 3.05/3.06 NOMS Q2: Improved daily life functioning
 
 ### Child
 
@@ -1322,71 +1328,21 @@ q2_ridge_plot_child <- ggplot(q2_child_score_long, aes(x = score_value, y = 1, f
 
 q2_ridge_plot_child
 ```
-Dot and arrow plot
-
-```{r}
-#| echo: false
-#| warning: false
-#| message: false
-dot_and_arrow_plot_q2_child <- score_diff_child_q2 %>% 
-  filter(!is.na(initial_total),
-         !is.na(followup_total),
-         !is.na(positive_outcome)) %>% 
-  mutate(direction = case_when(
-    positive_outcome == 1 ~ "Improved",
-    positive_outcome == 0 ~ "Declined",
-    TRUE ~ "No Change"
-  )) %>% 
-  filter(!is.na(direction),
-         direction != "No Change") %>% 
-ggplot(aes(y = system_id)) +
-  geom_segment(
-    aes(
-      x = initial_total, xend = followup_total,
-      yend = system_id, color = direction
-    ),
-    arrow = arrow(length = unit(0.2, "cm"))
-  ) +
-  geom_point(aes(x = initial_total), size = 1, color = "grey30") +
-  geom_point(aes(x = followup_total), size = 1, color = "grey30") +
-  scale_color_manual(
-    values = c("Improved" = "forestgreen",
-               "Declined" = "firebrick",
-               "No Change" = "gray50")
-  ) +
-  labs(
-    x = "Score",
-    y = "Client",
-    title = "Change in direction of Q2 score: Child"
-  ) +
-  theme_minimal()+
-  theme(
-     axis.title = element_text(size = 9),
-     axis.text = element_text(size = 9),
-     axis.text.y = element_blank(),
-     panel.grid.major = element_blank(),
-     panel.grid.minor.x = element_blank(),
-     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
-     legend.text = element_text(size = 8),
-     plot.margin = margin(5, 5, 5, 5))  
-  
-dot_and_arrow_plot_q2_child
-```
 
 #### Summary stats
 
-The percent of those who selected ratings of 4 or higher (excellent or very good) across Q1 at initial and discharge time points were:
+The percent of those who had total scores of 28 or higher (scores of 4\*7 questions) across Q2 at initial and discharge time points were:
 
 ```{r}
 #| echo: false
 #| warning: false
 #| message: false
-# % of those who selected 4 or higher on question 1
-tab5 <- pairs_primary_long_q2 %>% 
+# % of those who had total scores of 28 or higher (scores of 4*7 questions) across Q2
+tab5 <- score_diff_child_q2 %>% 
   ungroup() %>% 
   summarise(
-    initial_4_5 = round(100 * (mean(initial_score[!is.na(initial_score)]  %in% c(4,5), na.rm = TRUE)), 2),
-    followup_4_5 = round(100 * (mean(follow_up_score[!is.na(follow_up_score)]  %in% c(4,5), na.rm = TRUE)), 2)
+    initial_28 = round(100 * (mean(initial_total[!is.na(initial_total)] >= 28, na.rm = TRUE)), 2),
+    followup_28 = round(100 * (mean(followup_total[!is.na(followup_total)] >= 28, na.rm = TRUE)), 2)
   )
 
 tab5
@@ -1409,6 +1365,8 @@ pairs_primary_long_q2_self <- pairs_primary_long_self %>%
 
 # compute differences in f/u and initial scores
 score_diff_self_q2 <- pairs_primary_long_q2_self %>% 
+    filter(!is.na(initial_score),
+         !is.na(follow_up_score)) %>% 
   group_by(client_system_id) %>% 
   summarise(initial_total = sum(initial_score, na.rm = TRUE),
             followup_total = sum(follow_up_score, na.rm = TRUE),
@@ -1416,7 +1374,9 @@ score_diff_self_q2 <- pairs_primary_long_q2_self %>%
             positive_outcome = ifelse(followup_total > initial_total, 1, 0),
             initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
             follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))) %>% 
-  distinct(client_system_id, .keep_all = TRUE)
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  filter(between(initial_total, 7, 35),
+         between(followup_total, 7, 35))  
 
 # summary stats
 tab <- score_diff_self_q2 %>% 
@@ -1433,18 +1393,18 @@ Plot it.
 #| echo: false
 #| warning: false
 #| message: false
-q2_self_score_long <- pairs_primary_long_q2_self %>%
+q2_self_score_long <- score_diff_self_q2 %>%
   ungroup() %>% 
-  select(client_system_id, initial_score, follow_up_score) %>% 
+  select(client_system_id, initial_total, followup_total) %>% 
   pivot_longer(
-    cols = c(initial_score, follow_up_score),
+    cols = c(initial_total, followup_total),
     names_to = "score_type",
     values_to = "score_value"
   ) %>%
   mutate(
     score_type = recode(score_type,
-                        "initial_score" = "Initial",
-                        "follow_up_score" = "Follow-up"),
+                        "initial_total" = "Initial",
+                        "followup_total" = "Follow-up"),
     score_type = factor(score_type,
                         levels = c("Initial", "Follow-up"))
   )
@@ -1475,7 +1435,7 @@ self_q2_plot <- ggplot(q2_self_score_long, aes(x = score_value, fill = score_typ
      legend.justification = c("left", "top"),
      legend.title = element_blank(),
      legend.text = element_text(size = 8),
-     plot.margin = margin(5, 5, 5, 5))  
+     plot.margin = margin(5, 5, 5, 5)) 
   
 self_q2_plot
 ```
@@ -1483,6 +1443,9 @@ self_q2_plot
 Ridgeline plot
 
 ```{r}
+
+library(ggridges)
+
 # summary stats by score type
 summary_stats_self_q2 <- q2_self_score_long %>% 
   group_by(score_type) %>% 
@@ -1491,7 +1454,8 @@ summary_stats_self_q2 <- q2_self_score_long %>%
     median_score = median(score_value, na.rm = TRUE),
     sd_score = sd(score_value, na.rm = TRUE), 
     n = sum(!is.na(score_value))
-  )
+  ) %>% 
+  mutate(y_text = if_else(score_type == "Initial", 1.155, 1.165))
 
 summary_stats_self_q2
 #clipr::write_clip(summary_stats_self_q2)
@@ -1514,11 +1478,11 @@ q2_ridge_plot_self <- ggplot(q2_self_score_long, aes(x = score_value, y = 1, fil
     breaks = c("Initial", "Follow-up"),
     labels = c("Initial", "Follow-up")
   ) +
-  scale_x_continuous(limits = c(0,6), breaks = c(1, 2, 3, 4, 5)) +
-  scale_y_continuous(expand = c(0,0.05))+
+  #scale_x_continuous(limits = c(0,6), breaks = c(1, 2, 3, 4, 5)) +
+  scale_y_continuous(expand = c(0,0))+
   labs(x = "Measure: Daily Life Functioning Score (1-5 Likert Scale)", 
        y = NULL,
-       title = "Distribution of Initial and Follow-up Scores, NOMS Self") +
+       title = "Distribution of Initial and Follow-up Scores, NOMS self") +
   theme_ridges(font_family = "Arial") +
   theme(
     axis.title.x = element_text(size = 9, hjust = 0.5),
@@ -1533,76 +1497,33 @@ q2_ridge_plot_self <- ggplot(q2_self_score_long, aes(x = score_value, y = 1, fil
     legend.text = element_text(size = 8),
     plot.margin = margin(5, 5, 5, 5),
     plot.title = element_text(size = 11)
-  ) 
+  ) + 
+  geom_segment(data = summary_stats_self_q2, 
+               aes(x = median_score, y = 1,
+                   xend = median_score, yend = 1.135,
+                   color = "grey30"), linetype = "dotted") + 
+  geom_text(data = summary_stats_self_q2,
+            aes(x = median_score, y = y_text, 
+                label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+                vjust = 2, hjust = 0.5, size = 2)
 
 q2_ridge_plot_self
 ```
 
-Dot and arrow plot
-
-```{r}
-#| echo: false
-#| warning: false
-#| message: false
-dot_and_arrow_plot_q2_self <- score_diff_self_q2 %>% 
-  filter(!is.na(initial_total),
-         !is.na(followup_total),
-         !is.na(positive_outcome)) %>% 
-  mutate(direction = case_when(
-    positive_outcome == 1 ~ "Improved",
-    positive_outcome == 0 ~ "Declined",
-    TRUE ~ "No Change"
-  )) %>% 
-  filter(!is.na(direction),
-         direction != "No Change") %>% 
-ggplot(aes(y = client_system_id)) +
-  geom_segment(
-    aes(
-      x = initial_total, xend = followup_total,
-      yend = client_system_id, color = direction
-    ),
-    arrow = arrow(length = unit(0.2, "cm"))
-  ) +
-  geom_point(aes(x = initial_total), size = 1, color = "grey30") +
-  geom_point(aes(x = followup_total), size = 1, color = "grey30") +
-  scale_color_manual(
-    values = c("Improved" = "forestgreen",
-               "Declined" = "firebrick",
-               "No Change" = "gray50")
-  ) +
-  labs(
-    x = "Score",
-    y = "Client",
-    title = "Change in direction of Q2 score: Self"
-  ) +
-  theme_minimal()+
-  theme(
-     axis.title = element_text(size = 9),
-     axis.text = element_text(size = 9),
-     axis.text.y = element_blank(),
-     panel.grid.major = element_blank(),
-     panel.grid.minor.x = element_blank(),
-     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
-     legend.text = element_text(size = 8),
-     plot.margin = margin(5, 5, 5, 5))  
-  
-dot_and_arrow_plot_q2_self
-```
-
 #### Summary stats
 
-The percent of those who selected ratings of 4 or higher (excellent or very good) across Q1 at initial and discharge time points were:
+The percent of those who had total scores of 28 or higher (scores of 4\*7 questions) across Q2 at initial and discharge time points were:
 
 ```{r}
 #| echo: false
 #| warning: false
 #| message: false
-# % of those who selected 4 or higher on question 1
-tab5 <- pairs_primary_long_q2_self %>% 
+# % of those who had total scores of 28 or higher (scores of 4*7 questions) across Q2
+tab5 <- score_diff_self_q2 %>% 
   ungroup() %>% 
   summarise(
-    initial_4_5 = round(100 * (mean(initial_score[!is.na(initial_score)]  %in% c(4,5), na.rm = TRUE)), 2),
-    followup_4_5 = round(100 * (mean(follow_up_score[!is.na(follow_up_score)]  %in% c(4,5), na.rm = TRUE)), 2)
+    initial_28 = round(100 * (mean(initial_total[!is.na(initial_total)] >= 28, na.rm = TRUE)), 2),
+    followup_28 = round(100 * (mean(followup_total[!is.na(followup_total)] >= 28, na.rm = TRUE)), 2)
   )
 
 tab5
@@ -1616,11 +1537,11 @@ tab5
 #| message: false
 
 library(scales)
-# % of those who selected 4 or higher on question 1
+# % of those who had total scores of 28 or higher (scores of 4*7 questions) across Q2
 dfq2 <- tribble(
   ~group, ~ initial, ~followup,
-  "Child", 66.65,	87.14,
-  "Self", 72.91, 80.42
+  "Child", 35.31,	66.88,
+  "Self", 44.91, 57.64
 )
 
 dot_and_arrow_plot_4_5_q2 <- ggplot(dfq2, aes(y = group)) + 
@@ -1628,21 +1549,25 @@ dot_and_arrow_plot_4_5_q2 <- ggplot(dfq2, aes(y = group)) +
                arrow = arrow(length = unit(0.2, "cm")),
                color = "gray40", linewidth = 0.8) + 
   #initial
-  geom_point(aes(x = initial), size = 12, color = "#8A8C8E") + 
+  geom_point(aes(x = initial, color = "Initial"), size = 12, show.legend = TRUE) + 
   geom_text(aes(x = initial, label = paste0(round(initial), "%")),
             size = 3.5, color = "grey20") +
   #followup
-  geom_point(aes(x = followup), size = 12, color = "#BBDB49")+
+  geom_point(aes(x = followup, color = "Follow-up"), size = 12, show.legend = TRUE)+
   geom_text(aes(x = followup, label = paste0(round(followup), "%")),
             size = 3.5, color = "grey20") +
   scale_x_continuous(
     limits = c(0, 100),
     labels = label_percent(scale = 1)
   ) +
+  scale_color_manual(
+    name = "Timepoint",
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49")
+  )+
   labs(
     x = "Score",
     y = "",
-    title = "Change in direction of scores for those who selected 4 or higher on NOMS Q2 by subgroup") + 
+    title = "Change in direction of total scores for those who scored 28 or higher on NOMS Q2 by subgroup") + 
   theme_minimal()+
   theme(
      axis.title = element_text(size = 9),
@@ -1651,12 +1576,14 @@ dot_and_arrow_plot_4_5_q2 <- ggplot(dfq2, aes(y = group)) +
      panel.grid.minor.x = element_blank(),
      axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
      legend.text = element_text(size = 8),
+     legend.position = "inside",
+     legend.justification = c("left", "top"),
      plot.margin = margin(5, 5, 5, 5))  
 
 dot_and_arrow_plot_4_5_q2
 ```
 
-## Improved well-being (NOMS)
+## 3.07/3.08 NOMS Q3: Improved well-being 
 
 ### Child
 
@@ -1675,6 +1602,8 @@ pairs_primary_long_q3 <- pairs_primary_long %>%
 
 # compute differences in f/u and initial scores
 score_diff_child_q3 <- pairs_primary_long_q3 %>% 
+  filter(!is.na(initial_score),
+         !is.na(follow_up_score)) %>% 
   group_by(system_id) %>% 
   summarise(initial_total = sum(initial_score, na.rm = TRUE),
             followup_total = sum(follow_up_score, na.rm = TRUE),
@@ -1682,7 +1611,9 @@ score_diff_child_q3 <- pairs_primary_long_q3 %>%
             positive_outcome = ifelse(followup_total > initial_total, 1, 0),
             initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
             follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))) %>% 
-  distinct(system_id, .keep_all = TRUE)
+  distinct(system_id, .keep_all = TRUE) %>% 
+  filter(between(initial_total, 7, 35),
+         between(followup_total, 7, 35))  
 
 # summary stats
 tab <- score_diff_child_q3 %>% 
@@ -1699,18 +1630,19 @@ Plot it.
 #| echo: false
 #| warning: false
 #| message: false
-q3_child_score_long <- pairs_primary_long_q3 %>%
+
+q3_child_score_long <- score_diff_child_q3 %>%
   ungroup() %>% 
-  select(system_id, initial_score, follow_up_score) %>% 
+  select(system_id, initial_total, followup_total) %>% 
   pivot_longer(
-    cols = c(initial_score, follow_up_score),
+    cols = c(initial_total, followup_total),
     names_to = "score_type",
     values_to = "score_value"
   ) %>%
   mutate(
     score_type = recode(score_type,
-                        "initial_score" = "Initial",
-                        "follow_up_score" = "Follow-up"),
+                        "initial_total" = "Initial",
+                        "followup_total" = "Follow-up"),
     score_type = factor(score_type,
                         levels = c("Initial", "Follow-up"))
   )
@@ -1757,7 +1689,8 @@ summary_stats_child_q3 <- q3_child_score_long %>%
     median_score = median(score_value, na.rm = TRUE),
     sd_score = sd(score_value, na.rm = TRUE), 
     n = sum(!is.na(score_value))
-  )
+  ) %>% 
+  mutate(y_text = if_else(score_type == "Initial", 1.09, 1.095))
 
 summary_stats_child_q3
 #clipr::write_clip(summary_stats_child_q3)
@@ -1780,7 +1713,6 @@ q3_ridge_plot_child <- ggplot(q3_child_score_long, aes(x = score_value, y = 1, f
     breaks = c("Initial", "Follow-up"),
     labels = c("Initial", "Follow-up")
   ) +
-  scale_x_continuous(limits = c(0,6), breaks = c(1, 2, 3, 4, 5)) +
   scale_y_continuous(expand = c(0,0))+
   labs(x = "Measure: Improved Well-Being Score (1-5 Likert Scale)", 
        y = NULL,
@@ -1802,82 +1734,32 @@ q3_ridge_plot_child <- ggplot(q3_child_score_long, aes(x = score_value, y = 1, f
   ) + 
   geom_segment(data = summary_stats_child_q3, 
                aes(x = median_score, y = 1,
-                   xend = median_score, yend = 1.05,
-                   color = score_type), linetype = "dotted") + 
+                   xend = median_score, yend = 1.08,
+                   color = "grey30"), linetype = "dotted") + 
   geom_text(data = summary_stats_child_q3,
-            aes(x = median_score, y = 1.2,
+            aes(x = median_score, y = y_text,
                 label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
                 vjust = 2, hjust = 0.5, size = 2)
-
 
 q3_ridge_plot_child
 ```
 
-Dot and arrow plot
-
-```{r}
-#| echo: false
-#| warning: false
-#| message: false
-dot_and_arrow_plot_q3_child <- score_diff_child_q3 %>% 
-  filter(!is.na(initial_total),
-         !is.na(followup_total),
-         !is.na(positive_outcome)) %>% 
-  mutate(direction = case_when(
-    positive_outcome == 1 ~ "Improved",
-    positive_outcome == 0 ~ "Declined",
-    TRUE ~ "No Change"
-  )) %>% 
-  filter(!is.na(direction),
-         direction != "No Change") %>% 
-ggplot(aes(y = system_id)) +
-  geom_segment(
-    aes(
-      x = initial_total, xend = followup_total,
-      yend = system_id, color = direction
-    ),
-    arrow = arrow(length = unit(0.2, "cm"))
-  ) +
-  geom_point(aes(x = initial_total), size = 1, color = "grey30") +
-  geom_point(aes(x = followup_total), size = 1, color = "grey30") +
-  scale_color_manual(
-    values = c("Improved" = "forestgreen",
-               "Declined" = "firebrick",
-               "No Change" = "gray50")
-  ) +
-  labs(
-    x = "Score",
-    y = "Client",
-    title = "Change in direction of Q3 score: Child"
-  ) +
-  theme_minimal()+
-  theme(
-     axis.title = element_text(size = 9),
-     axis.text = element_text(size = 9),
-     axis.text.y = element_blank(),
-     panel.grid.major = element_blank(),
-     panel.grid.minor.x = element_blank(),
-     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
-     legend.text = element_text(size = 8),
-     plot.margin = margin(5, 5, 5, 5))  
-  
-dot_and_arrow_plot_q3_child
-```
-
 #### Summary stats
 
-The percent of those who selected ratings of 4 or higher (excellent or very good) across Q1 at initial and discharge time points were:
+The percent of those who had total scores 28 or higher on Q2 at initial and discharge time points were:
+
+Change in direction of total scores for those who scored 28 or higher on NOMS Q2 by subgroup"
 
 ```{r}
 #| echo: false
 #| warning: false
 #| message: false
 # % of those who selected 4 or higher on question 1
-tab5 <- pairs_primary_long_q3 %>% 
+tab5 <- score_diff_child_q3 %>% 
   ungroup() %>% 
   summarise(
-    initial_4_5 = round(100 * (mean(initial_score[!is.na(initial_score)]  %in% c(4,5), na.rm = TRUE)), 2),
-    followup_4_5 = round(100 * (mean(follow_up_score[!is.na(follow_up_score)]  %in% c(4,5), na.rm = TRUE)), 2)
+     initial_28 = round(100 * (mean(initial_total[!is.na(initial_total)] >= 28, na.rm = TRUE)), 2),
+    followup_28 = round(100 * (mean(followup_total[!is.na(followup_total)] >= 28, na.rm = TRUE)), 2)
   )
 
 tab5
@@ -1900,6 +1782,8 @@ pairs_primary_long_q3_self <- pairs_primary_long_self %>%
 
 # compute differences in f/u and initial scores
 score_diff_self_q3 <- pairs_primary_long_q3_self %>% 
+  filter(!is.na(initial_score),
+         !is.na(follow_up_score)) %>% 
   group_by(client_system_id) %>% 
   summarise(initial_total = sum(initial_score, na.rm = TRUE),
             followup_total = sum(follow_up_score, na.rm = TRUE),
@@ -1907,7 +1791,9 @@ score_diff_self_q3 <- pairs_primary_long_q3_self %>%
             positive_outcome = ifelse(followup_total > initial_total, 1, 0),
             initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
             follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))) %>% 
-  distinct(client_system_id, .keep_all = TRUE)
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  filter(between(initial_total, 7, 35),
+         between(followup_total, 7, 35))
 
 # summary stats
 tab <- score_diff_self_q3 %>% 
@@ -1924,18 +1810,18 @@ Plot it.
 #| echo: false
 #| warning: false
 #| message: false
-q3_self_score_long <- pairs_primary_long_q3_self %>%
+q3_self_score_long <- score_diff_self_q3 %>%
   ungroup() %>% 
-  select(client_system_id, initial_score, follow_up_score) %>% 
+  select(client_system_id, initial_total, followup_total) %>% 
   pivot_longer(
-    cols = c(initial_score, follow_up_score),
+    cols = c(initial_total, followup_total),
     names_to = "score_type",
     values_to = "score_value"
   ) %>%
   mutate(
     score_type = recode(score_type,
-                        "initial_score" = "Initial",
-                        "follow_up_score" = "Follow-up"),
+                        "initial_total" = "Initial",
+                        "followup_total" = "Follow-up"),
     score_type = factor(score_type,
                         levels = c("Initial", "Follow-up"))
   )
@@ -1982,10 +1868,11 @@ summary_stats_self_q3 <- q3_self_score_long %>%
     median_score = median(score_value, na.rm = TRUE),
     sd_score = sd(score_value, na.rm = TRUE), 
     n = sum(!is.na(score_value))
-  )
+  ) %>% 
+  mutate(y_text = if_else(score_type == "Initial", 1.085, 1.09))
 
 summary_stats_self_q3
-clipr::write_clip(summary_stats_self_q3)
+#clipr::write_clip(summary_stats_self_q3)
 
 # Ridgeline plot
 q3_ridge_plot_self <- ggplot(q3_self_score_long, aes(x = score_value, y = 1, fill = score_type)) +
@@ -2005,8 +1892,7 @@ q3_ridge_plot_self <- ggplot(q3_self_score_long, aes(x = score_value, y = 1, fil
     breaks = c("Initial", "Follow-up"),
     labels = c("Initial", "Follow-up")
   ) +
-  scale_x_continuous(limits = c(0,6), breaks = c(1, 2, 3, 4, 5)) +
-  scale_y_continuous(expand = c(0,0.05))+
+  scale_y_continuous(expand = c(0,0))+
   labs(x = "Measure: Improved Well-Being Score (1-5 Likert Scale)", 
        y = NULL,
        title = "Distribution of Initial and Follow-up Scores, NOMS Self") +
@@ -2024,60 +1910,17 @@ q3_ridge_plot_self <- ggplot(q3_self_score_long, aes(x = score_value, y = 1, fil
     legend.text = element_text(size = 8),
     plot.margin = margin(5, 5, 5, 5),
     plot.title = element_text(size = 11)
-  ) 
+  ) + 
+  geom_segment(data = summary_stats_self_q3, 
+               aes(x = median_score, y = 1,
+                   xend = median_score, yend = 1.08,
+                   color = "grey30"), linetype = "dotted") + 
+  geom_text(data = summary_stats_self_q3,
+            aes(x = median_score, y = 1.09, 
+                label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+            vjust = 2, hjust = 0.5, size = 2)
 
 q3_ridge_plot_self
-```
-
-Dot and arrow plot
-
-```{r}
-#| echo: false
-#| warning: false
-#| message: false
-dot_and_arrow_plot_q3_self <- score_diff_self_q3 %>% 
-  filter(!is.na(initial_total),
-         !is.na(followup_total),
-         !is.na(positive_outcome)) %>% 
-  mutate(direction = case_when(
-    positive_outcome == 1 ~ "Improved",
-    positive_outcome == 0 ~ "Declined",
-    TRUE ~ "No Change"
-  )) %>% 
-  filter(!is.na(direction),
-         direction != "No Change") %>% 
-ggplot(aes(y = client_system_id)) +
-  geom_segment(
-    aes(
-      x = initial_total, xend = followup_total,
-      yend = client_system_id, color = direction
-    ),
-    arrow = arrow(length = unit(0.2, "cm"))
-  ) +
-  geom_point(aes(x = initial_total), size = 1, color = "grey30") +
-  geom_point(aes(x = followup_total), size = 1, color = "grey30") +
-  scale_color_manual(
-    values = c("Improved" = "forestgreen",
-               "Declined" = "firebrick",
-               "No Change" = "gray50")
-  ) +
-  labs(
-    x = "Score",
-    y = "Client",
-    title = "Change in direction of Q3 score: Self"
-  ) +
-  theme_minimal()+
-  theme(
-     axis.title = element_text(size = 9),
-     axis.text = element_text(size = 9),
-     axis.text.y = element_blank(),
-     panel.grid.major = element_blank(),
-     panel.grid.minor.x = element_blank(),
-     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
-     legend.text = element_text(size = 8),
-     plot.margin = margin(5, 5, 5, 5))  
-  
-dot_and_arrow_plot_q3_self
 ```
 
 #### Summary stats
@@ -2089,11 +1932,11 @@ The percent of those who selected ratings of 4 or higher (excellent or very good
 #| warning: false
 #| message: false
 # % of those who selected 4 or higher on question 1
-tab5 <- pairs_primary_long_q3_self %>% 
+tab5 <- score_diff_self_q3 %>% 
   ungroup() %>% 
   summarise(
-    initial_4_5 = round(100 * (mean(initial_score[!is.na(initial_score)]  %in% c(4,5), na.rm = TRUE)), 2),
-    followup_4_5 = round(100 * (mean(follow_up_score[!is.na(follow_up_score)]  %in% c(4,5), na.rm = TRUE)), 2)
+     initial_28 = round(100 * (mean(initial_total[!is.na(initial_total)] >= 28, na.rm = TRUE)), 2),
+    followup_28 = round(100 * (mean(followup_total[!is.na(followup_total)] >= 28, na.rm = TRUE)), 2)
   )
 
 tab5
@@ -2110,8 +1953,8 @@ library(scales)
 # % of those who selected 4 or higher on question 1
 dfq3 <- tribble(
   ~group, ~ initial, ~followup,
-  "Child", 67.44, 80.61,
-  "Self", 57.79, 67.16
+  "Child", 45.61, 60.14,
+  "Self", 33.98, 44.48
 )
 
 dot_and_arrow_plot_4_5_q3 <- ggplot(dfq3, aes(y = group)) + 
@@ -2119,21 +1962,25 @@ dot_and_arrow_plot_4_5_q3 <- ggplot(dfq3, aes(y = group)) +
                arrow = arrow(length = unit(0.2, "cm")),
                color = "gray40", linewidth = 0.8) + 
   #initial
-  geom_point(aes(x = initial), size = 12, color = "#8A8C8E") + 
+  geom_point(aes(x = initial, color = "Initial"), size = 12, show.legend = TRUE) + 
   geom_text(aes(x = initial, label = paste0(round(initial), "%")),
             size = 3.5, color = "grey20") +
   #followup
-  geom_point(aes(x = followup), size = 12, color = "#BBDB49")+
+  geom_point(aes(x = followup, color = "Follow-up"), size = 12, show.legend = TRUE)+
   geom_text(aes(x = followup, label = paste0(round(followup), "%")),
             size = 3.5, color = "grey20") +
   scale_x_continuous(
     limits = c(0, 100),
     labels = label_percent(scale = 1)
   ) +
+  scale_color_manual(
+    name = "Timepoint",
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49")
+  )+
   labs(
     x = "Score",
     y = "",
-    title = "Change in direction of scores for those who selected 4 or higher on NOMS Q3 by subgroup") + 
+    title = "Change in direction of total scores for those who scored 28 or higher on NOMS Q3 by subgroup") + 
   theme_minimal()+
   theme(
      axis.title = element_text(size = 9),
@@ -2142,14 +1989,14 @@ dot_and_arrow_plot_4_5_q3 <- ggplot(dfq3, aes(y = group)) +
      panel.grid.minor.x = element_blank(),
      axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
      legend.text = element_text(size = 8),
+     legend.position = "inside",
+    legend.justification = c("left", "top"),
      plot.margin = margin(5, 5, 5, 5))  
 
 dot_and_arrow_plot_4_5_q3
 ```
 
-
-
-## Improved social connectedness (NOMS)
+## 3.09/3.10 NOMS Q4: Improved social connectedness
 
 ### Child
 
@@ -2168,6 +2015,8 @@ pairs_primary_long_q4 <- pairs_primary_long %>%
 
 # compute differences in f/u and initial scores
 score_diff_child_q4 <- pairs_primary_long_q4 %>% 
+    filter(!is.na(initial_score),
+         !is.na(follow_up_score)) %>% 
   group_by(system_id) %>% 
   summarise(initial_total = sum(initial_score, na.rm = TRUE),
             followup_total = sum(follow_up_score, na.rm = TRUE),
@@ -2175,7 +2024,9 @@ score_diff_child_q4 <- pairs_primary_long_q4 %>%
             positive_outcome = ifelse(followup_total > initial_total, 1, 0),
             initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
             follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))) %>% 
-  distinct(system_id, .keep_all = TRUE)
+  distinct(system_id, .keep_all = TRUE) %>% 
+  filter(between(initial_total, 6, 30),
+         between(followup_total, 6, 30))  
 
 # summary stats
 tab <- score_diff_child_q4 %>% 
@@ -2192,18 +2043,18 @@ Plot it.
 #| echo: false
 #| warning: false
 #| message: false
-q4_child_score_long <- pairs_primary_long_q4 %>%
+q4_child_score_long <- score_diff_child_q4 %>%
   ungroup() %>% 
-  select(system_id, initial_score, follow_up_score) %>% 
-  pivot_longer(
-    cols = c(initial_score, follow_up_score),
+select(system_id, initial_total, followup_total) %>% 
+ pivot_longer(
+    cols = c(initial_total, followup_total),
     names_to = "score_type",
     values_to = "score_value"
   ) %>%
   mutate(
     score_type = recode(score_type,
-                        "initial_score" = "Initial",
-                        "follow_up_score" = "Follow-up"),
+                        "initial_total" = "Initial",
+                        "followup_total" = "Follow-up"),
     score_type = factor(score_type,
                         levels = c("Initial", "Follow-up"))
   )
@@ -2252,20 +2103,11 @@ summary_stats_child_q4 <- q4_child_score_long %>%
     n = sum(!is.na(score_value))
   )
 
-score_diff_child_q4 %>% 
-  ungroup() %>% 
-  summarise(
-    mean_score = mean(initial_total, na.rm = TRUE),
-    median_initial_score = median(initial_total, na.rm = TRUE),
-    sd_score = sd(initial_total, na.rm = TRUE),
-    n = sum(!is.na(initial_total))
-  )
-
 summary_stats_child_q4
 #clipr::write_clip(summary_stats_child_q4)
 
 # Ridgeline plot
-q3_ridge_plot_child <- ggplot(q3_child_score_long, aes(x = score_value, y = 1, fill = score_type)) +
+q4_ridge_plot_child <- ggplot(q4_child_score_long, aes(x = score_value, y = 1, fill = score_type)) +
   geom_density_ridges(
     aes(color = score_type),
     alpha = 0.7,
@@ -2282,9 +2124,8 @@ q3_ridge_plot_child <- ggplot(q3_child_score_long, aes(x = score_value, y = 1, f
     breaks = c("Initial", "Follow-up"),
     labels = c("Initial", "Follow-up")
   ) +
-  scale_x_continuous(limits = c(0,6), breaks = c(1, 2, 3, 4, 5)) +
   scale_y_continuous(expand = c(0,0))+
-  labs(x = "Measure: Improved Well-Being Score (1-5 Likert Scale)", 
+  labs(x = "Measure: Improved Social Connectedness Score (1-5 Likert Scale)", 
        y = NULL,
        title = "Distribution of Initial and Follow-up Scores, NOMS Child") +
   theme_ridges(font_family = "Arial") +
@@ -2302,89 +2143,36 @@ q3_ridge_plot_child <- ggplot(q3_child_score_long, aes(x = score_value, y = 1, f
     plot.margin = margin(5, 5, 5, 5),
     plot.title = element_text(size = 11)
   ) + 
-  geom_segment(data = summary_stats_child_q3, 
+  geom_segment(data = summary_stats_child_q4, 
                aes(x = median_score, y = 1,
-                   xend = median_score, yend = 1.05,
-                   color = score_type), linetype = "dotted") + 
-  geom_text(data = summary_stats_child_q3,
-            aes(x = median_score, y = 1.2,
+                   xend = median_score, yend = 1.13,
+                   color = "grey30"), linetype = "dotted") +
+  geom_text(data = summary_stats_child_q4,
+            aes(x = median_score, y = 1.14,
                 label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
                 vjust = 2, hjust = 0.5, size = 2)
 
-
-q3_ridge_plot_child
-```
-
-Dot and arrow plot
-
-```{r}
-#| echo: false
-#| warning: false
-#| message: false
-dot_and_arrow_plot_q3_child <- score_diff_child_q3 %>% 
-  filter(!is.na(initial_total),
-         !is.na(followup_total),
-         !is.na(positive_outcome)) %>% 
-  mutate(direction = case_when(
-    positive_outcome == 1 ~ "Improved",
-    positive_outcome == 0 ~ "Declined",
-    TRUE ~ "No Change"
-  )) %>% 
-  filter(!is.na(direction),
-         direction != "No Change") %>% 
-ggplot(aes(y = system_id)) +
-  geom_segment(
-    aes(
-      x = initial_total, xend = followup_total,
-      yend = system_id, color = direction
-    ),
-    arrow = arrow(length = unit(0.2, "cm"))
-  ) +
-  geom_point(aes(x = initial_total), size = 1, color = "grey30") +
-  geom_point(aes(x = followup_total), size = 1, color = "grey30") +
-  scale_color_manual(
-    values = c("Improved" = "forestgreen",
-               "Declined" = "firebrick",
-               "No Change" = "gray50")
-  ) +
-  labs(
-    x = "Score",
-    y = "Client",
-    title = "Change in direction of Q3 score: Child"
-  ) +
-  theme_minimal()+
-  theme(
-     axis.title = element_text(size = 9),
-     axis.text = element_text(size = 9),
-     axis.text.y = element_blank(),
-     panel.grid.major = element_blank(),
-     panel.grid.minor.x = element_blank(),
-     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
-     legend.text = element_text(size = 8),
-     plot.margin = margin(5, 5, 5, 5))  
-  
-dot_and_arrow_plot_q3_child
+q4_ridge_plot_child
 ```
 
 #### Summary stats
 
-The percent of those who selected ratings of 4 or higher (excellent or very good) across Q1 at initial and discharge time points were:
+The percent of those who had total scores of 24 or higher (6\*4) across Q4 at initial and discharge time points were:
 
 ```{r}
 #| echo: false
 #| warning: false
 #| message: false
-# % of those who selected 4 or higher on question 1
-tab5 <- pairs_primary_long_q3 %>% 
+# % of those who had >=24 total score on Q4
+tab5 <- score_diff_child_q4 %>% 
   ungroup() %>% 
   summarise(
-    initial_4_5 = round(100 * (mean(initial_score[!is.na(initial_score)]  %in% c(4,5), na.rm = TRUE)), 2),
-    followup_4_5 = round(100 * (mean(follow_up_score[!is.na(follow_up_score)]  %in% c(4,5), na.rm = TRUE)), 2)
+     initial_24 = round(100 * (mean(initial_total[!is.na(initial_total)] >= 24, na.rm = TRUE)), 2),
+    followup_24 = round(100 * (mean(followup_total[!is.na(followup_total)] >= 24, na.rm = TRUE)), 2)
   )
 
 tab5
 ```
-
 
 ### Self
 
@@ -2403,158 +2191,221 @@ pairs_primary_long_q4_self <- pairs_primary_long_self %>%
 
 # compute differences in f/u and initial scores
 score_diff_self_q4 <- pairs_primary_long_q4_self %>% 
+  filter(!is.na(initial_score),
+         !is.na(follow_up_score)) %>% 
   group_by(client_system_id) %>% 
   summarise(initial_total = sum(initial_score, na.rm = TRUE),
             followup_total = sum(follow_up_score, na.rm = TRUE),
             score_change = followup_total - initial_total,
             positive_outcome = ifelse(followup_total > initial_total, 1, 0),
             initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
-            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))) %>% 
-  distinct(client_system_id, .keep_all = TRUE)
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))) %>%
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  filter(between(initial_total, 6, 30),
+         between(followup_total, 6, 30))
 
 # summary stats
 tab <- score_diff_self_q4 %>% 
   filter(!is.na(positive_outcome)) %>% 
-  tabyl(follow_up_quarter, positive_outcome) %>% 
-  adorn_totals("row") %>% 
-  adorn_percentages("row") %>%
-  adorn_pct_formatting(digits = 0) %>%
-  adorn_ns() 
+  tabyl(positive_outcome) %>% 
+  adorn_pct_formatting(digits = 0) 
 
 tab 
 ```
 
-## Reductions in overall distress (YOQ)
-
-**Definition:** This KPI represents the percent of assessments that show clients who have improvement from pre-post time points out of the total number of assessments from clients who discharge from the intervention and complete pre-post measures by period(s).
-
-The YOQ total score reflects total distress in a client's life, with a high score reflecting increased distress related to experiencing a high number of symptoms, interpersonal difficulties, and decreased satisfaction and quality of life.
-
-**Range:** 0 - 120
-
-**Calculation:** Sum of 30 items (0-4 scale); invalid if 3+ items missing; total score only calculated if 28+ items completed; including those doing reliably better / total who took YOQ by quarter RCI = baseline score - follow-up score - RCI ≤ -10 doing reliably worse - RCI ≥ 10 doing reliably better
-
-**Assumptions:** A positive outcome was if a client was doing reliably better as defined by the YOQ RCI. I used follow-up quarter as the date. I used the LAST follow-up date if there were \>1 assessments. I filtered out NA's from "reliably better"
-
-### Caregiver
+Plot it.
 
 ```{r}
 #| echo: false
 #| warning: false
 #| message: false
-raw_yoq_caregiver <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/YOQ-caregiver.csv", na = c("-", "", "NA", "N/A")) %>% janitor::clean_names()
-
-#make sure columns are numeric
-#add a column for if there was any missing data, in case we want to exclude those rows later
-#add a total score column, which = NA if 3+ items are missing
-#make sure it's date formatted
-yoq_caregiver <- raw_yoq_caregiver %>% 
-  mutate(across(matches("^x"), ~ as.numeric(.))) %>% 
-  rowwise() %>% 
-  mutate(
-    missing_count = sum(is.na(c_across(starts_with("x")))),
-    total_score = ifelse(missing_count >= 3, NA_real_, sum(c_across(starts_with("x")), na.rm = TRUE))) %>% 
-  ungroup %>% 
-  mutate(
-    date_completed = as.Date(date_completed),
-    row_id = row_number()                # stable row id for disambiguation
-  ) %>% 
-  select(client_system_id, collection, date_completed, total_score)
-
-yoq_caregiver_paired <- yoq_caregiver %>%
-  group_by(client_system_id) %>%
-  arrange(date_completed, .by_group = TRUE) %>%
-  summarise(
-    n_assessments = n(),
-    initial_date  = first(date_completed),
-    initial_score = first(total_score),
-    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
-    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
-  ) %>%
+q4_self_score_long <- score_diff_self_q4 %>%
   ungroup() %>% 
-  filter(
-    !is.na(follow_up_date)
-  ) %>% 
+  select(client_system_id, initial_total, followup_total) %>% 
+  pivot_longer(
+    cols = c(initial_total, followup_total),
+    names_to = "score_type",
+    values_to = "score_value"
+  ) %>%
   mutate(
-    rci = initial_score - follow_up_score, 
-    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
-            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)),
-    reliably_better = rci >= 10)
-    
-# summary stats
-tab <- yoq_caregiver_paired %>% 
-  filter(!is.na(reliably_better)) %>% 
-  tabyl(follow_up_quarter, reliably_better) %>% # true = doing reliably better
-  adorn_totals("row") %>% 
-  adorn_percentages("row") %>%
-  adorn_pct_formatting(digits = 0) %>%
-  adorn_ns() 
+    score_type = recode(score_type,
+                        "initial_total" = "Initial",
+                        "followup_total" = "Follow-up"),
+    score_type = factor(score_type,
+                        levels = c("Initial", "Follow-up"))
+  )
 
-tab 
+# Plot
+self_q4_plot <- ggplot(q4_self_score_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    #binwidth = 1, 
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width = 0.8,
+    alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Measure: Improved Social Connectedness Score (6-30)", 
+       y = "Count",
+       title = "Distribution of Initial and Follow-up Scores, NOMS Self Q4") +
+  theme_minimal()+
+  theme(
+    axis.title = element_text(size = 9),
+    axis.text = element_text(size = 9),
+    panel.grid.major = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 5))  
+
+self_q4_plot
 ```
 
-### Self
+Ridgeline plot
+
+```{r}
+# summary stats by score type
+summary_stats_self_q4 <- q4_self_score_long %>% 
+  group_by(score_type) %>% 
+  summarise(
+    mean_score = mean(score_value, na.rm = TRUE), 
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score = sd(score_value, na.rm = TRUE), 
+    n = sum(!is.na(score_value))
+  ) %>% 
+  mutate(y_text = if_else(score_type == "Initial", 1.1, 1.11))
+
+summary_stats_self_q4
+#clipr::write_clip(summary_stats_self_q3)
+
+# Ridgeline plot
+q4_ridge_plot_self <- ggplot(q4_self_score_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Measure: Improved Social Connectedness Score (1-5 Likert Scale)", 
+       y = NULL,
+       title = "Distribution of Initial and Follow-up Scores, NOMS Self") +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x = element_text(size = 9, hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 9),
+    panel.grid = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 5),
+    plot.title = element_text(size = 11)
+  ) + 
+  geom_segment(data = summary_stats_self_q4, 
+               aes(x = median_score, y = 1,
+                   xend = median_score, yend = 1.15,
+                   color = "grey30"), linetype = "dotted") + 
+  geom_text(data = summary_stats_self_q4,
+            aes(x = 24, y = 1.16, 
+                label = paste0("Initial and Follow-up Median =", round(median_score, 2))),
+            vjust = 2, hjust = 0.5, size = 2)
+
+q4_ridge_plot_self
+```
+
+#### Summary stats
+
+The percent of those who selected ratings of 4 or higher (excellent or very good) across Q4 at initial and discharge time points were:
 
 ```{r}
 #| echo: false
 #| warning: false
 #| message: false
-raw_yoq_self <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/YOQ-self_report.csv", na = c("-", "", "NA", "N/A")) %>% janitor::clean_names()
-
-#make sure columns are numeric
-#add a column for if there was any missing data, in case we want to exclude those rows later
-#add a total score column, which = NA if 3+ items are missing
-#make sure it's date formatted
-yoq_self <- raw_yoq_self %>% 
-  mutate(across(matches("^x"), ~ as.numeric(.))) %>% 
-  rowwise() %>% 
-  mutate(
-    missing_count = sum(is.na(c_across(starts_with("x")))),
-    total_score = ifelse(missing_count >= 3, NA_real_, sum(c_across(starts_with("x")), na.rm = TRUE))) %>% 
-  ungroup %>% 
-  mutate(
-    date_completed = as.Date(date_completed),
-    row_id = row_number()                # stable row id for disambiguation
-  ) %>% 
-  select(client_system_id, collection, date_completed, total_score)
-
-yoq_self_paired <- yoq_self %>%
-  group_by(client_system_id) %>%
-  arrange(date_completed, .by_group = TRUE) %>%
-  summarise(
-    n_assessments = n(),
-    initial_date  = first(date_completed),
-    initial_score = first(total_score),
-    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
-    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
-  ) %>%
+# % of those who selected >= 24 total score on Q4
+tab5 <- score_diff_self_q4 %>% 
   ungroup() %>% 
-  filter(
-    !is.na(follow_up_date)
-  ) %>% 
-  mutate(
-    rci = initial_score - follow_up_score, 
-    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
-            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)),
-    reliably_better = rci >= 10)
-    
-# summary stats
-tab <- yoq_self_paired %>% 
-  filter(!is.na(reliably_better)) %>% 
-  tabyl(follow_up_quarter, reliably_better) %>% 
-  adorn_totals("row") %>% 
-  adorn_percentages("row") %>%
-  adorn_pct_formatting(digits = 0) %>%
-  adorn_ns() 
+  summarise(
+     initial_24 = round(100 * (mean(initial_total[!is.na(initial_total)] >= 24, na.rm = TRUE)), 2),
+    followup_24 = round(100 * (mean(followup_total[!is.na(followup_total)] >= 24, na.rm = TRUE)), 2)
+  )
 
-tab
+tab5
 ```
 
-### POQ
+#### Summary stats overall
 
-We can't use this one - it only has 9 rows of data, all of which are unique clients (no follow-ups).
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
 
-## Reductions in parent-related stress (PSS)
+library(scales)
+# % of those who selected 4 or higher on question 4
+dfq4 <- tribble(
+  ~group, ~ initial, ~followup,
+  "Child", 56.96,	77.22,	
+  "Self", 55.2,	65.84			
+)
+
+dot_and_arrow_plot_4_5_q4 <- ggplot(dfq4, aes(y = group)) + 
+  geom_segment(aes(x = initial, xend = followup, yend = group),
+               arrow = arrow(length = unit(0.2, "cm")),
+               color = "gray40", linewidth = 0.8) + 
+  #initial
+  geom_point(aes(x = initial, color = "Initial"), size = 12, show.legend = TRUE) + 
+  geom_text(aes(x = initial, label = paste0(round(initial), "%")),
+            size = 3.5, color = "grey20") +
+  #followup
+  geom_point(aes(x = followup, color = "Follow-up"), size = 12, show.legend = TRUE)+
+  geom_text(aes(x = followup, label = paste0(round(followup), "%")),
+            size = 3.5, color = "grey20") +
+  scale_x_continuous(
+    limits = c(0, 100),
+    labels = label_percent(scale = 1)
+  ) +
+  scale_color_manual(
+    name = "Timepoint",
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49")
+  )+
+  labs(
+    x = "Score",
+    y = "",
+    title = "Change in direction of total scores for those who scored 24 or higher on NOMS Q4 by subgroup") + 
+  theme_minimal()+
+  theme(
+    axis.title = element_text(size = 9),
+    axis.text = element_text(size = 9),
+    panel.grid.major = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.text = element_text(size = 8),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    plot.margin = margin(5, 5, 5, 5))  
+
+dot_and_arrow_plot_4_5_q4
+```
+
+## 3.12 Reductions in parent-related stress (PSS)
 
 **Definition:** PSS item(s) measuring reduction in parent/caregiver-related stress after the intervention. Assessments showing improvement from pre- to post-time point for clients who discharged from an intervention during the designated time frame.
 
@@ -2580,7 +2431,7 @@ We can't use this one - it only has 9 rows of data, all of which are unique clie
 #| echo: false
 #| warning: false
 #| message: false
-raw_pss <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/PSS.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+raw_pss <- read.csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/PSS.csv", na = c("-", "", "NA", "N/A", "0"), header = FALSE) 
 h1 <- unlist(raw_pss[1, ], use.names = FALSE)           # question text row
 h2 <- unlist(raw_pss[2, ], use.names = FALSE)           # subheaders
 h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
@@ -2639,22 +2490,325 @@ pss_paired <- pss_scores %>%
   ) %>% 
   mutate(
     positive_outcome = ifelse(follow_up_score < initial_score, 1, 0), 
+    score_change = follow_up_score - initial_score,
     initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
     follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
     
 # summary stats
 tab <- pss_paired %>% 
   filter(!is.na(positive_outcome)) %>% 
-  tabyl(follow_up_quarter, positive_outcome) %>% 
-  adorn_totals("row") %>% 
-  adorn_percentages("row") %>%
-  adorn_pct_formatting(digits = 0) %>%
-  adorn_ns() 
+  tabyl(positive_outcome) %>% 
+  adorn_pct_formatting(digits = 0) 
 
 tab 
 ```
 
-## Client_groups: race
+Plot it.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+pss_paired_long <- pss_paired %>%
+  ungroup() %>% 
+  select(client_system_id, initial_score, follow_up_score) %>% 
+  pivot_longer(
+    cols = c(initial_score, follow_up_score),
+    names_to = "score_type",
+    values_to = "score_value"
+  ) %>%
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score" = "Initial",
+                        "follow_up_score" = "Follow-up"),
+    score_type = factor(score_type,
+                        levels = c("Initial", "Follow-up"))
+  )
+
+# Plot
+pss_plot <- ggplot(pss_paired_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    #binwidth = 1, 
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width = 0.8,
+    alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Score", 
+       y = "Count",
+       title = "Distribution of Initial and Follow-up Scores, PSS") +
+  theme_minimal()+
+  theme(
+     axis.title = element_text(size = 9),
+     axis.text = element_text(size = 9),
+     panel.grid.major = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+     legend.position = "inside",
+     legend.justification = c("left", "top"),
+     legend.title = element_blank(),
+     legend.text = element_text(size = 8),
+     plot.margin = margin(5, 5, 5, 5)) 
+  
+pss_plot
+```
+
+Ridgeline plot
+
+```{r}
+# summary stats by score type
+summary_stats_pss <- pss_paired_long %>% 
+  group_by(score_type) %>% 
+  summarise(
+    mean_score = mean(score_value, na.rm = TRUE), 
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score = sd(score_value, na.rm = TRUE), 
+    n = sum(!is.na(score_value))
+  ) %>% 
+  mutate(y_text = if_else(score_type == "Follow-up", 1.08, 1.085))
+
+summary_stats_pss
+#clipr::write_clip(summary_stats_pss)
+
+# Ridgeline plot
+pss_ridge_plot <- ggplot(pss_paired_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  #scale_x_continuous(limits = c(0,6), breaks = c(1, 2, 3, 4, 5)) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "PSS Score", 
+       y = NULL,
+       title = "Distribution of Initial and Follow-up Scores, PSS (lower is better)") +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x = element_text(size = 9, hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 9),
+    panel.grid = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 5),
+    plot.title = element_text(size = 11)
+  ) + 
+  geom_segment(data = summary_stats_pss, 
+               aes(x = median_score, y = 1,
+                   xend = median_score, yend = 1.07,
+                   color = "grey30"), linetype = "dotted") + 
+  geom_text(data = summary_stats_pss,
+            aes(x = median_score, y = y_text, 
+                label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+                vjust = 2, hjust = 0.5, size = 2)
+
+pss_ridge_plot
+```
+
+## 3.13 Reductions in overall distress (YOQ)
+
+**Definition:** This KPI represents the percent of assessments that show clients who have improvement from pre-post time points out of the total number of assessments from clients who discharge from the intervention and complete pre-post measures by period(s).
+
+The YOQ total score reflects total distress in a client's life, with a high score reflecting increased distress related to experiencing a high number of symptoms, interpersonal difficulties, and decreased satisfaction and quality of life.
+
+**Range:** 0 - 120
+
+**Calculation:** Sum of 30 items (0-4 scale); invalid if 3+ items missing; total score only calculated if 28+ items completed; including those doing reliably better / total who took YOQ by quarter RCI = baseline score - follow-up score - RCI ≤ -10 doing reliably worse - RCI ≥ 10 doing reliably better
+
+**Assumptions:** A positive outcome was if a client was doing reliably better as defined by the YOQ RCI. I used follow-up quarter as the date. I used the LAST follow-up date if there were \>1 assessments. I filtered out NA's from "reliably better"
+
+### Caregiver
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+raw_yoq_caregiver <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/YOQ-caregiver.csv", na = c("-", "", "NA", "N/A")) %>% janitor::clean_names()
+
+#make sure columns are numeric
+#add a column for if there was any missing data, in case we want to exclude those rows later
+#add a total score column, which = NA if 3+ items are missing
+#make sure it's date formatted
+yoq_caregiver <- raw_yoq_caregiver %>% 
+  mutate(across(matches("^x"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(
+    missing_count = sum(is.na(c_across(starts_with("x")))),
+    total_score = ifelse(missing_count >= 3, NA_real_, sum(c_across(starts_with("x")), na.rm = TRUE))) %>% 
+  ungroup %>% 
+  mutate(
+    date_completed = as.Date(date_completed),
+    row_id = row_number()                # stable row id for disambiguation
+  ) %>% 
+  select(client_system_id, collection, date_completed, total_score)
+
+yoq_caregiver_paired <- yoq_caregiver %>%
+  group_by(client_system_id) %>%
+  arrange(date_completed, .by_group = TRUE) %>%
+  summarise(
+    n_assessments = n(),
+    initial_date  = first(date_completed),
+    initial_score = first(total_score),
+    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
+    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
+  ) %>%
+  ungroup() %>% 
+  filter(
+    !is.na(follow_up_date)
+  ) %>% 
+  mutate(
+    rci = initial_score - follow_up_score, 
+    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)),
+    reliably_better = rci >= 10)
+    
+# summary stats
+tab <- yoq_caregiver_paired %>% 
+  filter(!is.na(reliably_better),
+         rci != 0) %>% 
+  tabyl(reliably_better) %>% # true = doing reliably better
+  adorn_pct_formatting(digits = 0) 
+
+tab 
+
+#reliably changed
+reliable_change <- yoq_caregiver_paired %>% 
+  filter(rci >= 10 | rci <= -10)
+
+#these people did reliably better
+pos_rci <- reliable_change %>% 
+  filter(rci >= 10)
+
+#these people did reliably worse
+neg_rci <- reliable_change %>% 
+  filter(rci <= -10)
+
+#conditional color formatting
+yoq_caregiver_paired$rci_col <- as.factor((yoq_caregiver_paired[,7] > 10 | yoq_caregiver_paired[,7] <= -10)*1)
+
+yoq_caregiver_paired %>% 
+  ggplot(aes(rci)) + 
+  geom_histogram(aes(fill = rci_col), color = "white", binwidth = 4) +
+  theme_classic() +
+  scale_x_continuous(breaks = seq(-25, 50, 5), expand = c(0,0)) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Reliable Change Index",
+       y = "",
+       title = "Distribution of reliable change scores for YOQ Caregiver") +
+  scale_fill_manual("Reliable Change Index",
+                    labels = c("no meaningful change (n=93)", "meaningful change (n=114)"), 
+                    values = c("#ABDDDE", "#046C9A"))
+```
+
+### Self
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+raw_yoq_self <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/YOQ-self_report.csv", na = c("-", "", "NA", "N/A")) %>% janitor::clean_names()
+
+#make sure columns are numeric
+#add a column for if there was any missing data, in case we want to exclude those rows later
+#add a total score column, which = NA if 3+ items are missing
+#make sure it's date formatted
+yoq_self <- raw_yoq_self %>% 
+  mutate(across(matches("^x"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(
+    missing_count = sum(is.na(c_across(starts_with("x")))),
+    total_score = ifelse(missing_count >= 3, NA_real_, sum(c_across(starts_with("x")), na.rm = TRUE))) %>% 
+  ungroup %>% 
+  mutate(
+    date_completed = as.Date(date_completed),
+    row_id = row_number()                # stable row id for disambiguation
+  ) %>% 
+  select(client_system_id, collection, date_completed, total_score)
+
+yoq_self_paired <- yoq_self %>%
+  group_by(client_system_id) %>%
+  arrange(date_completed, .by_group = TRUE) %>%
+  summarise(
+    n_assessments = n(),
+    initial_date  = first(date_completed),
+    initial_score = first(total_score),
+    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
+    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
+  ) %>%
+  ungroup() %>% 
+  filter(
+    !is.na(follow_up_date)
+  ) %>% 
+  mutate(
+    rci = initial_score - follow_up_score, 
+    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)),
+    reliably_better = rci >= 10)
+    
+# summary stats
+tab <- yoq_self_paired %>% 
+  filter(!is.na(reliably_better),
+         rci != 0) %>% #grantees are copying initial scores, maybe?
+  tabyl(reliably_better) %>% 
+  adorn_pct_formatting(digits = 0)
+
+tab
+
+no_reliable_change <- yoq_self_paired %>% 
+  filter(rci <= 10 | rci >= -10) %>% 
+  filter(rci != 0)
+
+#reliably changed
+reliable_change <- yoq_self_paired %>% 
+  filter(rci >= 10 | rci <= -10)
+
+#these people did reliably better
+pos_rci <- reliable_change %>% 
+  filter(rci >= 10)
+
+#these people did reliably worse
+neg_rci <- reliable_change %>% 
+  filter(rci <= -10)
+
+#conditional color formatting
+yoq_self_paired$rci_col <- as.factor((yoq_self_paired[,7] > 10 | yoq_self_paired[,7] <= -10)*1)
+
+yoq_self_paired %>% 
+  filter(rci != 0) %>% 
+  ggplot(aes(rci)) + 
+  geom_histogram(aes(fill = rci_col), color = "white", binwidth = 1) +
+  theme_classic() +
+  scale_x_continuous(breaks = seq(-25, 50, 5), expand = c(0,0)) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Reliable Change Index",
+       y = "",
+       title = "Distribution of reliable change scores for YOQ Self") +
+  scale_fill_manual("Reliable Change Index",
+                    labels = c("no meaningful change (n=256)", "meaningful change (n=206)"), 
+                    values = c("#ABDDDE", "#046C9A"))
+```
+
+## Question 1.01 improved access to subpopulations
+
+### Race
 
 **Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by race.
 
@@ -2725,7 +2879,7 @@ tab
 #clipr::write_clip(tab)
 ```
 
-## Client_groups: insurance status
+### Insurance status
 
 **Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by insurance status.
 
@@ -2810,7 +2964,7 @@ tab
 #clipr::write_clip(tab)
 ```
 
-## Client_groups: sexual orientation
+### Sexual orientation
 
 **Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by sexual orientation.
 
@@ -2896,7 +3050,7 @@ tab
 #clipr::write_clip(tab)
 ```
 
-## Client_groups: gender identity
+### Gender identity
 
 **Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by gender identity.
 
@@ -2973,7 +3127,7 @@ tab
 #clipr::write_clip(tab)
 ```
 
-## Client_groups: preferred language
+## Preferred language
 
 **Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by preferred language.
 

@@ -49,6 +49,7 @@ data301$positive_outcomes <- factor(data301$positive_outcomes, levels = c("No", 
 ##Race model
 
 ```{r}
+library(gtsummary)
 detailed_race <- data301 %>% 
   group_by(code_num) %>% 
   summarise(
@@ -60,6 +61,9 @@ detailed_race <- data301 %>%
 # detailed_race %>% 
 #   knitr::kable() %>% 
 #   clipr::write_clip(allow_non_interactive = TRUE)
+#detailed_race %>% 
+ #  knitr::kable() %>% 
+  # clipr::write_clip(allow_non_interactive = TRUE)
 
 chisq.test(data301$positive_outcomes, data301$code_num)
 
@@ -84,7 +88,6 @@ tab <- as.data.frame.matrix(tab)
 modtab <- tbl_regression(model, exponentiate = TRUE)
 modtab %>%
   as_tibble() %>%
-  xlsx::write.xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple race model.xlsx",sheetName = "model")
 
 xlsx::write.xlsx(tab,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple race model.xlsx",sheetName = "table",append=T)
 ```
@@ -301,5 +304,6 @@ data301$in_preferred_language <- NA
 ethnicity_xwalk$new[which(grepl("unknow",ethnicity_xwalk$old,ignore.case=TRUE))]<-NA
 
 data301$in_preferred_language<- merge(data301, df2, by="merge_column") ##DOES NOT WORK YET - STILL WORKING ON THIS
+data301$in_preferred_language<- merge(data301, df2, by="merge_column") ##DOES NOT WORK YET - STILL WORKING ON THIS. NEEDS TO LOOK UP WHETHER SERVICES WERE RECEIVED IN PREFERRED LANGUAGE
 
 ```
