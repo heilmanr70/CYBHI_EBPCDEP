@@ -38,6 +38,7 @@ demographic_data <- readxl::read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/
 
 length(discharge_data$client_system_id)
 length(demographic_data$client_system_id)
+length(unique(demographic_data$client_system_id))
 ```
 
 # DEMOGRAPHIC DATA - Cleaning
@@ -114,15 +115,52 @@ demographic_data_filtered <- demographic_data_filtered %>%
   ) %>%
   mutate(
     recoded_race = case_when(
-      is.na(cleaned_race) ~ 0L,             # no valid response
+      is.na(cleaned_race) ~ NA,             # no valid response
       str_detect(cleaned_race, ",") ~ 2L,   # multiple responses
       TRUE ~ 1L                             # single response
     ),
     # assign numeric code to single values, 99 if 2+ values
     code_num = case_when(
-      is.na(cleaned_race) ~ 0L,
+      is.na(cleaned_race) ~ NA,
       str_detect(cleaned_race, ",") ~ 88L,
       TRUE ~ unname(codebook[cleaned_race])  # lookup from codebook
+    )
+  )
+```
+
+## DEMOGRAPHIC DATA - Recoding ethnicity
+1. Remove “don’t know”, “prefer not to answer”, and “not applicable” from the comma-separated responses.
+2. Then recode the remaining responses:
+- 0 if nothing is left after removal (or NA)
+- 1 if exactly one valid response remains
+- 2 if 2+ valid responses remain
+3. do an analysis to look within ethnicity: so duplicated --> single ethnicity dummy variable
+```{r}
+# Define coding for single responses
+codebook_eth <- c("Chinese" = 1, "Asian Indian" = 2, "Filipino" = 3, "Vietnamese" = 4, "Korean" = 5,"Japanese" = 6, "African American" = 7,"Jamaican" = 8, "Haitian" = 9, "Nigerian" = 10, "Somali" = 11, "Mexican" = 12, "Puerto Rican" = 13, "Salvadoran" = 14, "Cuban" = 15, "Dominican" = 16, "Guatemalan" = 17, "Native Hawaiian" = 18, "Samoan" = 19, "Chamorro" = 20, "English" = 21, "German" = 22, "Irish" = 23, "Italian" = 24, "Polish" = 25, "Scottish" = 26, "2+ ethnicities selected" = 88)
+
+demographic_data_filtered <- demographic_data_filtered %>% 
+  mutate(
+    # Remove "don't know", "prefer not to answer", "not applicable"
+    cleaned_ethn = str_remove_all(
+      ethnicity,
+      "\\b(Don't Know|Prefer Not To Answer|Not Applicable)\\b"
+    ) %>%
+      str_replace_all(",+", ",") %>%        # collapse extra commas
+      str_replace_all("^,|,$", "") %>%      # trim leading/trailing commas
+      na_if("")                             # convert empty string to NA
+  ) %>%
+  mutate(
+    recoded_ethn = case_when(
+      is.na(cleaned_ethn) ~ NA,             # no valid response
+      str_detect(cleaned_ethn, ",") ~ 2L,   # multiple responses
+      TRUE ~ 1L                             # single response
+    ),
+    # assign numeric code to single values, 99 if 2+ values
+    ethn_num = case_when(
+      is.na(cleaned_ethn) ~ NA,
+      str_detect(cleaned_ethn, ",") ~ 88L,
+      TRUE ~ unname(codebook_eth[cleaned_ethn])  # lookup from codebook
     )
   )
 ```
