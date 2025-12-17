@@ -1,0 +1,3360 @@
+---
+title: "Annual Report Results-12-08-2025"
+author: "Cristin Young"
+format: 
+  docx:
+    page-width: 7.5
+editor: visual
+---
+
+## Period
+
+2024-01-01 - 2025-11-30
+
+## Question 1.00 clients served
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated timeframe, where "served" means that a client had a new intervention start date attached to them during the designated timeframe.
+
+**Calculation:** aggregated count of clients served by period with an intervention type and start date listed; intervention does not need to be completed; assumes dates before 2024 are correct and any rows with these dates have not been revised
+
+**Assumptions:** This is discharge data from EInsight, so can have clients in here multiple times (they can have multiple interventions, or the same intervention on multiple dates). I filtered out dates before 2024-01-01, and did not clean dates at all.
+
+```{r, client_serve}
+#| echo: false
+#| warning: false
+#| message: false
+library(readr)
+library(tidyverse)
+library(janitor)
+library(openxlsx)
+
+discharge_data_filtered <- read_csv("/Users/heilm/Dropbox/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
+discharge_data_filtered$intervention_start_year <- year(discharge_data_filtered$intervention_start)
+discharge_data_filtered <- discharge_data_filtered %>% 
+  filter(!is.na(intervention_start), # has to have an intervention start date
+         !is.na(intervention_name)) # has to have an intervention type named
+
+client_serve <- discharge_data_filtered %>% 
+  filter(intervention_start >= "2024-01-01") %>%
+    tabyl(intervention_start_year)
+client_serve 
+
+openxlsx::write.xlsx(client_serve,"/Users/heilm/Dropbox/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Client_serve.xlsx")
+#xlsx::write.xlsx(client_serve,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Client_serve.xlsx")
+```
+
+## Client_sat
+
+**Definition:** Clients from the primary evaluation who indicate high satisfaction with services divided by the total number of clients served by the grantees who completed a satisfaction survey after an intervention during the designated timeframe.
+
+**Calculation:** This KPI represents ***the percent*** of clients that report high satisfaction with services out of the total that completed the satisfaction survey by period(s). Clients must have a record in the eInsight platform with an intervention type and start date, have discharged from services (with an intervention end date), and have completed a satisfaction survey to be included in this count. Calculation assumes dates before 2024 or after 2025 are correct and any rows with these dates have not been revised.
+
+```{r, client_sat}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+library(zoo)
+
+# caregiver
+caregiver_raw <- read_csv("/Users/heilm/Dropbox/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-caregiver.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE) 
+h1 <- unlist(caregiver_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(caregiver_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+caregiver <- caregiver_raw[-c(1, 2), ]
+names(caregiver) <- new_names
+caregiver <- caregiver %>%
+  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+
+# child
+child_raw <- read.csv("/Users/heilm/Dropbox/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-child_13-17.csv", na = c("-", "", "NA", "N/A", "0"), header = FALSE) 
+h1 <- unlist(child_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(child_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+child <- child_raw[-c(1, 2), ]
+names(child) <- new_names
+child <- child %>%
+  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+
+# adult
+adult_raw <- read.csv("/Users/heilm/Dropbox/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-adult_18-59.csv", na.strings = c("-", "", "NA", "N/A", "0"), skip = 0, header = FALSE)
+h1 <- unlist(adult_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(adult_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+adult <- adult_raw[-c(1, 2), ]
+names(adult) <- new_names
+adult <- adult %>%
+  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+
+# senior
+senior_raw <- read_csv("/Users/heilm/Dropbox/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-adult_60_plus.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE) 
+h1 <- unlist(senior_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(senior_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+senior <- senior_raw[-c(1, 2), ]
+names(senior) <- new_names
+senior <- senior %>%
+  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+```
+
+Satisfaction is defined two ways below. The first is the percent of individuals who answered question 1 as "Agree" or "Strongly Agree" on the satisfaction survey. The second definition is the percent of individuals who selected "Agree" or "Strongly Agree" on 80% or more of the questions completed.
+
+**Nitty gritty:** There are four satisfaction surveys: Caregiver (n=`{r} nrow(caregiver)`), Child (13-17) (n=`{r} nrow(child)`), Adult (18-59) (n=`{r} nrow(adult)`), and Adult (60+) (n=`{r} nrow(senior)`). A separate data frame was made for question 1, and high satisfaction was defined as the percent of individuals who answered a 4 or 5 for question 1.
+
+**Assumptions:** I cleaned dates with "002X" and "292X" and replaced them with "202X." I also filtered dates in the future (\<= "2025-12-31").
+
+#### Question 1 Satisfaction
+
+```{r, client_sat_q1}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+combined_q1 <- bind_rows(
+  caregiver %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x1_")) %>% 
+    rename(q1 = matches("^x1_")) %>% 
+    mutate(source = "caregiver"),
+  child %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x1_")) %>% 
+    rename(q1 = matches("^x1_")) %>% 
+    mutate(source = "child"),
+  adult %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x1_")) %>% 
+    rename(q1 = matches("^x1_")) %>% 
+    mutate(source = "adult"),
+  senior %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x1_")) %>% 
+    rename(q1 = matches("^x1_")) %>% 
+    mutate(source = "senior"))
+```
+
+The following table shows high survey satisfaction by year.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# combining all satisfaction survey data
+combined_all <- bind_rows(
+  caregiver %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x")) %>% 
+    rename(q = matches("^x")) %>% 
+    mutate(source = "caregiver"),
+  child %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x")) %>% 
+    rename(q = matches("^x")) %>% 
+    mutate(source = "child"),
+  adult %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x")) %>% 
+    rename(q = matches("^x")) %>% 
+    mutate(source = "adult"),
+  senior %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x")) %>% 
+    rename(q = matches("^x")) %>% 
+    mutate(source = "senior"))
+
+# first clean date column
+#unique(combined_all$date_completed)
+combined_all <- combined_all %>% 
+  mutate(
+    date_clean = str_replace(date_completed, "^00", "20"), # replace 00xx with 20xx
+    date_clean = str_replace(date_clean, "^29", "20"), # replace 29xx with 20xx
+    date_clean = as.Date(date_clean)
+  )
+#unique(combined_all$date_clean)
+
+# add in a quarter column
+combined_all <- combined_all %>%
+  filter(!is.na(date_clean),
+         date_clean <= "2025-11-30") %>%
+  mutate(quarter_label = paste0("Q", quarter(date_clean), " ", year(date_clean)),
+       quarter_label = factor(quarter_label, levels = unique(quarter_label)) #to sort chronologically
+  )
+
+#add in a year column
+combined_all$year <- year(combined_all$date_clean)
+
+# Question 1 satisfaction by year
+pct_4_5_year <- combined_all %>% 
+  filter(!is.na(year),!is.na(q2)) %>% 
+  group_by(year) %>% 
+  summarise(
+    pct_4_5 = round((100 * sum(q2 %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q2))), 1),
+    x_4_5 = sum(q2 %in% c(4, 5), na.rm = TRUE),
+    n_4_5 = length(q2)
+  )
+
+pct_4_5_year
+
+# Question 1 satisfaction overall
+pct_4_5_overall <- combined_all %>% 
+  filter(!is.na(year),!is.na(q2)) %>% 
+  summarise(
+    pct_4_5 = round((100 * sum(q2 %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q2))), 1),
+    x_4_5 = sum(q2 %in% c(4, 5), na.rm = TRUE),
+    n_4_5 = length(q2)
+  )
+
+pct_4_5_overall 
+
+openxlsx::write.xlsx(pct_4_5_year,"/Users/heilm/Dropbox/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Question 1 Satisfaction.xlsx",sheetName="by year")
+# xlsx::write.xlsx(pct_4_5_year,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Question 1 Satisfaction.xlsx",sheetName="by year")
+
+openxlsx::write.xlsx(pct_4_5_overall,"/Users/heilm/Dropbox/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Question 1 Satisfaction.xlsx",sheetName="overall",append=T)
+# xlsx::write.xlsx(pct_4_5_overall,"/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Question 1 Satisfaction.xlsx",sheetName="overall",append=T)
+
+```
+
+#### Combined Survey Satisfaction
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+
+summary_agree <- combined_all %>%
+  # keep only question columns
+  select(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) %>%
+  mutate(across(everything(), ~ as.numeric(.))) 
+
+df2 <- summary_agree %>% 
+  mutate(across(everything(), ~ na_if(., 0))) %>% 
+  # calculate per-person proportion of "Agree"/"Strongly Agree"
+  rowwise() %>%
+  summarise(
+    n_answered = sum(!is.na(c_across(everything()))),
+    n_agree = sum(c_across(everything()) %in% c(4,5), na.rm = TRUE),
+    pct_agree = n_agree / n_answered
+  ) %>%
+  ungroup() %>% 
+  summarise(
+    n_total = n(),
+    n_meeting_80pct = sum(pct_agree >= 0.8, na.rm = TRUE),
+    pct_meeting_80pct = round((100 * n_meeting_80pct / n_total), 1)
+  )
+
+df2
+
+# CONFIRMED THIS WORKS THE SAME AS ABOVE
+df3 <- summary_agree %>%   
+  mutate(across(everything(), ~ na_if(., 0))) %>% 
+  rowwise() %>% 
+  mutate(count_4 = sum(c(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) == "4", na.rm = TRUE), 
+         count_5 = sum(c(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) == "5", na.rm = TRUE),
+         n_4_5 = sum(c(count_4, count_5), na.rm = TRUE),
+         n_total = sum(!is.na(c_across(starts_with("q")))),
+         perc_4_5 = n_4_5 / n_total
+         ) %>% 
+  ungroup() 
+
+df4 <- df3 %>% 
+  summarise(
+    n_total = n(),
+    n_meeting_80pct = sum(perc_4_5 >= 0.8, na.rm = TRUE),
+    pct_meeting_80pct = round((100 * n_meeting_80pct / n_total), 1)
+  )
+
+df4
+
+openxlsx::write.xlsx(df2,"/Users/heilm/Dropbox/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Combined Survey Satisfaction.xlsx",sheetName="df2")
+#xlsx::write.xlsx(df2,"/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Combined Survey Satisfaction.xlsx",sheetName="df2")
+
+openxlsx::write.xlsx(df4,"/Users/heilm/Dropbox/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Combined Survey Satisfaction.xlsx",sheetName="df4",append=T)
+#xlsx::write.xlsx(df4,"/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Combined Survey Satisfaction.xlsx",sheetName="df4",append=T)
+```
+
+The following table shows high survey satisfaction results by quarter, for data where both `client_id` and `quarter_label` were available.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+summary_agree_quarter <- combined_all %>%
+  filter(!is.na(quarter_label)) %>% 
+  group_by(quarter_label) %>% 
+  # keep only question columns
+  select(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) %>%
+  mutate(across(everything(), ~ as.numeric(.))) %>% 
+  # calculate per-person proportion of "Agree"/"Strongly Agree"
+  rowwise() %>%
+  summarise(
+    n_answered = sum(!is.na(c_across(everything()))),
+    n_agree = sum(c_across(everything()) %in% c(4, 5)),
+    pct_agree = n_agree / n_answered
+  ) %>%
+  summarise(
+    n_total = n(),
+    n_meeting_80pct = sum(pct_agree >= 0.8, na.rm = TRUE),
+    pct_meeting_80pct = round((100 * n_meeting_80pct / n_total), 1)
+  )
+
+summary_agree_quarter
+
+openxlsx::write.xlsx(summary_agree_quarter,"/Users/heilm/Dropbox/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Combined Survey Satisfaction.xlsx",sheetName="quarterly",append=T)
+#xlsx::write.xlsx(summary_agree_quarter,"/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Combined Survey Satisfaction.xlsx",sheetName="quarterly",append=T)
+```
+
+## Client_end
+
+**Definition:** Clients from the primary evaluation whose discharge reason is "mutually agreed cessation of treatment" for clients who discharged from an intervention during the designated time frame, divided by the total number of clients from the primary evaluation served and who have a discharge reason recorded.
+
+**Calculation:** This KPI represents ***the percent*** of clients who have a disenrollment/discharge response as "mutually agreed cessation of treatment" out of the total number of clients with a discharge reason by period(s).
+
+**Assumptions:** This is discharge data from EInsight, so can have clients in here multiple times (they can have multiple interventions, or the same intervention on multiple dates). I removed NA's from reason_for_discharge, but did not clean dates at all. I filtered by intervention_end date \>= "2024-01-1" and \<= "12-31-2025."
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+
+# number of rows with a reason for discharge
+count_rows <- nrow(discharge_data_filtered %>% filter(!is.na(reason_for_discharge)))
+count_rows
+
+# number of rows with successful discharge
+# table of positive outcomes 
+tab3 <- discharge_data_filtered %>%
+  tabyl(reason_for_discharge) %>%               
+  adorn_pct_formatting(digits = 0)
+
+# count of successful discharge
+yes_count <- tab3 %>%
+  filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)") %>%
+  pull(n)
+
+# percent of successful discharge
+yes_pct3 <- tab3 %>%
+  filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)") %>%
+  pull(valid_percent)
+
+tab3
+```
+
+The results below show % of successful discharges by `intervention_end_quarter`, once NA's are removed from the data.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# total table of successful discharges by quarter of intervention END
+tab4q <- discharge_data_filtered %>% 
+  filter(!is.na(reason_for_discharge),
+         intervention_end >= "2024-01-01",
+         intervention_end <= "2025-12-31") %>% 
+  tabyl(reason_for_discharge, intervention_end_quarter) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab4q %>% filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)")
+
+discharge_data_filtered$intervention_end_year <- year(discharge_data_filtered$intervention_end)
+
+tab4y <- discharge_data_filtered %>% 
+  filter(!is.na(reason_for_discharge),
+         intervention_end >= "2024-01-01",
+         intervention_end <= "2025-12-31") %>% 
+  tabyl(reason_for_discharge, intervention_end_year) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab4y %>% filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)")
+
+tab4 <- discharge_data_filtered %>% 
+  filter(!is.na(reason_for_discharge),
+         intervention_end >= "2024-01-01",
+         intervention_end <= "2025-12-31") %>% 
+  tabyl(reason_for_discharge) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab4 %>% filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)")
+
+
+openxlsx::write.xlsx(tab4q,"/Users/heilm/Dropbox/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Client_End.xlsx",sheetName="tab4_quarterly")
+#xlsx::write.xlsx(tab4q,"/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Client_End.xlsx",sheetName="tab4_quarterly")
+openxlsx::write.xlsx(tab4y,"/Users/heilm/Dropbox/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Client_End.xlsx",sheetName="tab4_yearly",append=T)
+#xlsx::write.xlsx(tab4y,"/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Client_End.xlsx",sheetName="tab4_yearly",append=T)
+openxlsx::write.xlsx(tab4,"/Users/heilm/Dropbox/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Client_End.xlsx",sheetName="tab4_overall",append=T)
+#xlsx::write.xlsx(tab4,"/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Client_End.xlsx",sheetName="tab4_overall",append=T)
+```
+
+## Client_lang
+
+**Definition:** Clients from the primary evaluation who indicate services received in their preferred language on the satisfaction survey divided by the total number of clients served by the grantees who completed a satisfaction survey after an intervention during the designated time frame.
+
+**Calculation:** This KPI represents ***the percent*** of clients that report services received in their preferred language on the satisfaction survey out of the total that completed the satisfaction survey by period(s).
+
+**Assumptions:** I cleaned dates with "002X" and "292X" and replaced them with "202X." I also filtered dates in the future (\<= "2025-12-31"). I filtered out NAs for both the quarter label and the question first before calculating %.
+
+The following table shows the percent of clients who received services in their preferred language on the satisfaction survey by quarter:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# combining all satisfaction survey data
+client_lang_all <- bind_rows(
+  caregiver %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+    mutate(source = "caregiver"),
+  child %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+    mutate(source = "child"),
+  adult %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+    mutate(source = "adult"),
+  senior %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+    mutate(source = "senior"))
+
+# first clean date column
+client_lang_all <- client_lang_all %>% 
+  mutate(
+    date_clean = str_replace(date_completed, "^00", "20"), # replace 00xx with 20xx
+    date_clean = str_replace(date_clean, "^29", "20"), # replace 29xx with 20xx
+    date_clean = as.Date(date_clean)
+  )
+
+# add in a quarter column 
+client_lang_all <- client_lang_all %>% 
+  filter(!is.na(date_clean),
+         date_clean <= "2025-12-31") %>% 
+  mutate(quarter_label = paste0("Q", quarter(date_clean), " ", year(date_clean)),
+       quarter_label = factor(quarter_label, levels = unique(quarter_label)) #to sort chronologically
+  )
+
+# add in a year column 
+client_lang_all$year <- year(client_lang_all$date_clean)
+  
+tab_q <- client_lang_all %>% 
+  filter(!is.na(quarter_label),
+         !is.na(were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response)) %>% 
+  tabyl(quarter_label, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab_q 
+
+tab_y <- client_lang_all %>% 
+  filter(!is.na(quarter_label),
+         !is.na(were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response)) %>% 
+  tabyl(year, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab_y 
+
+tab <- client_lang_all %>% 
+  filter(!is.na(quarter_label),
+         !is.na(were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response)) %>% 
+  tabyl(were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+  adorn_pct_formatting(digits = 0) 
+
+tab
+
+openxlsx::write.xlsx(tab_q,"/Users/heilm/Dropbox/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Client_Lang.xlsx",sheetName="lang_quarterly")
+#xlsx::write.xlsx(tab_q,"/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Client_Lang.xlsx",sheetName="lang_quarterly")
+openxlsx::write.xlsx(tab_y,"/Users/heilm/Dropbox/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Client_Lang.xlsx",sheetName="lang_yearly",append=T)
+#xlsx::write.xlsx(tab_y,"/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Client_Lang.xlsx",sheetName="lang_yearly",append=T)
+openxlsx::write.xlsx(tab,"/Users/heilm/Dropbox/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Client_Lang.xlsx",sheetName="lang_overall",append=T)
+#xlsx::write.xlsx(tab,"/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Client_Lang.xlsx",sheetName="lang_overall",append=T)
+```
+
+## 3.03/3.04 NOMS Q1: Improved mental health
+
+**Scoring:** An **increase** in score indicates a positive outcome. There are no benchmarks or clinical cutoffs established for NOMS scoring - if the follow-up assessment score is higher than the initial score, a positive outcome is indicated.
+
+**Assumptions:** I filtered out dates before 2024-01-01 and after the date the code was run. I filtered data that's \>3 days from initial assessment and paired to the LAST follow-up. I filtered positive outcomes that had NA's before computing %.
+
+### Child
+
+Range: 1-5
+
+Sum = Q1.
+
+Use the `pairs_primary_long` data frame to compute scores. The following had a positive outcome by follow-up quarter:
+
+```{r, reading_in_data}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+library(readr)
+library(tidyverse)
+library(readxl)
+library(zoo)
+library(janitor)
+
+# dealing with crazy header rows
+noms_child_raw <- read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/NOMS-child.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+h1 <- unlist(noms_child_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(noms_child_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+noms_child <- noms_child_raw[-c(1, 2), ]
+names(noms_child) <- new_names
+noms_child <- noms_child %>%
+  select(where(~ !all(is.na(.))))
+
+#make sure columns are numeric
+#add a total score column
+#add a column for if there was any missing data, in case we want to exclude those rows later
+#make sure it's date formatted and get rid of the weird dates before 2024 for now
+noms_child <- noms_child %>% 
+  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(any_missing_q1x = any(is.na(c_across(matches("^(q1|x).*_score$")))),
+         total_score = sum(c_across(matches("^(q1|x).*_score$")), na.rm = TRUE)) %>% 
+  ungroup %>% 
+  mutate(
+    date_completed = as.Date(date_completed),
+    row_id = row_number()                # stable row id for disambiguation
+  ) %>% 
+  filter(date_completed <= Sys.Date(),     #date of running the code
+         date_completed >= "2024-01-01")   #date to filter out random issue dates   
+
+#pivot long to get individual question scores too
+noms_child_long <- noms_child %>% 
+  pivot_longer(
+    cols = matches("^(q1|x).*_score$"),
+    names_to = "question",
+    values_to = "score"
+  ) %>% 
+  mutate(score = as.numeric(score))
+
+#pair by system_id and question (because the data is in a long format)
+paired_outcomes_child <- noms_child_long %>% 
+  group_by(system_id, question) %>% 
+  arrange(date_completed, .by_group = TRUE) %>% 
+  mutate(
+    days_since_initial = as.integer(date_completed - first(date_completed)),
+    initial_date = first(date_completed),
+    initial_score = first(score)
+  ) %>% 
+  # flagging follow-ups
+  mutate(
+    is_within3 = days_since_initial <= 3 & days_since_initial >= 0,
+    is_after3 = days_since_initial >3
+  )
+
+# paired data
+pairs_primary_long <- paired_outcomes_child %>% 
+  filter(is_after3 == TRUE) %>% #filter to data that's after 3 days from initial
+  slice_tail(n = 1) %>%  #pairing to the LAST follow-up
+  transmute(
+    system_id, question,
+    initial_date,
+    initial_score,
+    follow_up_date = date_completed,
+    follow_up_score = score,
+    days_since_initial
+  )
+```
+
+```{r}
+#| echo: false 
+#| warning: false 
+#| message: false 
+
+pairs_primary_long_q1 <- pairs_primary_long %>% filter(question == "q1_how_would_you_rate_your_child_s_overall_mental_health_right_now_score")
+
+# compute differences in f/u and initial scores
+score_diff_child_q1 <- pairs_primary_long_q1 %>% 
+  mutate(score_change = follow_up_score - initial_score, 
+         positive_outcome = ifelse(follow_up_score > initial_score, 1, 0), 
+         initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+         follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+
+# summary stats
+tab <- score_diff_child_q1 %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(positive_outcome) %>% 
+  adorn_pct_formatting(digits = 0)
+
+tab
+```
+
+Plot it.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+q1_child_score_long <- pairs_primary_long_q1 %>%
+  ungroup() %>% 
+  select(system_id, initial_score, follow_up_score) %>% 
+  pivot_longer(
+    cols = c(initial_score, follow_up_score),
+    names_to = "score_type",
+    values_to = "score_value"
+  ) %>%
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score" = "Initial",
+                        "follow_up_score" = "Follow-up"),
+    score_type = factor(score_type,
+                        levels = c("Initial", "Follow-up"))
+  )
+
+# Plot
+child_q1_plot <- ggplot(q1_child_score_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    #binwidth = 1, 
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width = 0.8,
+    alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Measure: Mental Health Score (1-5)", 
+       y = "Count",
+       title = "Distribution of Initial and Follow-up Scores, NOMS Child Q1") +
+  theme_minimal()+
+  theme(
+     axis.title = element_text(size = 9),
+     axis.text = element_text(size = 9),
+     panel.grid.major = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+     legend.position = "inside",
+     legend.justification = c("left", "top"),
+     legend.title = element_blank(),
+     legend.text = element_text(size = 8),
+     plot.margin = margin(5, 5, 5, 5))  
+  
+child_q1_plot
+```
+
+Ridgeline plot
+
+```{r}
+# summary stats by score type
+summary_stats_child_score_type <- q1_child_score_long %>% 
+  group_by(score_type) %>% 
+  summarise(
+    mean_score = mean(score_value, na.rm = TRUE), 
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score = sd(score_value, na.rm = TRUE), 
+    n = sum(!is.na(score_value))
+  )
+
+summary_stats_child_score_type
+#clipr::write_clip(summary_stats_child_score_type)
+
+# Ridgeline plot
+ridge_plot_child <- ggplot(q1_child_score_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_x_continuous(limits = c(0,6), breaks = c(1, 2, 3, 4, 5)) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Measure: Mental Health Score (1-5 Likert Scale)", 
+       y = NULL,
+       title = "Distribution of Initial and Follow-up Scores, NOMS Child") +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x = element_text(size = 9, hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 9),
+    panel.grid = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 5),
+    plot.title = element_text(size = 11)
+  ) + 
+  geom_segment(data = summary_stats_child_score_type, 
+               aes(x = median_score, y = 1,
+                   xend = median_score, yend = 1.05,
+                   color = "grey30"), linetype = "dotted") + 
+  geom_text(data = summary_stats_child_score_type,
+            aes(x = median_score, y = 1.062, 
+                label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+                vjust = 2, hjust = 0.5, size = 2)
+
+ridge_plot_child
+```
+
+Dot and arrow plot
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+dot_and_arrow_plot <- score_diff_child_q1 %>% 
+  filter(!is.na(initial_score),
+         !is.na(follow_up_score),
+         !is.na(positive_outcome)) %>% 
+  mutate(direction = case_when(
+    positive_outcome == 1 ~ "Improved",
+    positive_outcome == 0 ~ "Declined",
+    TRUE ~ "No Change"
+  )) %>% 
+  filter(!is.na(direction),
+         direction != "No Change") %>% 
+ggplot(aes(y = system_id)) +
+  geom_segment(
+    aes(
+      x = initial_score, xend = follow_up_score,
+      yend = system_id, color = direction
+    ),
+    arrow = arrow(length = unit(0.2, "cm"))
+  ) +
+  geom_point(aes(x = initial_score), size = 1, color = "grey30") +
+  geom_point(aes(x = follow_up_score), size = 1, color = "grey30") +
+  scale_color_manual(
+    values = c("Improved" = "forestgreen",
+               "Declined" = "firebrick",
+               "No Change" = "gray50")
+  ) +
+  labs(
+    x = "Score",
+    y = "Client",
+    title = "Change in direction of Q1 score: Child"
+  ) +
+  theme_minimal()+
+  theme(
+     axis.title = element_text(size = 9),
+     axis.text = element_text(size = 9),
+     axis.text.y = element_blank(),
+     panel.grid.major = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+     legend.text = element_text(size = 8),
+     plot.margin = margin(5, 5, 5, 5))  
+  
+dot_and_arrow_plot
+```
+
+#### Summary stats
+
+The percent of those who selected ratings of 4 or higher (excellent or very good) across Q1 at initial and discharge time points were:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# % of those who selected 4 or higher on question 1
+tab5 <- pairs_primary_long_q1 %>% 
+  ungroup() %>% 
+  summarise(
+    initial_4_5 = round(100 * (mean(initial_score[!is.na(initial_score)]  %in% c(4,5), na.rm = TRUE)), 2),
+    followup_4_5 = round(100 * (mean(follow_up_score[!is.na(follow_up_score)]  %in% c(4,5), na.rm = TRUE)), 2)
+  )
+
+tab5
+```
+
+### Self
+
+Range: 1-5
+
+Sum = Q1
+
+Use the `pairs_primary_long_self` data frame to compute scores. The following had a positive outcome by follow-up quarter:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+noms_self_raw <- read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/NOMS-self_report.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE)
+h1 <- unlist(noms_self_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(noms_self_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+noms_self <- noms_self_raw[-c(1, 2), ]
+names(noms_self) <- new_names
+noms_self <- noms_self %>%
+  select(where(~ !all(is.na(.))))
+
+#make sure columns are numeric
+#add a total score column
+#add a column for if there was any missing data, in case we want to exclude those rows later
+#make sure it's date formatted and get rid of the weird dates before 2024 for now
+noms_self <- noms_self %>% 
+  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(any_missing_q1x = any(is.na(c_across(matches("^(q1|x).*_score$")))),
+         total_score = sum(c_across(matches("^(q1|x).*_score$")), na.rm = TRUE)) %>% 
+  ungroup %>% 
+  mutate(
+    date_completed = as.Date(date_completed),
+    row_id = row_number()                # stable row id for disambiguation
+  ) %>% 
+  filter(date_completed <= Sys.Date(),     #date of running the code
+         date_completed >= "2024-01-01")   #date to filter out random issue dates   
+
+#pivot long to get individual question scores too
+noms_self_long <- noms_self %>% 
+  pivot_longer(
+    cols = matches("^(q1|x).*_score$"),
+    names_to = "question",
+    values_to = "score"
+  ) %>% 
+  mutate(score = as.numeric(score))
+
+#pair per question
+paired_outcomes_self <- noms_self_long %>% 
+  group_by(client_system_id, question) %>% 
+  arrange(date_completed, .by_group = TRUE) %>% 
+  mutate(
+    days_since_initial = as.integer(date_completed - first(date_completed)),
+    initial_date = first(date_completed),
+    initial_score = first(score)
+  ) %>% 
+  # flagging follow-ups
+  mutate(
+    is_within3 = days_since_initial <= 3 & days_since_initial >= 0,
+    is_after3 = days_since_initial >3
+  )
+
+# paired data
+pairs_primary_long_self <- paired_outcomes_self %>% 
+  filter(is_after3 == TRUE) %>% #filtered for assessments >3 days from initial
+  slice_tail(n = 1) %>%  #paired on LAST assessment
+  transmute(
+    client_system_id, question,
+    initial_date,
+    initial_score,
+    follow_up_date = date_completed,
+    follow_up_score = score,
+    days_since_initial
+  )
+```
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q1_self <- pairs_primary_long_self %>% 
+  filter(question == "q1_how_would_you_rate_your_overall_mental_health_right_now_score")
+
+# compute differences in f/u and initial scores
+score_diff_self_q1 <- pairs_primary_long_q1_self %>% 
+  mutate(score_change = follow_up_score - initial_score,
+         positive_outcome = ifelse(follow_up_score > initial_score, 1, 0),
+         initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+         follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+
+# summary stats
+tab <- score_diff_self_q1 %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(positive_outcome) %>% 
+  adorn_pct_formatting(digits = 0) 
+
+tab 
+```
+
+Plot it.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+q1_self_score_long <- pairs_primary_long_q1_self %>%
+  ungroup() %>% 
+  select(client_system_id, initial_score, follow_up_score) %>% 
+  pivot_longer(
+    cols = c(initial_score, follow_up_score),
+    names_to = "score_type",
+    values_to = "score_value"
+  ) %>%
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score" = "Initial",
+                        "follow_up_score" = "Follow-up"),
+    score_type = factor(score_type,
+                        levels = c("Initial", "Follow-up"))
+  )
+
+# Plot
+self_q1_plot <- ggplot(q1_self_score_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    #binwidth = 1, 
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width = 0.8,
+    alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Measure: Mental Health Score (1-5)", 
+       y = "Count",
+       title = "Distribution of Initial and Follow-up Scores, NOMS Self Q1") +
+  theme_minimal()+
+  theme(
+     axis.title = element_text(size = 9),
+     axis.text = element_text(size = 9),
+     panel.grid.major = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+     legend.position = "inside",
+     legend.justification = c("left", "top"),
+     legend.title = element_blank(),
+     legend.text = element_text(size = 8),
+     plot.margin = margin(5, 5, 5, 5))  
+  
+self_q1_plot
+```
+
+Ridgeline plot
+
+```{r}
+# summary stats by score type
+summary_stats_self_score_type <- q1_self_score_long %>% 
+  group_by(score_type) %>% 
+  summarise(
+    mean_score = mean(score_value, na.rm = TRUE), 
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score = sd(score_value, na.rm = TRUE), 
+    n = sum(!is.na(score_value))
+  )
+
+summary_stats_self_score_type
+#clipr::write_clip(summary_stats_self_score_type)
+
+# Ridgeline plot
+ridge_plot_self <- ggplot(q1_self_score_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_x_continuous(limits = c(0,6), breaks = c(1, 2, 3, 4, 5)) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Measure: Mental Health Score (1-5 Likert Scale)", 
+       y = NULL,
+       title = "Distribution of Initial and Follow-up Scores, NOMS Self") +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x = element_text(size = 9, hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 9),
+    panel.grid = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 5),
+    plot.title = element_text(size = 11)
+  ) 
+
+ridge_plot_self
+```
+
+Dot and arrow plot
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+dot_and_arrow_plot_self <- score_diff_self_q1 %>% 
+  filter(!is.na(initial_score),
+         !is.na(follow_up_score),
+         !is.na(positive_outcome)) %>% 
+  mutate(direction = case_when(
+    positive_outcome == 1 ~ "Improved",
+    positive_outcome == 0 ~ "Declined",
+    TRUE ~ "No Change"
+  )) %>% 
+  filter(!is.na(direction),
+         direction != "No Change") %>% 
+  ggplot(aes(y = client_system_id)) + 
+  geom_segment(
+    aes(
+      x = initial_score, xend = follow_up_score,
+      yend = client_system_id, color = direction
+    ),
+    alpha = 0.7,
+    arrow = arrow(length = unit(0.2, "cm"))
+  ) +
+  geom_point(aes(x = initial_score), size = 1, color = "grey30") +
+  geom_point(aes(x = follow_up_score), size = 1, color = "grey30") +
+  scale_color_manual(
+    values = c("Improved" = "forestgreen",
+               "Declined" = "firebrick",
+               "No Change" = "gray50")
+  ) +
+  labs(
+    x = "Score",
+    y = "Client",
+    title = "Change in direction of Q1 score: Self"
+  ) +
+  theme_minimal()+
+  theme(
+     axis.title = element_text(size = 9),
+     axis.text = element_text(size = 9),
+     axis.text.y = element_blank(),
+     panel.grid.major = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+     legend.text = element_text(size = 8),
+     plot.margin = margin(5, 5, 5, 5)) 
+```
+
+#### Summary stats
+
+The percent of those who selected ratings of 4 or higher (excellent or very good) across Q1 at initial and discharge time points were:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# % of those who selected 4 or higher on question 1
+tab5 <- pairs_primary_long_q1_self %>% 
+  ungroup() %>% 
+  summarise(
+    initial_4_5 = round(100 * (mean(initial_score[!is.na(initial_score)]  %in% c(4,5), na.rm = TRUE)), 2),
+    followup_4_5 = round(100 * (mean(follow_up_score[!is.na(follow_up_score)]  %in% c(4,5), na.rm = TRUE)), 2)
+  )
+
+tab5
+```
+
+### Summary stats overall
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+library(scales)
+# % of those who selected 4 or higher on question 1
+df <- tribble(
+  ~group, ~ initial, ~followup,
+  "Child", 25.15, 53.46,
+  "Self", 30.23, 46
+) 
+
+dot_and_arrow_plot_4_5 <- ggplot(df, aes(y = group)) + 
+  geom_segment(aes(x = initial, xend = followup, yend = group),
+               arrow = arrow(length = unit(0.2, "cm")),
+               color = "gray40", linewidth = 0.8) + 
+  #initial
+  geom_point(aes(x = initial, color = "Initial"), size = 12, show.legend = TRUE) + 
+  geom_text(aes(x = initial, label = paste0(round(initial), "%")),
+            size = 3.5, color = "grey20") +
+  #followup
+  geom_point(aes(x = followup, color = "Follow-up"), size = 12, show.legend = TRUE)+
+  geom_text(aes(x = followup, label = paste0(round(followup), "%")),
+            size = 3.5, color = "grey20") +
+  scale_x_continuous(
+    limits = c(0, 100),
+    labels = label_percent(scale = 1)
+  ) +
+  scale_color_manual(
+    name = "Timepoint",
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49")
+  )+
+  labs(
+    x = "Score",
+    y = "",
+    title = "Change in direction of scores for those who selected 4 or higher on NOMS Q1 by subgroup") + 
+  theme_minimal()+
+  theme(
+     axis.title = element_text(size = 9),
+     axis.text = element_text(size = 9),
+     panel.grid.major = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+     legend.text = element_text(size = 8),
+     legend.position =c(0.98, 0.98),
+     legend.justification = c("right", "top"),
+     plot.margin = margin(5, 5, 5, 5))  
+
+dot_and_arrow_plot_4_5
+```
+
+## 3.05/3.06 NOMS Q2: Improved daily life functioning
+
+### Child
+
+Range: 7-35
+
+Sum = Q2a+...+Q2g
+
+Use the `pairs_primary_long` data frame to compute scores. The following had a positive outcome by follow-up quarter:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q2 <- pairs_primary_long %>% 
+  filter(str_detect(question, "^x2.*_score$"))
+ 
+# compute differences in f/u and initial scores
+score_diff_child_q2 <- pairs_primary_long_q2 %>% 
+  filter(!is.na(initial_score),
+         !is.na(follow_up_score)) %>% 
+  group_by(system_id) %>% 
+  summarise(initial_total = sum(initial_score, na.rm = TRUE),
+            followup_total = sum(follow_up_score, na.rm = TRUE),
+            score_change = followup_total - initial_total,
+            positive_outcome = ifelse(followup_total > initial_total, 1, 0),
+            initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))) %>% 
+  distinct(system_id, .keep_all = TRUE) %>% 
+  filter(between(initial_total, 7, 35),
+         between(followup_total, 7, 35))  
+
+# summary stats
+tab <- score_diff_child_q2 %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(positive_outcome) %>% 
+  adorn_pct_formatting(digits = 0) 
+
+tab 
+```
+
+Plot it.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+q2_child_score_long <- score_diff_child_q2 %>%
+  ungroup() %>% 
+  select(system_id, initial_total, followup_total) %>% 
+  pivot_longer(
+    cols = c(initial_total, followup_total),
+    names_to = "score_type",
+    values_to = "score_value"
+  ) %>%
+  mutate(
+    score_type = recode(score_type,
+                        "initial_total" = "Initial",
+                        "followup_total" = "Follow-up"),
+    score_type = factor(score_type,
+                        levels = c("Initial", "Follow-up"))
+  )
+
+# Plot
+child_q2_plot <- ggplot(q2_child_score_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    #binwidth = 1, 
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width = 0.8,
+    alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Measure: Improved Daily Life Functioning Score (7-35)", 
+       y = "Count",
+       title = "Distribution of Initial and Follow-up Scores, NOMS Child Q2") +
+  theme_minimal()+
+  theme(
+     axis.title = element_text(size = 9),
+     axis.text = element_text(size = 9),
+     panel.grid.major = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+     legend.position = "inside",
+     legend.justification = c("left", "top"),
+     legend.title = element_blank(),
+     legend.text = element_text(size = 8),
+     plot.margin = margin(5, 5, 5, 5)) 
+  
+child_q2_plot
+```
+
+Ridgeline plot
+
+```{r}
+
+library(ggridges)
+
+# summary stats by score type
+summary_stats_child_q2 <- q2_child_score_long %>% 
+  group_by(score_type) %>% 
+  summarise(
+    mean_score = mean(score_value, na.rm = TRUE), 
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score = sd(score_value, na.rm = TRUE), 
+    n = sum(!is.na(score_value))
+  )
+
+summary_stats_child_q2
+#clipr::write_clip(summary_stats_child_q2)
+
+# Ridgeline plot
+q2_ridge_plot_child <- ggplot(q2_child_score_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  #scale_x_continuous(limits = c(0,6), breaks = c(1, 2, 3, 4, 5)) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Measure: Daily Life Functioning Score (1-5 Likert Scale)", 
+       y = NULL,
+       title = "Distribution of Initial and Follow-up Scores, NOMS Child") +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x = element_text(size = 9, hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 9),
+    panel.grid = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 5),
+    plot.title = element_text(size = 11)
+  ) + 
+  geom_segment(data = summary_stats_child_q2, 
+               aes(x = median_score, y = 1,
+                   xend = median_score, yend = 1.135,
+                   color = "grey30"), linetype = "dotted") + 
+  geom_text(data = summary_stats_child_q2,
+            aes(x = median_score, y = 1.15, 
+                label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+                vjust = 2, hjust = 0.5, size = 2)
+
+q2_ridge_plot_child
+```
+
+#### Summary stats
+
+The percent of those who had total scores of 28 or higher (scores of 4\*7 questions) across Q2 at initial and discharge time points were:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# % of those who had total scores of 28 or higher (scores of 4*7 questions) across Q2
+tab5 <- score_diff_child_q2 %>% 
+  ungroup() %>% 
+  summarise(
+    initial_28 = round(100 * (mean(initial_total[!is.na(initial_total)] >= 28, na.rm = TRUE)), 2),
+    followup_28 = round(100 * (mean(followup_total[!is.na(followup_total)] >= 28, na.rm = TRUE)), 2)
+  )
+
+tab5
+```
+
+### Self
+
+Range: 7-35
+
+Sum = Q2a+...+Q2g
+
+Use the `pairs_primary_long_self` data frame to compute scores. The following had a positive outcome by follow-up quarter:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q2_self <- pairs_primary_long_self %>% 
+  filter(str_detect(question, "^x2.*_score$"))
+
+# compute differences in f/u and initial scores
+score_diff_self_q2 <- pairs_primary_long_q2_self %>% 
+    filter(!is.na(initial_score),
+         !is.na(follow_up_score)) %>% 
+  group_by(client_system_id) %>% 
+  summarise(initial_total = sum(initial_score, na.rm = TRUE),
+            followup_total = sum(follow_up_score, na.rm = TRUE),
+            score_change = followup_total - initial_total,
+            positive_outcome = ifelse(followup_total > initial_total, 1, 0),
+            initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  filter(between(initial_total, 7, 35),
+         between(followup_total, 7, 35))  
+
+# summary stats
+tab <- score_diff_self_q2 %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(positive_outcome) %>% 
+  adorn_pct_formatting(digits = 0)
+
+tab 
+```
+
+Plot it.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+q2_self_score_long <- score_diff_self_q2 %>%
+  ungroup() %>% 
+  select(client_system_id, initial_total, followup_total) %>% 
+  pivot_longer(
+    cols = c(initial_total, followup_total),
+    names_to = "score_type",
+    values_to = "score_value"
+  ) %>%
+  mutate(
+    score_type = recode(score_type,
+                        "initial_total" = "Initial",
+                        "followup_total" = "Follow-up"),
+    score_type = factor(score_type,
+                        levels = c("Initial", "Follow-up"))
+  )
+
+# Plot
+self_q2_plot <- ggplot(q2_self_score_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    #binwidth = 1, 
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width = 0.8,
+    alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Measure: Improved Daily Life Functioning Score (7-35)", 
+       y = "Count",
+       title = "Distribution of Initial and Follow-up Scores, NOMS Self Q2") +
+  theme_minimal()+
+  theme(
+     axis.title = element_text(size = 9),
+     axis.text = element_text(size = 9),
+     panel.grid.major = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+     legend.position = "inside",
+     legend.justification = c("left", "top"),
+     legend.title = element_blank(),
+     legend.text = element_text(size = 8),
+     plot.margin = margin(5, 5, 5, 5)) 
+  
+self_q2_plot
+```
+
+Ridgeline plot
+
+```{r}
+
+library(ggridges)
+
+# summary stats by score type
+summary_stats_self_q2 <- q2_self_score_long %>% 
+  group_by(score_type) %>% 
+  summarise(
+    mean_score = mean(score_value, na.rm = TRUE), 
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score = sd(score_value, na.rm = TRUE), 
+    n = sum(!is.na(score_value))
+  ) %>% 
+  mutate(y_text = if_else(score_type == "Initial", 1.155, 1.165))
+
+summary_stats_self_q2
+#clipr::write_clip(summary_stats_self_q2)
+
+# Ridgeline plot
+q2_ridge_plot_self <- ggplot(q2_self_score_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  #scale_x_continuous(limits = c(0,6), breaks = c(1, 2, 3, 4, 5)) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Measure: Daily Life Functioning Score (1-5 Likert Scale)", 
+       y = NULL,
+       title = "Distribution of Initial and Follow-up Scores, NOMS self") +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x = element_text(size = 9, hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 9),
+    panel.grid = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 5),
+    plot.title = element_text(size = 11)
+  ) + 
+  geom_segment(data = summary_stats_self_q2, 
+               aes(x = median_score, y = 1,
+                   xend = median_score, yend = 1.135,
+                   color = "grey30"), linetype = "dotted") + 
+  geom_text(data = summary_stats_self_q2,
+            aes(x = median_score, y = y_text, 
+                label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+                vjust = 2, hjust = 0.5, size = 2)
+
+q2_ridge_plot_self
+```
+
+#### Summary stats
+
+The percent of those who had total scores of 28 or higher (scores of 4\*7 questions) across Q2 at initial and discharge time points were:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# % of those who had total scores of 28 or higher (scores of 4*7 questions) across Q2
+tab5 <- score_diff_self_q2 %>% 
+  ungroup() %>% 
+  summarise(
+    initial_28 = round(100 * (mean(initial_total[!is.na(initial_total)] >= 28, na.rm = TRUE)), 2),
+    followup_28 = round(100 * (mean(followup_total[!is.na(followup_total)] >= 28, na.rm = TRUE)), 2)
+  )
+
+tab5
+```
+
+#### Summary stats overall
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+library(scales)
+# % of those who had total scores of 28 or higher (scores of 4*7 questions) across Q2
+dfq2 <- tribble(
+  ~group, ~ initial, ~followup,
+  "Child", 35.31,	66.88,
+  "Self", 44.91, 57.64
+)
+
+dot_and_arrow_plot_4_5_q2 <- ggplot(dfq2, aes(y = group)) + 
+  geom_segment(aes(x = initial, xend = followup, yend = group),
+               arrow = arrow(length = unit(0.2, "cm")),
+               color = "gray40", linewidth = 0.8) + 
+  #initial
+  geom_point(aes(x = initial, color = "Initial"), size = 12, show.legend = TRUE) + 
+  geom_text(aes(x = initial, label = paste0(round(initial), "%")),
+            size = 3.5, color = "grey20") +
+  #followup
+  geom_point(aes(x = followup, color = "Follow-up"), size = 12, show.legend = TRUE)+
+  geom_text(aes(x = followup, label = paste0(round(followup), "%")),
+            size = 3.5, color = "grey20") +
+  scale_x_continuous(
+    limits = c(0, 100),
+    labels = label_percent(scale = 1)
+  ) +
+  scale_color_manual(
+    name = "Timepoint",
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49")
+  )+
+  labs(
+    x = "Score",
+    y = "",
+    title = "Change in direction of total scores for those who scored 28 or higher on NOMS Q2 by subgroup") + 
+  theme_minimal()+
+  theme(
+     axis.title = element_text(size = 9),
+     axis.text = element_text(size = 9),
+     panel.grid.major = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+     legend.text = element_text(size = 8),
+     legend.position = "inside",
+     legend.justification = c("left", "top"),
+     plot.margin = margin(5, 5, 5, 5))  
+
+dot_and_arrow_plot_4_5_q2
+```
+
+## 3.07/3.08 NOMS Q3: Improved well-being
+
+### Child
+
+Range: 7-35
+
+Sum = Q3a+...+Q3g
+
+Use the `pairs_primary_long` data frame to compute scores. The following had a positive outcome by follow-up quarter:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q3 <- pairs_primary_long %>% 
+  filter(str_detect(question, "^x3.*_score$"))
+
+# compute differences in f/u and initial scores
+score_diff_child_q3 <- pairs_primary_long_q3 %>% 
+  filter(!is.na(initial_score),
+         !is.na(follow_up_score)) %>% 
+  group_by(system_id) %>% 
+  summarise(initial_total = sum(initial_score, na.rm = TRUE),
+            followup_total = sum(follow_up_score, na.rm = TRUE),
+            score_change = followup_total - initial_total,
+            positive_outcome = ifelse(followup_total > initial_total, 1, 0),
+            initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))) %>% 
+  distinct(system_id, .keep_all = TRUE) %>% 
+  filter(between(initial_total, 7, 35),
+         between(followup_total, 7, 35))  
+
+# summary stats
+tab <- score_diff_child_q3 %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(positive_outcome) %>% 
+  adorn_pct_formatting(digits = 0) 
+  
+tab 
+```
+
+Plot it.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+q3_child_score_long <- score_diff_child_q3 %>%
+  ungroup() %>% 
+  select(system_id, initial_total, followup_total) %>% 
+  pivot_longer(
+    cols = c(initial_total, followup_total),
+    names_to = "score_type",
+    values_to = "score_value"
+  ) %>%
+  mutate(
+    score_type = recode(score_type,
+                        "initial_total" = "Initial",
+                        "followup_total" = "Follow-up"),
+    score_type = factor(score_type,
+                        levels = c("Initial", "Follow-up"))
+  )
+
+# Plot
+child_q3_plot <- ggplot(q3_child_score_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    #binwidth = 1, 
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width = 0.8,
+    alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Measure: Improved Well-Being Score (7-35)", 
+       y = "Count",
+       title = "Distribution of Initial and Follow-up Scores, NOMS Child Q3") +
+  theme_minimal()+
+  theme(
+     axis.title = element_text(size = 9),
+     axis.text = element_text(size = 9),
+     panel.grid.major = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+     legend.position = "inside",
+     legend.justification = c("left", "top"),
+     legend.title = element_blank(),
+     legend.text = element_text(size = 8),
+     plot.margin = margin(5, 5, 5, 5))  
+  
+child_q3_plot
+```
+
+Ridgeline plot
+
+```{r}
+# summary stats by score type
+summary_stats_child_q3 <- q3_child_score_long %>% 
+  group_by(score_type) %>% 
+  summarise(
+    mean_score = mean(score_value, na.rm = TRUE), 
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score = sd(score_value, na.rm = TRUE), 
+    n = sum(!is.na(score_value))
+  ) %>% 
+  mutate(y_text = if_else(score_type == "Initial", 1.09, 1.095))
+
+summary_stats_child_q3
+#clipr::write_clip(summary_stats_child_q3)
+
+# Ridgeline plot
+q3_ridge_plot_child <- ggplot(q3_child_score_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Measure: Improved Well-Being Score (1-5 Likert Scale)", 
+       y = NULL,
+       title = "Distribution of Initial and Follow-up Scores, NOMS Child") +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x = element_text(size = 9, hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 9),
+    panel.grid = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 5),
+    plot.title = element_text(size = 11)
+  ) + 
+  geom_segment(data = summary_stats_child_q3, 
+               aes(x = median_score, y = 1,
+                   xend = median_score, yend = 1.08,
+                   color = "grey30"), linetype = "dotted") + 
+  geom_text(data = summary_stats_child_q3,
+            aes(x = median_score, y = y_text,
+                label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+                vjust = 2, hjust = 0.5, size = 2)
+
+q3_ridge_plot_child
+```
+
+#### Summary stats
+
+The percent of those who had total scores 28 or higher on Q2 at initial and discharge time points were:
+
+Change in direction of total scores for those who scored 28 or higher on NOMS Q2 by subgroup"
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# % of those who selected 4 or higher on question 1
+tab5 <- score_diff_child_q3 %>% 
+  ungroup() %>% 
+  summarise(
+     initial_28 = round(100 * (mean(initial_total[!is.na(initial_total)] >= 28, na.rm = TRUE)), 2),
+    followup_28 = round(100 * (mean(followup_total[!is.na(followup_total)] >= 28, na.rm = TRUE)), 2)
+  )
+
+tab5
+```
+
+### Self
+
+Range: 7-35
+
+Sum = Q3a+...+Q3g
+
+Use the `pairs_primary_long_self` data frame to compute scores. The following had a positive outcome by follow-up quarter:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q3_self <- pairs_primary_long_self %>% 
+  filter(str_detect(question, "^x3.*_score$"))
+
+# compute differences in f/u and initial scores
+score_diff_self_q3 <- pairs_primary_long_q3_self %>% 
+  filter(!is.na(initial_score),
+         !is.na(follow_up_score)) %>% 
+  group_by(client_system_id) %>% 
+  summarise(initial_total = sum(initial_score, na.rm = TRUE),
+            followup_total = sum(follow_up_score, na.rm = TRUE),
+            score_change = followup_total - initial_total,
+            positive_outcome = ifelse(followup_total > initial_total, 1, 0),
+            initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  filter(between(initial_total, 7, 35),
+         between(followup_total, 7, 35))
+
+# summary stats
+tab <- score_diff_self_q3 %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(positive_outcome) %>% 
+  adorn_pct_formatting(digits = 0) 
+
+tab 
+```
+
+Plot it.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+q3_self_score_long <- score_diff_self_q3 %>%
+  ungroup() %>% 
+  select(client_system_id, initial_total, followup_total) %>% 
+  pivot_longer(
+    cols = c(initial_total, followup_total),
+    names_to = "score_type",
+    values_to = "score_value"
+  ) %>%
+  mutate(
+    score_type = recode(score_type,
+                        "initial_total" = "Initial",
+                        "followup_total" = "Follow-up"),
+    score_type = factor(score_type,
+                        levels = c("Initial", "Follow-up"))
+  )
+
+# Plot
+self_q3_plot <- ggplot(q3_self_score_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    #binwidth = 1, 
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width = 0.8,
+    alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Measure: Improved Well-Being Score (7-35)", 
+       y = "Count",
+       title = "Distribution of Initial and Follow-up Scores, NOMS Self Q3") +
+  theme_minimal()+
+  theme(
+     axis.title = element_text(size = 9),
+     axis.text = element_text(size = 9),
+     panel.grid.major = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+     legend.position = "inside",
+     legend.justification = c("left", "top"),
+     legend.title = element_blank(),
+     legend.text = element_text(size = 8),
+     plot.margin = margin(5, 5, 5, 5))  
+  
+self_q3_plot
+```
+
+Ridgeline plot
+
+```{r}
+# summary stats by score type
+summary_stats_self_q3 <- q3_self_score_long %>% 
+  group_by(score_type) %>% 
+  summarise(
+    mean_score = mean(score_value, na.rm = TRUE), 
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score = sd(score_value, na.rm = TRUE), 
+    n = sum(!is.na(score_value))
+  ) %>% 
+  mutate(y_text = if_else(score_type == "Initial", 1.085, 1.09))
+
+summary_stats_self_q3
+#clipr::write_clip(summary_stats_self_q3)
+
+# Ridgeline plot
+q3_ridge_plot_self <- ggplot(q3_self_score_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Measure: Improved Well-Being Score (1-5 Likert Scale)", 
+       y = NULL,
+       title = "Distribution of Initial and Follow-up Scores, NOMS Self") +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x = element_text(size = 9, hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 9),
+    panel.grid = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 5),
+    plot.title = element_text(size = 11)
+  ) + 
+  geom_segment(data = summary_stats_self_q3, 
+               aes(x = median_score, y = 1,
+                   xend = median_score, yend = 1.08,
+                   color = "grey30"), linetype = "dotted") + 
+  geom_text(data = summary_stats_self_q3,
+            aes(x = median_score, y = 1.09, 
+                label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+            vjust = 2, hjust = 0.5, size = 2)
+
+q3_ridge_plot_self
+```
+
+#### Summary stats
+
+The percent of those who selected ratings of 4 or higher (excellent or very good) across Q1 at initial and discharge time points were:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# % of those who selected 4 or higher on question 1
+tab5 <- score_diff_self_q3 %>% 
+  ungroup() %>% 
+  summarise(
+     initial_28 = round(100 * (mean(initial_total[!is.na(initial_total)] >= 28, na.rm = TRUE)), 2),
+    followup_28 = round(100 * (mean(followup_total[!is.na(followup_total)] >= 28, na.rm = TRUE)), 2)
+  )
+
+tab5
+```
+
+#### Summary stats overall
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+library(scales)
+# % of those who selected 4 or higher on question 1
+dfq3 <- tribble(
+  ~group, ~ initial, ~followup,
+  "Child", 45.61, 60.14,
+  "Self", 33.98, 44.48
+)
+
+dot_and_arrow_plot_4_5_q3 <- ggplot(dfq3, aes(y = group)) + 
+  geom_segment(aes(x = initial, xend = followup, yend = group),
+               arrow = arrow(length = unit(0.2, "cm")),
+               color = "gray40", linewidth = 0.8) + 
+  #initial
+  geom_point(aes(x = initial, color = "Initial"), size = 12, show.legend = TRUE) + 
+  geom_text(aes(x = initial, label = paste0(round(initial), "%")),
+            size = 3.5, color = "grey20") +
+  #followup
+  geom_point(aes(x = followup, color = "Follow-up"), size = 12, show.legend = TRUE)+
+  geom_text(aes(x = followup, label = paste0(round(followup), "%")),
+            size = 3.5, color = "grey20") +
+  scale_x_continuous(
+    limits = c(0, 100),
+    labels = label_percent(scale = 1)
+  ) +
+  scale_color_manual(
+    name = "Timepoint",
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49")
+  )+
+  labs(
+    x = "Score",
+    y = "",
+    title = "Change in direction of total scores for those who scored 28 or higher on NOMS Q3 by subgroup") + 
+  theme_minimal()+
+  theme(
+     axis.title = element_text(size = 9),
+     axis.text = element_text(size = 9),
+     panel.grid.major = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+     legend.text = element_text(size = 8),
+     legend.position = "inside",
+    legend.justification = c("left", "top"),
+     plot.margin = margin(5, 5, 5, 5))  
+
+dot_and_arrow_plot_4_5_q3
+```
+
+## 3.09/3.10 NOMS Q4: Improved social connectedness
+
+### Child
+
+Range: 6-30
+
+Sum = Q4a+...+Q4f
+
+Use the `pairs_primary_long` data frame to compute scores. The following had a positive outcome by follow-up quarter:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q4 <- pairs_primary_long %>% 
+  filter(str_detect(question, "^x4.*_score$"))
+
+# compute differences in f/u and initial scores
+score_diff_child_q4 <- pairs_primary_long_q4 %>% 
+    filter(!is.na(initial_score),
+         !is.na(follow_up_score)) %>% 
+  group_by(system_id) %>% 
+  summarise(initial_total = sum(initial_score, na.rm = TRUE),
+            followup_total = sum(follow_up_score, na.rm = TRUE),
+            score_change = followup_total - initial_total,
+            positive_outcome = ifelse(followup_total > initial_total, 1, 0),
+            initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))) %>% 
+  distinct(system_id, .keep_all = TRUE) %>% 
+  filter(between(initial_total, 6, 30),
+         between(followup_total, 6, 30))  
+
+# summary stats
+tab <- score_diff_child_q4 %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(positive_outcome) %>% 
+  adorn_pct_formatting(digits = 0) 
+
+tab 
+```
+
+Plot it.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+q4_child_score_long <- score_diff_child_q4 %>%
+  ungroup() %>% 
+select(system_id, initial_total, followup_total) %>% 
+ pivot_longer(
+    cols = c(initial_total, followup_total),
+    names_to = "score_type",
+    values_to = "score_value"
+  ) %>%
+  mutate(
+    score_type = recode(score_type,
+                        "initial_total" = "Initial",
+                        "followup_total" = "Follow-up"),
+    score_type = factor(score_type,
+                        levels = c("Initial", "Follow-up"))
+  )
+
+# Plot
+child_q4_plot <- ggplot(q4_child_score_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    #binwidth = 1, 
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width = 0.8,
+    alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Measure: Improved social connectedness Score (6-30)", 
+       y = "Count",
+       title = "Distribution of Initial and Follow-up Scores, NOMS Child Q4") +
+  theme_minimal()+
+  theme(
+     axis.title = element_text(size = 9),
+     axis.text = element_text(size = 9),
+     panel.grid.major = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+     legend.position = "inside",
+     legend.justification = c("left", "top"),
+     legend.title = element_blank(),
+     legend.text = element_text(size = 8),
+     plot.margin = margin(5, 5, 5, 5))  
+  
+child_q4_plot
+```
+
+Ridgeline plot
+
+```{r}
+# summary stats by score type
+summary_stats_child_q4 <- q4_child_score_long %>% 
+  group_by(score_type) %>% 
+  summarise(
+    mean_score = mean(score_value, na.rm = TRUE), 
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score = sd(score_value, na.rm = TRUE), 
+    n = sum(!is.na(score_value))
+  )
+
+summary_stats_child_q4
+#clipr::write_clip(summary_stats_child_q4)
+
+# Ridgeline plot
+q4_ridge_plot_child <- ggplot(q4_child_score_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Measure: Improved Social Connectedness Score (1-5 Likert Scale)", 
+       y = NULL,
+       title = "Distribution of Initial and Follow-up Scores, NOMS Child") +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x = element_text(size = 9, hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 9),
+    panel.grid = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 5),
+    plot.title = element_text(size = 11)
+  ) + 
+  geom_segment(data = summary_stats_child_q4, 
+               aes(x = median_score, y = 1,
+                   xend = median_score, yend = 1.13,
+                   color = "grey30"), linetype = "dotted") +
+  geom_text(data = summary_stats_child_q4,
+            aes(x = median_score, y = 1.14,
+                label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+                vjust = 2, hjust = 0.5, size = 2)
+
+q4_ridge_plot_child
+```
+
+#### Summary stats
+
+The percent of those who had total scores of 24 or higher (6\*4) across Q4 at initial and discharge time points were:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# % of those who had >=24 total score on Q4
+tab5 <- score_diff_child_q4 %>% 
+  ungroup() %>% 
+  summarise(
+     initial_24 = round(100 * (mean(initial_total[!is.na(initial_total)] >= 24, na.rm = TRUE)), 2),
+    followup_24 = round(100 * (mean(followup_total[!is.na(followup_total)] >= 24, na.rm = TRUE)), 2)
+  )
+
+tab5
+```
+
+### Self
+
+Range: 6-30
+
+Sum = Q4a+...+Q4f
+
+Use the `pairs_primary_long_self` data frame to compute scores. The following had a positive outcome by follow-up quarter:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q4_self <- pairs_primary_long_self %>% 
+  filter(str_detect(question, "^x4.*_score$"))
+
+# compute differences in f/u and initial scores
+score_diff_self_q4 <- pairs_primary_long_q4_self %>% 
+  filter(!is.na(initial_score),
+         !is.na(follow_up_score)) %>% 
+  group_by(client_system_id) %>% 
+  summarise(initial_total = sum(initial_score, na.rm = TRUE),
+            followup_total = sum(follow_up_score, na.rm = TRUE),
+            score_change = followup_total - initial_total,
+            positive_outcome = ifelse(followup_total > initial_total, 1, 0),
+            initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))) %>%
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  filter(between(initial_total, 6, 30),
+         between(followup_total, 6, 30))
+
+# summary stats
+tab <- score_diff_self_q4 %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(positive_outcome) %>% 
+  adorn_pct_formatting(digits = 0) 
+
+tab 
+```
+
+Plot it.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+q4_self_score_long <- score_diff_self_q4 %>%
+  ungroup() %>% 
+  select(client_system_id, initial_total, followup_total) %>% 
+  pivot_longer(
+    cols = c(initial_total, followup_total),
+    names_to = "score_type",
+    values_to = "score_value"
+  ) %>%
+  mutate(
+    score_type = recode(score_type,
+                        "initial_total" = "Initial",
+                        "followup_total" = "Follow-up"),
+    score_type = factor(score_type,
+                        levels = c("Initial", "Follow-up"))
+  )
+
+# Plot
+self_q4_plot <- ggplot(q4_self_score_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    #binwidth = 1, 
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width = 0.8,
+    alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Measure: Improved Social Connectedness Score (6-30)", 
+       y = "Count",
+       title = "Distribution of Initial and Follow-up Scores, NOMS Self Q4") +
+  theme_minimal()+
+  theme(
+    axis.title = element_text(size = 9),
+    axis.text = element_text(size = 9),
+    panel.grid.major = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 5))  
+
+self_q4_plot
+```
+
+Ridgeline plot
+
+```{r}
+# summary stats by score type
+summary_stats_self_q4 <- q4_self_score_long %>% 
+  group_by(score_type) %>% 
+  summarise(
+    mean_score = mean(score_value, na.rm = TRUE), 
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score = sd(score_value, na.rm = TRUE), 
+    n = sum(!is.na(score_value))
+  ) %>% 
+  mutate(y_text = if_else(score_type == "Initial", 1.1, 1.11))
+
+summary_stats_self_q4
+#clipr::write_clip(summary_stats_self_q3)
+
+# Ridgeline plot
+q4_ridge_plot_self <- ggplot(q4_self_score_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Measure: Improved Social Connectedness Score (1-5 Likert Scale)", 
+       y = NULL,
+       title = "Distribution of Initial and Follow-up Scores, NOMS Self") +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x = element_text(size = 9, hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 9),
+    panel.grid = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 5),
+    plot.title = element_text(size = 11)
+  ) + 
+  geom_segment(data = summary_stats_self_q4, 
+               aes(x = median_score, y = 1,
+                   xend = median_score, yend = 1.15,
+                   color = "grey30"), linetype = "dotted") + 
+  geom_text(data = summary_stats_self_q4,
+            aes(x = 24, y = 1.16, 
+                label = paste0("Initial and Follow-up Median =", round(median_score, 2))),
+            vjust = 2, hjust = 0.5, size = 2)
+
+q4_ridge_plot_self
+```
+
+#### Summary stats
+
+The percent of those who selected ratings of 4 or higher (excellent or very good) across Q4 at initial and discharge time points were:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# % of those who selected >= 24 total score on Q4
+tab5 <- score_diff_self_q4 %>% 
+  ungroup() %>% 
+  summarise(
+     initial_24 = round(100 * (mean(initial_total[!is.na(initial_total)] >= 24, na.rm = TRUE)), 2),
+    followup_24 = round(100 * (mean(followup_total[!is.na(followup_total)] >= 24, na.rm = TRUE)), 2)
+  )
+
+tab5
+```
+
+#### Summary stats overall
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+library(scales)
+# % of those who selected 4 or higher on question 4
+dfq4 <- tribble(
+  ~group, ~ initial, ~followup,
+  "Child", 56.96,	77.22,	
+  "Self", 55.2,	65.84			
+)
+
+dot_and_arrow_plot_4_5_q4 <- ggplot(dfq4, aes(y = group)) + 
+  geom_segment(aes(x = initial, xend = followup, yend = group),
+               arrow = arrow(length = unit(0.2, "cm")),
+               color = "gray40", linewidth = 0.8) + 
+  #initial
+  geom_point(aes(x = initial, color = "Initial"), size = 12, show.legend = TRUE) + 
+  geom_text(aes(x = initial, label = paste0(round(initial), "%")),
+            size = 3.5, color = "grey20") +
+  #followup
+  geom_point(aes(x = followup, color = "Follow-up"), size = 12, show.legend = TRUE)+
+  geom_text(aes(x = followup, label = paste0(round(followup), "%")),
+            size = 3.5, color = "grey20") +
+  scale_x_continuous(
+    limits = c(0, 100),
+    labels = label_percent(scale = 1)
+  ) +
+  scale_color_manual(
+    name = "Timepoint",
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49")
+  )+
+  labs(
+    x = "Score",
+    y = "",
+    title = "Change in direction of total scores for those who scored 24 or higher on NOMS Q4 by subgroup") + 
+  theme_minimal()+
+  theme(
+    axis.title = element_text(size = 9),
+    axis.text = element_text(size = 9),
+    panel.grid.major = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.text = element_text(size = 8),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    plot.margin = margin(5, 5, 5, 5))  
+
+dot_and_arrow_plot_4_5_q4
+```
+
+## 3.12 Reductions in parent-related stress (PSS)
+
+**Definition:** PSS item(s) measuring reduction in parent/caregiver-related stress after the intervention. Assessments showing improvement from pre- to post-time point for clients who discharged from an intervention during the designated time frame.
+
+**Calculation:** Sum of Q1--Q18 (reverse Q4, Q5, Q7, Q8); this KPI represents the percent of assessments that show clients who have improvement from pre-post time points out of the total number of assessments from clients who discharge from the intervention and complete pre-post measures by period(s).
+
+**Scoring:** To calculate a total PSS score, items 1, 2, 5, 6, 7, 8, 17, and 18 should be reverse scored as follows: (1=5) (2=4) (3=3) (4=2) (5=1). The PSS score is then obtained by summing across all items. Higher scores indicate higher levels of perceived stress. If follow-up is LOWER than initial, that indicates a positive outcome.
+
+-   1 = Strongly disagree
+
+-   2 = Disagree
+
+-   3 = Undecided
+
+-   4 = Agree
+
+-   5 = Strongly Agree
+
+**Assumptions:** Total score = NA if 2+ items are missing; used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
+
+**Range:** 18 - 90
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+raw_pss <- read.csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/PSS.csv", na = c("-", "", "NA", "N/A", "0"), header = FALSE) 
+h1 <- unlist(raw_pss[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(raw_pss[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+pss <- raw_pss[-c(1, 2), ]
+names(pss) <- new_names
+pss <- pss %>%
+  select(where(~ !all(is.na(.))))
+
+#reverse scored q's
+rev_idx <- c(1, 2, 5, 6, 7, 8, 17, 18)
+
+#score cols
+score_cols <- names(pss)[endsWith(names(pss), "_score")]
+
+#make sure columns are numeric
+#add a total score column, which = NA if 2+ items are missing and reverse scoring correct items
+#make sure it's date formatted
+pss_scores <- pss %>% 
+  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(
+    missing_count = sum(is.na(c_across(all_of(score_cols)))),
+    total_score = {
+      vals <- c_across(all_of(score_cols))
+      vals[rev_idx] <- 6 - vals[rev_idx]
+      sum(vals, na.rm = TRUE)
+      }) %>% 
+  ungroup %>% 
+  mutate(
+    total_score = ifelse(missing_count >= 2, NA_real_, total_score),
+    date_completed = as.Date(date_completed),
+    row_id = row_number()                # stable row id for disambiguation
+  ) %>% 
+  select(client_system_id, collection, date_completed, total_score)
+  
+pss_paired <- pss_scores %>%
+  group_by(client_system_id) %>%
+  arrange(date_completed, .by_group = TRUE) %>%
+  summarise(
+    n_assessments = n(),
+    initial_date  = first(date_completed),
+    initial_score = first(total_score),
+    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
+    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
+  ) %>%
+  ungroup() %>% 
+  filter(
+    !is.na(follow_up_date)
+  ) %>% 
+  mutate(
+    positive_outcome = ifelse(follow_up_score < initial_score, 1, 0), 
+    score_change = follow_up_score - initial_score,
+    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+    
+# summary stats
+tab <- pss_paired %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(positive_outcome) %>% 
+  adorn_pct_formatting(digits = 0) 
+
+tab 
+```
+
+Plot it.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+pss_paired_long <- pss_paired %>%
+  ungroup() %>% 
+  select(client_system_id, initial_score, follow_up_score) %>% 
+  pivot_longer(
+    cols = c(initial_score, follow_up_score),
+    names_to = "score_type",
+    values_to = "score_value"
+  ) %>%
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score" = "Initial",
+                        "follow_up_score" = "Follow-up"),
+    score_type = factor(score_type,
+                        levels = c("Initial", "Follow-up"))
+  )
+
+# Plot
+pss_plot <- ggplot(pss_paired_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    #binwidth = 1, 
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width = 0.8,
+    alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Score", 
+       y = "Count",
+       title = "Distribution of Initial and Follow-up Scores, PSS") +
+  theme_minimal()+
+  theme(
+     axis.title = element_text(size = 9),
+     axis.text = element_text(size = 9),
+     panel.grid.major = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+     legend.position = "inside",
+     legend.justification = c("left", "top"),
+     legend.title = element_blank(),
+     legend.text = element_text(size = 8),
+     plot.margin = margin(5, 5, 5, 5)) 
+  
+pss_plot
+```
+
+Ridgeline plot
+
+```{r}
+# summary stats by score type
+summary_stats_pss <- pss_paired_long %>% 
+  group_by(score_type) %>% 
+  summarise(
+    mean_score = mean(score_value, na.rm = TRUE), 
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score = sd(score_value, na.rm = TRUE), 
+    n = sum(!is.na(score_value))
+  ) %>% 
+  mutate(y_text = if_else(score_type == "Follow-up", 1.08, 1.085))
+
+summary_stats_pss
+#clipr::write_clip(summary_stats_pss)
+
+# Ridgeline plot
+pss_ridge_plot <- ggplot(pss_paired_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  #scale_x_continuous(limits = c(0,6), breaks = c(1, 2, 3, 4, 5)) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "PSS Score", 
+       y = NULL,
+       title = "Distribution of Initial and Follow-up Scores, PSS (lower is better)") +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x = element_text(size = 9, hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 9),
+    panel.grid = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 5),
+    plot.title = element_text(size = 11)
+  ) + 
+  geom_segment(data = summary_stats_pss, 
+               aes(x = median_score, y = 1,
+                   xend = median_score, yend = 1.07,
+                   color = "grey30"), linetype = "dotted") + 
+  geom_text(data = summary_stats_pss,
+            aes(x = median_score, y = y_text, 
+                label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+                vjust = 2, hjust = 0.5, size = 2)
+
+pss_ridge_plot
+```
+
+## 3.13 Reductions in overall distress (YOQ)
+
+**Definition:** This KPI represents the percent of assessments that show clients who have improvement from pre-post time points out of the total number of assessments from clients who discharge from the intervention and complete pre-post measures by period(s).
+
+The YOQ total score reflects total distress in a client's life, with a high score reflecting increased distress related to experiencing a high number of symptoms, interpersonal difficulties, and decreased satisfaction and quality of life.
+
+**Range:** 0 - 120
+
+**Calculation:** Sum of 30 items (0-4 scale); invalid if 3+ items missing; total score only calculated if 28+ items completed; including those doing reliably better / total who took YOQ by quarter RCI = baseline score - follow-up score - RCI ≤ -10 doing reliably worse - RCI ≥ 10 doing reliably better
+
+**Assumptions:** A positive outcome was if a client was doing reliably better as defined by the YOQ RCI. I used follow-up quarter as the date. I used the LAST follow-up date if there were \>1 assessments. I filtered out NA's from "reliably better"
+
+### Caregiver
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+raw_yoq_caregiver <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/YOQ-caregiver.csv", na = c("-", "", "NA", "N/A")) %>% janitor::clean_names()
+
+#make sure columns are numeric
+#add a column for if there was any missing data, in case we want to exclude those rows later
+#add a total score column, which = NA if 3+ items are missing
+#make sure it's date formatted
+yoq_caregiver <- raw_yoq_caregiver %>% 
+  mutate(across(matches("^x"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(
+    missing_count = sum(is.na(c_across(starts_with("x")))),
+    total_score = ifelse(missing_count >= 3, NA_real_, sum(c_across(starts_with("x")), na.rm = TRUE))) %>% 
+  ungroup %>% 
+  mutate(
+    date_completed = as.Date(date_completed),
+    row_id = row_number()                # stable row id for disambiguation
+  ) %>% 
+  select(client_system_id, collection, date_completed, total_score)
+
+yoq_caregiver_paired <- yoq_caregiver %>%
+  group_by(client_system_id) %>%
+  arrange(date_completed, .by_group = TRUE) %>%
+  summarise(
+    n_assessments = n(),
+    initial_date  = first(date_completed),
+    initial_score = first(total_score),
+    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
+    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
+  ) %>%
+  ungroup() %>% 
+  filter(
+    !is.na(follow_up_date)
+  ) %>% 
+  mutate(
+    rci = initial_score - follow_up_score, 
+    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)),
+    reliably_better = rci >= 10)
+    
+# summary stats
+tab <- yoq_caregiver_paired %>% 
+  filter(!is.na(reliably_better),
+         rci != 0) %>% 
+  tabyl(reliably_better) %>% # true = doing reliably better
+  adorn_pct_formatting(digits = 0) 
+
+tab 
+
+#reliably changed
+reliable_change <- yoq_caregiver_paired %>% 
+  filter(rci >= 10 | rci <= -10)
+
+#these people did reliably better
+pos_rci <- reliable_change %>% 
+  filter(rci >= 10)
+
+#these people did reliably worse
+neg_rci <- reliable_change %>% 
+  filter(rci <= -10)
+
+#conditional color formatting
+yoq_caregiver_paired$rci_col <- as.factor((yoq_caregiver_paired[,7] > 10 | yoq_caregiver_paired[,7] <= -10)*1)
+
+yoq_caregiver_paired %>% 
+  ggplot(aes(rci)) + 
+  geom_histogram(aes(fill = rci_col), color = "white", binwidth = 4) +
+  theme_classic() +
+  scale_x_continuous(breaks = seq(-25, 50, 5), expand = c(0,0)) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Reliable Change Index",
+       y = "",
+       title = "Distribution of reliable change scores for YOQ Caregiver") +
+  scale_fill_manual("Reliable Change Index",
+                    labels = c("no meaningful change (n=93)", "meaningful change (n=114)"), 
+                    values = c("#ABDDDE", "#046C9A"))
+```
+
+### Self
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+raw_yoq_self <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/YOQ-self_report.csv", na = c("-", "", "NA", "N/A")) %>% janitor::clean_names()
+
+#make sure columns are numeric
+#add a column for if there was any missing data, in case we want to exclude those rows later
+#add a total score column, which = NA if 3+ items are missing
+#make sure it's date formatted
+yoq_self <- raw_yoq_self %>% 
+  mutate(across(matches("^x"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(
+    missing_count = sum(is.na(c_across(starts_with("x")))),
+    total_score = ifelse(missing_count >= 3, NA_real_, sum(c_across(starts_with("x")), na.rm = TRUE))) %>% 
+  ungroup %>% 
+  mutate(
+    date_completed = as.Date(date_completed),
+    row_id = row_number()                # stable row id for disambiguation
+  ) %>% 
+  select(client_system_id, collection, date_completed, total_score)
+
+yoq_self_paired <- yoq_self %>%
+  group_by(client_system_id) %>%
+  arrange(date_completed, .by_group = TRUE) %>%
+  summarise(
+    n_assessments = n(),
+    initial_date  = first(date_completed),
+    initial_score = first(total_score),
+    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
+    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
+  ) %>%
+  ungroup() %>% 
+  filter(
+    !is.na(follow_up_date)
+  ) %>% 
+  mutate(
+    rci = initial_score - follow_up_score, 
+    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)),
+    reliably_better = rci >= 10)
+    
+# summary stats
+tab <- yoq_self_paired %>% 
+  filter(!is.na(reliably_better),
+         rci != 0) %>% #grantees are copying initial scores, maybe?
+  tabyl(reliably_better) %>% 
+  adorn_pct_formatting(digits = 0)
+
+tab
+
+no_reliable_change <- yoq_self_paired %>% 
+  filter(rci <= 10 | rci >= -10) %>% 
+  filter(rci != 0)
+
+#reliably changed
+reliable_change <- yoq_self_paired %>% 
+  filter(rci >= 10 | rci <= -10)
+
+#these people did reliably better
+pos_rci <- reliable_change %>% 
+  filter(rci >= 10)
+
+#these people did reliably worse
+neg_rci <- reliable_change %>% 
+  filter(rci <= -10)
+
+#conditional color formatting
+yoq_self_paired$rci_col <- as.factor((yoq_self_paired[,7] > 10 | yoq_self_paired[,7] <= -10)*1)
+
+yoq_self_paired %>% 
+  filter(rci != 0) %>% 
+  ggplot(aes(rci)) + 
+  geom_histogram(aes(fill = rci_col), color = "white", binwidth = 1) +
+  theme_classic() +
+  scale_x_continuous(breaks = seq(-25, 50, 5), expand = c(0,0)) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Reliable Change Index",
+       y = "",
+       title = "Distribution of reliable change scores for YOQ Self") +
+  scale_fill_manual("Reliable Change Index",
+                    labels = c("no meaningful change (n=256)", "meaningful change (n=206)"), 
+                    values = c("#ABDDDE", "#046C9A"))
+```
+
+## Question 1.01 improved access to subpopulations
+
+### Race
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by race.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and race is recoded as follows:
+
+**Codebook:**
+
+0.  NA, don't know, prefer not to answer
+
+<!-- -->
+
+1.  Asian
+
+2.  Black or African American
+
+3.  Hispanic or Latino
+
+4.  Middle Eastern or North African
+
+5.  Native American/American Indian or Alaska Native
+
+6.  Native Hawaiian or Pacific Islander
+
+7.  White
+
+8.  2+ races selected
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have race characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients).
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+library(readr)
+library(tidyverse)
+
+# using all data to get quarters/interventions
+all_data <- read_csv("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
+
+all_data <- all_data %>% 
+  filter(!is.na(intervention_start), # has to have an intervention start date
+         !is.na(intervention_name)) # has to have an intervention type named
+
+tab <- all_data %>% 
+  filter(intervention_start >= "2024-01-01",
+         !is.na(code_num)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(intervention_start_quarter, code_num) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+
+tab <- all_data %>% 
+   filter(!is.na(client_type),
+          !is.na(code_num)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(client_type, code_num) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+
+#clipr::write_clip(tab)
+```
+
+### Insurance status
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by insurance status.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and insurance is recoded as follows:
+
+**Codebook:**
+
+0.  NA, don't know, prefer not to answer
+
+<!-- -->
+
+1.  Private insurance
+
+2.  Medi-Cal/Medi-Care
+
+3.  No Insurance Status Selected
+
+4.  No insurance/Indigent
+
+5.  Other
+
+6.  Veterans Benefits
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have insurance status characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients).
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+library(readr)
+library(tidyverse)
+
+# Define coding for single responses
+codebook_insurance <- c("Private Insurance" = 1, 
+              "Medi-Cal/Medi-Care" = 2, 
+              "No Insurance Status Selected" = 3,
+              "No insurance/Indigent" = 4,
+              "Other" = 5,
+              "Veterans Benefits" = 6)
+
+all_data <- all_data %>% 
+  mutate(
+    # normalize text a bit
+    insurance_status_clean = str_squish(insurance_status),
+    # make 3 categories missing
+    insurance_status_clean = if_else(
+      insurance_status_clean %in% c("Don't Know", "Prefer Not To Answer",
+                                    "Not Applicable") |
+      insurance_status_clean == "",
+      NA_character_,
+      insurance_status_clean),
+    # numeric code (NA if not in codebook or was set to NA above)
+    insurance_num = unname(codebook_insurance[insurance_status_clean]) %>% 
+      as.integer())
+  
+
+tab <- all_data %>% 
+  filter(intervention_start >= "2024-01-01",
+         !is.na(insurance_num)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(intervention_start_quarter, insurance_num) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab
+
+tab <- all_data %>% 
+  filter(!is.na(client_type),
+         !is.na(insurance_num)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(client_type, insurance_num) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+
+
+#clipr::write_clip(tab)
+```
+
+### Sexual orientation
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by sexual orientation.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and sexual orientation is recoded as follows:
+
+**Codebook:**
+
+1.  NA, don't know, prefer not to answer, no sexual orientation selected
+
+<!-- -->
+
+1.  Asexual
+
+2.  Bisexual
+
+3.  Lesbian/Gay
+
+4.  Other
+
+5.  Pansexual
+
+6.  Same Gender Loving
+
+7.  Straight
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have sexual orientation characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients).
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Define coding for single responses
+codebook_sexual_orientation <- c("Asexual" = 1, 
+              "Bisexual" = 2, 
+              "Lesbian/Gay" = 3,
+              "Other" = 4,
+              "Pansexual" = 5,
+              "Same Gender Loving" = 6,
+              "Straight" = 7)
+
+all_data <- all_data %>% 
+  mutate(
+    # normalize text a bit
+    sexual_orientation_clean = str_squish(sexual_orientation),
+    # make 3 categories missing
+    sexual_orientation_clean = if_else(
+      sexual_orientation_clean %in% c("Don't Know", 
+                                      "No Sexual Orientation Selected",
+                                      "Prefer Not To Answer",
+                                    "Not Applicable") |
+      sexual_orientation_clean == "",
+      NA_character_,
+      sexual_orientation_clean),
+    # numeric code (NA if not in codebook or was set to NA above)
+    sexual_orientation_num = unname(codebook_sexual_orientation[sexual_orientation_clean]) %>% 
+      as.integer())
+  
+
+tab <- all_data %>% 
+  filter(intervention_start >= "2024-01-01",
+         !is.na(sexual_orientation_num)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(intervention_start_quarter, sexual_orientation_num) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+
+tab <- all_data %>% 
+  filter(intervention_start >= "2024-01-01",
+         !is.na(sexual_orientation_num)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(client_type, sexual_orientation_num) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+#clipr::write_clip(tab)
+```
+
+### Gender identity
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by gender identity.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and gender identity is recoded as follows:
+
+**Codebook:**
+
+1.  NA, don't know, prefer not to answer
+
+<!-- -->
+
+1.  Genderqueer
+
+2.  Man/boy
+
+3.  No Gender Identity Selected
+
+4.  Non-binary
+
+5.  Transgender man/boy
+
+6.  Transgender woman/girl
+
+7.  Two-spirit
+
+8.  Woman/girl
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have gender identity characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients).
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Define coding for single responses
+codebook_gender_identity <- c("Genderqueer" = 1, 
+              "Man/boy" = 2, 
+              "No Gender Identify Selected" = 3,
+              "Non-binary" = 4,
+              "Transgender man/boy" = 5,
+              "Transgender woman/girl" = 6,
+              "Two-spirit" = 7,
+              "Woman/girl" = 8)
+
+all_data <- all_data %>% 
+  mutate(
+    # normalize text a bit
+    gender_identity_clean = str_squish(gender_identity),
+    # make 3 categories missing
+    gender_identity_clean = if_else(
+      gender_identity_clean %in% c("Don't Know", 
+                                      "Prefer Not To Answer",
+                                    "Not Applicable") |
+      gender_identity_clean == "",
+      NA_character_,
+      gender_identity_clean),
+    # numeric code (NA if not in codebook or was set to NA above)
+    gender_identity_num = unname(codebook_gender_identity[gender_identity_clean]) %>% 
+      as.integer())
+  
+
+tab <- all_data %>% 
+  filter(intervention_start >= "2024-01-01",
+         !is.na(gender_identity_num)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(intervention_start_quarter, gender_identity_num) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+
+#clipr::write_clip(tab)
+```
+
+## Preferred language
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by preferred language.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and preferred language is recoded as follows:
+
+**Codebook:**
+
+1.  NA, don't know, prefer not to answer, no preferred language selected
+
+<!-- -->
+
+1.  English
+
+2.  Spanish
+
+3.  Other
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have preferred language characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients). Any language with \<200 rows of data is grouped into "Other" category
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+all_data <- all_data %>% 
+  mutate(
+    # normalize text a bit
+    preferred_language_clean = str_squish(preferred_language),
+    # make 3 categories missing
+    preferred_language_clean = case_when(
+      preferred_language_clean %in% c("Don't Know", 
+                                      "Prefer Not To Answer",
+                                      "Not Applicable", 
+                                      "") ~ NA_character_,
+      preferred_language_clean %in% c("English", "Spanish") ~ preferred_language_clean,
+      TRUE ~ "Other"),
+    # numeric code (NA if not in codebook or was set to NA above)
+    preferred_language_num = case_when(
+      preferred_language_clean == "English" ~ 1,
+      preferred_language_clean == "Spanish" ~ 2,
+      preferred_language_clean == "Other" ~ 3,
+      TRUE ~ NA_integer_
+    ))
+  
+
+tab <- all_data %>% 
+  filter(intervention_start >= "2024-01-01",
+         !is.na(preferred_language_clean)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(intervention_start_quarter, preferred_language_clean) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+
+tab <- all_data %>% 
+  filter(!is.na(client_type),
+         !is.na(preferred_language_clean)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(client_type, preferred_language_clean) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+
+#clipr::write_clip(tab)
+```
+
+## Client_groups: primary language
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by primary language.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and primary language is recoded as follows:
+
+**Codebook:**
+
+0.  NA, don't know, prefer not to answer, no primary language selected
+
+<!-- -->
+
+1.  English
+
+2.  Spanish
+
+3.  Other
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have primary language characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients). Any language with \<200 rows of data is grouped into "Other" category
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+all_data <- all_data %>% 
+  mutate(
+    # normalize text a bit
+    primary_language_clean = str_squish(primary_language),
+    # make 3 categories missing
+    primary_language_clean = case_when(
+      primary_language_clean %in% c("Don't Know", 
+                                      "Prefer Not To Answer",
+                                      "Not Applicable", 
+                                      "") ~ NA_character_,
+      primary_language_clean %in% c("English", "Spanish") ~ primary_language_clean,
+      TRUE ~ "Other"),
+    # numeric code (NA if not in codebook or was set to NA above)
+    primary_language_num = case_when(
+      primary_language_clean == "English" ~ 1,
+      primary_language_clean == "Spanish" ~ 2,
+      primary_language_clean == "Other" ~ 3,
+      TRUE ~ NA_integer_
+    ))
+  
+
+tab <- all_data %>% 
+  filter(intervention_start >= "2024-01-01",
+         !is.na(primary_language_clean)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(intervention_start_quarter, primary_language_clean) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+
+tab <- all_data %>% 
+  filter(!is.na(client_type),
+         !is.na(primary_language_clean)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(client_type, primary_language_clean) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+#clipr::write_clip(tab)
+```
+
+## Client_groups: housing status
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by housing status.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and housing status is recoded as follows:
+
+**Codebook:**
+
+0.  NA, don't know, prefer not to answer, no housing status selected
+
+<!-- -->
+
+1.  Housed
+
+2.  Unhoused
+
+3.  Other (i.e. treatment facility)
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have housing status characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients).
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+all_data <- all_data %>% 
+  mutate(
+    # normalize text a bit
+    housing_status_clean = str_squish(housing_status),
+    # make 3 categories missing
+    housing_status_clean = case_when(
+      housing_status_clean %in% c("Don't Know", 
+                                      "Prefer Not To Answer",
+                                      "Not Applicable", 
+                                      "") ~ NA_character_,
+      housing_status_clean %in% c("Housed", "Unhoused") ~ housing_status_clean,
+      TRUE ~ "Other (i.e. treatment facility)"),
+    # numeric code (NA if not in codebook or was set to NA above)
+    housing_status_num = case_when(
+      housing_status_clean == "Housed" ~ 1,
+      housing_status_clean == "Unhoused" ~ 2,
+      housing_status_clean == "Other (i.e. treatment facility)" ~ 3,
+      TRUE ~ NA_integer_
+    ))
+  
+
+tab <- all_data %>% 
+  filter(intervention_start >= "2024-01-01",
+         !is.na(housing_status_clean)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(intervention_start_quarter, housing_status_clean) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+
+tab <- all_data %>% 
+  filter(!is.na(client_type),
+         !is.na(housing_status_clean)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(client_type, housing_status_clean) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab 
+
+#clipr::write_clip(tab)
+```
+
+## Rikke's SPSS master file
+
+**Count and Percent of Grantees Funded by Round**
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+library(haven)
+library(foreign)
+
+master_grantee_file <- foreign::read.spss("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Quant Team File/MasterGranteeSpreadsheet_forBHESQuantTeam_11-21-25.sav")
+```
