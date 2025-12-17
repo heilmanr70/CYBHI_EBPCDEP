@@ -49,7 +49,6 @@ data201$positive_outcomes <- factor(data201$positive_outcomes, levels = c("No", 
 ```
 
 ## % reported Mutually agreed upon cessation of Tx/successful completion at Discharge by location
-
 ```{r}
 perc_successful_table <- data201 %>% 
   group_by(location) %>% 
@@ -66,12 +65,253 @@ perc_successful_table %>%
 openxlsx::write.xlsx(perc_successful_table,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.01/perc_successful_table.xlsx")
 ```
 
+## % reported Mutually agreed upon cessation of Tx/successful completion at discharge by Region
+```{r}
+spss <- read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/SPSS Master File Exports/MasterGranteeSpreasheet_forBHESQuantTeam_11-21-25.xlsx") %>% 
+  rename_with(~ gsub("^@", "", .x)) %>% 
+  janitor::clean_names() %>% 
+  rename_with(~ gsub("^x", "", .x))
+
+data201_spss <- left_join(data201, spss, by = c("provider" = "1a_grantee_provider_name", "provider_id" = "2grantee_provider_id"))
+
+data201_spss <- data201_spss %>% 
+  rename(region = `8c_regions`)
+
+region_success <- data201_spss %>% 
+  group_by(region) %>% 
+  summarise(
+    total = n(),
+    successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+    perc_success = round(100 * successful / total, 1)
+  ) %>% 
+  clipr::write_clip()
+```
+
+###Mapping by region
+```{r}
+library(sf)
+library(tigris)
+options(tigris_use_cache = TRUE)
+
+county_table <- data201_spss %>%
+  group_by(region) %>%
+  summarise(
+    counties = paste(sort(unique(`8a_primary_county`)), collapse = ", ")
+  )
+
+county_table
+
+ca_counties <- counties("CA", cb = TRUE, class = "sf")
+region_lookup <- tibble::tribble(
+  ~county,         ~region,
+  # Region 1
+  "Butte",         1,
+  "Colusa",        1,
+  "El Dorado",     1,
+  "Glenn",         1,
+  "Lassen",        1,
+  "Modoc",         1,
+  "Nevada",        1,
+  "Placer",        1,
+  "Plumas",        1,
+  "Sacramento",    1,
+  "Shasta",        1,
+  "Sierra",        1,
+  "Siskiyou",      1,
+  "Sutter",        1,
+  "Tehama",        1,
+  "Yolo",          1,
+  "Yuba",          1,
+  # Region 2
+  "Del Norte",     2,
+  "Humboldt",      2,
+  "Lake",          2,
+  "Mendocino",     2,
+  "Napa",          2,
+  "Sonoma",        2,
+  "Trinity",       2,
+  # Region 3
+  "Alameda",       3,
+  "Contra Costa",  3,
+  "Marin",         3,
+  "San Francisco", 3,
+  "San Mateo",     3,
+  "Santa Clara",   3,
+  "Solano",        3,
+  # Region 4
+  "Alpine",        4,
+  "Amador",        4,
+  "Calaveras",     4,
+  "Madera",        4,
+  "Mariposa",      4,
+  "Merced",        4,
+  "Mono",          4,
+  "San Joaquin",   4,
+  "Stanislaus",    4,
+  "Tuolumne",      4,
+  # Region 5
+  "Monterey",      5,
+  "San Benito",    5,
+  "San Luis Obispo", 5,
+  "Santa Barbara", 5,
+  "Santa Cruz",    5,
+  "Ventura",       5,
+  # Region 6
+  "Fresno",        6,
+  "Inyo",          6,
+  "Kern",          6,
+  "Kings",         6,
+  "Tulare",        6,
+  # Region 7
+  "Riverside",     7,
+  "San Bernardino",7,
+  # Region 8
+  "Los Angeles",   8,
+  # Region 9
+  "Orange",        9,
+  # Region 10
+  "Imperial",      10,
+  "San Diego",     10
+)
+
+#join to counties
+ca_counties_region <- ca_counties %>%
+  mutate(
+    county = str_remove(NAME, " County$")  # NAME from TIGER is like "Alameda County"
+  ) %>%
+  left_join(region_lookup, by = "county")
+
+#make regional polygons
+ca_census_regions <- ca_counties_region %>%
+  group_by(region) %>%
+  summarise(geometry = sf::st_union(geometry), .groups = "drop") %>%
+  arrange(region)
+
+#plot to make sure it's right
+ggplot(ca_census_regions) +
+  geom_sf(aes(fill = factor(region)), color = "white", linewidth = 0.3) +
+  scale_fill_viridis_d(name = "Region") +
+  theme_minimal() +
+  labs(title = "California Census Regions (1–10)")
+
+#now merge with outcomes data
+ca_regions_data <- ca_census_regions %>% 
+  left_join(region_success, by = "region")
+
+#make label colors
+ca_regions_data <- ca_regions_data %>%
+  mutate(label_color = if_else(perc_success > 91, "white", "black"))
+
+#plot  
+ggplot(ca_regions_data) +
+  geom_sf(aes(fill = perc_success), color = "white", linewidth = 0.3) +
+  geom_sf_text(
+    aes(label = paste0("Region ", region, "\n", perc_success, "%"),
+    color = label_color
+        ),
+    size = 1.2,
+    lineheight = 0.9
+  ) +
+  scale_color_identity() +
+  scale_fill_viridis_c(
+    option = "C", 
+    direction = -1,
+    name = "% successful",
+    limits = c(90, 100)
+  ) +
+  labs(
+    title = "% Successful Outcomes by Region",
+    #subtitle = "California Census Regions",
+    fill = "% success"
+  )+
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    panel.grid = element_blank(),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 11)
+  )
+```
+
+###Mapping by primary county
+```{r}
+library(sf)
+library(tigris)
+options(tigris_use_cache = TRUE)
+
+ca_counties <- counties("CA", cb = TRUE, class = "sf") %>% 
+  janitor::clean_names()
+
+#plot counties
+ggplot(ca_counties) +
+  geom_sf(aes(fill = factor(name)), color = "white", linewidth = 0.3) +
+  scale_fill_viridis_d(name = "Region") +
+  theme_minimal() +
+  labs(title = "California Census Regions (1–10)")
+
+#get % success at county level
+county_success <- data201_spss %>% 
+  rename(primary_county = `8a_primary_county`) %>% 
+  group_by(primary_county) %>% 
+  summarise(
+    total = n(),
+    successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+    perc_success = round(100 * successful / total, 1)
+  )
+
+#now merge with outcomes data
+county_map_data <- ca_counties %>% 
+  left_join(county_success, by = c(name = "primary_county"))
+
+#make labels
+x_push <- diff(st_bbox(county_map_data)[c("xmin","xmax")]) * 0.45  # big push to the right
+
+#plot 
+ggplot(county_map_data) +
+  geom_sf(aes(fill = perc_success), color = "white", linewidth = 0.3) +
+  geom_text_repel(
+    data = county_map_data %>% filter(perc_success < threshold),
+    aes(geometry = geometry,
+        label = paste0(name, "\n", perc_success, "%")
+        ),
+    color = "black",
+    stat = "sf_coordinates",
+    nudge_x = -x_push,
+    direction = "y",
+    hjust = 1,
+    box.padding = 0.6,
+    point.padding = 0.4,
+    #force = 8,
+    max.overlaps = Inf,
+    min.segment.length = 0,
+    segment.size = 0.4,
+    size = 3.2
+  ) +
+  scale_fill_viridis_c(
+    option = "C", 
+    direction = -1,
+    name = "% successful",
+    limits = c(50, 100)
+  ) +
+  labs(
+    title = "% Successful Outcomes by Primary County",
+    subtitle = "Primary counties with <75% successful completion labeled",
+    fill = "% success"
+  )+
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    panel.grid = element_blank(),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 11)
+  ) +
+  coord_sf(clip = "off")
+```
+
+
 ## % of those who met Tx goals (% successful completion + improved score) by location"
-
-mutually agreed cessation of tx = 3782
-
-clinically referred out = 63
-
 ```{r}
 table(data201$reason_for_discharge)
 
@@ -80,6 +320,7 @@ data201_txgoals <- data201 %>%
          positive_outcomes == "Yes")
 
 data201 %>% 
+  filter(positive_outcomes == "Yes") %>% 
   tabyl(reason_for_discharge) %>% 
   adorn_pct_formatting(digits = 1) %>% 
   adorn_totals("row")
