@@ -1583,7 +1583,7 @@ dot_and_arrow_plot_4_5_q2 <- ggplot(dfq2, aes(y = group)) +
 dot_and_arrow_plot_4_5_q2
 ```
 
-## 3.07/3.08 NOMS Q3: Improved well-being 
+## 3.07/3.08 NOMS Q3: Improved well-being
 
 ### Child
 
@@ -2693,6 +2693,11 @@ tab
 reliable_change <- yoq_caregiver_paired %>% 
   filter(rci >= 10 | rci <= -10)
 
+#no reliable change
+no_reliable_change <- yoq_caregiver_paired %>%
+  filter(rci > -10, rci < 10,
+         rci != 0)  # strictly between -10 and 10
+
 #these people did reliably better
 pos_rci <- reliable_change %>% 
   filter(rci >= 10)
@@ -2705,8 +2710,9 @@ neg_rci <- reliable_change %>%
 yoq_caregiver_paired$rci_col <- as.factor((yoq_caregiver_paired[,7] > 10 | yoq_caregiver_paired[,7] <= -10)*1)
 
 yoq_caregiver_paired %>% 
+  filter(rci != 0) %>% 
   ggplot(aes(rci)) + 
-  geom_histogram(aes(fill = rci_col), color = "white", binwidth = 4) +
+  geom_histogram(aes(fill = rci_col), color = "white", binwidth = 1) +
   theme_classic() +
   scale_x_continuous(breaks = seq(-25, 50, 5), expand = c(0,0)) +
   scale_y_continuous(expand = c(0,0))+
@@ -2714,7 +2720,7 @@ yoq_caregiver_paired %>%
        y = "",
        title = "Distribution of reliable change scores for YOQ Caregiver") +
   scale_fill_manual("Reliable Change Index",
-                    labels = c("no meaningful change (n=93)", "meaningful change (n=114)"), 
+                    labels = c("no meaningful change (n=77)", "meaningful change (n=114)"), 
                     values = c("#ABDDDE", "#046C9A"))
 ```
 
@@ -2772,13 +2778,14 @@ tab <- yoq_self_paired %>%
 
 tab
 
-no_reliable_change <- yoq_self_paired %>% 
-  filter(rci <= 10 | rci >= -10) %>% 
-  filter(rci != 0)
-
 #reliably changed
 reliable_change <- yoq_self_paired %>% 
   filter(rci >= 10 | rci <= -10)
+
+#no reliable change
+no_reliable_change <- yoq_self_paired %>%
+  filter(rci > -10, rci < 10,
+         rci != 0)  # strictly between -10 and 10
 
 #these people did reliably better
 pos_rci <- reliable_change %>% 
@@ -2802,9 +2809,222 @@ yoq_self_paired %>%
        y = "",
        title = "Distribution of reliable change scores for YOQ Self") +
   scale_fill_manual("Reliable Change Index",
-                    labels = c("no meaningful change (n=256)", "meaningful change (n=206)"), 
+                    labels = c("no meaningful change (n=199)", "meaningful change (n=206)"), 
                     values = c("#ABDDDE", "#046C9A"))
 ```
+
+
+## 3.14 Basis-24 Reductions in adult problematic symptoms
+
+**Definition:** Basis-24 item(s) measuring reduction in parent/caregiver-related problematic symptoms after the intervention. Assessments showing improvement from pre- to post-time point for clients who discharged from an intervention during the designated time frame.
+
+**Calculation:** Sum of Q1-Q24 (reverse Q4-Q9); this KPI represents the percent of assessments that show clients who have improvement from pre-post time points out of the total number of assessments from clients who discharge from the intervention and complete pre-post measures by period(s).
+
+**Scoring:** Each item is rated on a five-point scale from 0, indicating the lowest severity of symptoms, to 4, indicating greatest severity of symptoms. It is important to note that the **rating values for items 4 through 9 are reversed**. Subscale and overall mean scores also range from 0 to 4. The overall range for this 24-item questionnaire is 0-96, with **higher global scores indicating greater functional impairment (lower is better)**.  
+
+The six distinct subscales are calculated by summing up and then dividing by the number of non-missing items for that subscale. An overall mean score is also calculated. For example, the Depression/Functioning subscale consists of six items. If the respondent answers all items in this subscale, then the subscale score is the mean of all six items. If one item is omitted, then the subscale score is the sum rating of the items answered, divided by five.
+
+There are no specified clinical cutoffs for the BASIS-24. Subjective interpretation of scores is made by the provider based on patient history and further investigation of reported symptoms.
+
+**Assumptions:** used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
+
+**Range:** 0-96
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+raw_basis24 <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/Basis-24.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE)
+h1 <- unlist(raw_basis24[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(raw_basis24[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+basis24 <- raw_basis24[-c(1, 2), ]
+names(basis24) <- new_names
+basis24 <- basis24 %>%
+  select(where(~ !all(is.na(.))))
+
+#reverse scored q's
+rev_idx <- c(4, 5, 6, 7, 8, 9)
+
+#score cols
+score_cols <- names(basis24)[endsWith(names(basis24), "_score")]
+
+#make sure columns are numeric
+#add a total score column, which = NA if 2+ items are missing and reverse scoring correct items
+#make sure it's date formatted
+basis24_scores <- basis24 %>% 
+  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(
+    missing_count = sum(is.na(c_across(all_of(score_cols)))),
+    total_score = {
+      vals <- c_across(all_of(score_cols))
+      vals[rev_idx] <- 6 - vals[rev_idx]
+      sum(vals, na.rm = TRUE)
+      }) %>% 
+  ungroup %>% 
+  mutate(
+    date_completed = as.Date(date_completed),
+    row_id = row_number()                # stable row id for disambiguation
+  ) %>% 
+  select(client_system_id, collection, date_completed, total_score)
+  
+basis24_paired <- basis24_scores %>%
+  group_by(client_system_id) %>%
+  arrange(date_completed, .by_group = TRUE) %>%
+  summarise(
+    n_assessments = n(),
+    initial_date  = first(date_completed),
+    initial_score = first(total_score),
+    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
+    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
+  ) %>%
+  ungroup() %>% 
+  filter(
+    !is.na(follow_up_date)
+  ) %>% 
+  mutate(
+    positive_outcome = ifelse(follow_up_score < initial_score, 1, 0), 
+    score_change = follow_up_score - initial_score,
+    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+    
+# summary stats
+tab <- basis24_paired %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(positive_outcome) %>% 
+  adorn_pct_formatting(digits = 0) 
+
+tab 
+```
+
+Plot it.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+basis24_paired_long <- basis24_paired %>%
+  ungroup() %>% 
+  select(client_system_id, initial_score, follow_up_score) %>% 
+  pivot_longer(
+    cols = c(initial_score, follow_up_score),
+    names_to = "score_type",
+    values_to = "score_value"
+  ) %>%
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score" = "Initial",
+                        "follow_up_score" = "Follow-up"),
+    score_type = factor(score_type,
+                        levels = c("Initial", "Follow-up"))
+  )
+
+# Plot
+basis24_plot <- ggplot(basis24_paired_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    #binwidth = 1, 
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width = 0.8,
+    alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Score", 
+       y = "Count",
+       title = "Distribution of Initial and Follow-up Scores, Basis-24") +
+  theme_minimal()+
+  theme(
+     axis.title = element_text(size = 9),
+     axis.text = element_text(size = 9),
+     panel.grid.major = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+     legend.position = "inside",
+     legend.justification = c("left", "top"),
+     legend.title = element_blank(),
+     legend.text = element_text(size = 8),
+     plot.margin = margin(5, 5, 5, 5)) 
+  
+basis24_plot
+```
+
+Ridgeline plot
+
+```{r}
+# summary stats by score type
+summary_stats_basis24 <- basis24_paired_long %>% 
+  group_by(score_type) %>% 
+  summarise(
+    mean_score = mean(score_value, na.rm = TRUE), 
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score = sd(score_value, na.rm = TRUE), 
+    n = sum(!is.na(score_value))
+  ) %>% 
+  mutate(y_text = if_else(score_type == "Follow-up", 1.0375, 1.04))
+
+summary_stats_basis24
+#clipr::write_clip(summary_stats_basis24)
+
+# Ridgeline plot
+basis24_ridge_plot <- ggplot(basis24_paired_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  #scale_x_continuous(limits = c(0,6), breaks = c(1, 2, 3, 4, 5)) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Basis-24 Total Score", 
+       y = NULL,
+       title = "Distribution of Initial and Follow-up Scores, Basis-24 (lower is better)") +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x = element_text(size = 9, hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 9),
+    panel.grid = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 5),
+    plot.title = element_text(size = 11)
+  ) + 
+  geom_segment(data = summary_stats_basis24, 
+               aes(x = median_score, y = 1,
+                   xend = median_score, yend = 1.035,
+                   color = "grey30"), linetype = "dotted") + 
+  geom_text(data = summary_stats_basis24,
+            aes(x = median_score, y = y_text, 
+                label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+                vjust = 2, hjust = 0.5, size = 2)
+
+basis24_ridge_plot
+```
+
 
 ## Question 1.01 improved access to subpopulations
 
@@ -2817,23 +3037,13 @@ yoq_self_paired %>%
 **Codebook:**
 
 0.  NA, don't know, prefer not to answer
-
-<!-- -->
-
 1.  Asian
-
 2.  Black or African American
-
 3.  Hispanic or Latino
-
 4.  Middle Eastern or North African
-
 5.  Native American/American Indian or Alaska Native
-
 6.  Native Hawaiian or Pacific Islander
-
 7.  White
-
 8.  2+ races selected
 
 **Assumptions:** Clients had to have an intervention start, an intervention name, and have race characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients).
