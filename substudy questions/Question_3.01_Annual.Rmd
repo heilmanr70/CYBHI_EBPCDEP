@@ -88,7 +88,6 @@ modtab %>%
   as_tibble() %>%
   openxlsx::write.xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple race model.xlsx",sheetName = "model")
 
-<<<<<<< HEAD
 xlsx::write.xlsx(tab,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple race model.xlsx",sheetName = "table",append=T)
 ```
 
@@ -303,6 +302,40 @@ data301$in_preferred_language <- NA
 
 ethnicity_xwalk$new[which(grepl("unknow",ethnicity_xwalk$old,ignore.case=TRUE))]<-NA
 
-data301$in_preferred_language<- merge(data301, df2, by="merge_column") ##DOES NOT WORK YET - STILL WORKING ON THIS. NEEDS TO LOOK UP WHETHER SERVICES WERE RECEIVED IN PREFERRED LANGUAGE
+# Combine all surveys of all types (relevant columns only)
+caregiver.lang <- data.frame("client_system_id"=caregiver$client_system_id,"lang"=caregiver$were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response,"date"=caregiver$date_completed)
+child.lang <- data.frame("client_system_id"=child$client_system_id,"lang"=child$were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response,"date"=child$date_completed)
+senior.lang <- data.frame("client_system_id"=senior$client_system_id,"lang"=senior$were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response,"date"=senior$date_completed)
+adult.lang <- data.frame("client_system_id"=adult$client_system_id,"lang"=adult$were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response,"date"=adult$date_completed)
+
+combined.lang <- rbind(caregiver.lang,child.lang,senior.lang, adult.lang)
+combined.lang$date <- as.Date(combined.lang$date, '%Y-%m-%d')
+combined.lang$client_system_id <- as.numeric(combined.lang$client_system_id)
+
+# For each case where there are multiple surveys for a client system ID, take the most recent
+
+combined.lang.unique <- combined.lang %>% 
+  group_by(client_system_id) %>%
+  slice(which.max(as.Date(date, '%Y/%m/%d')))
+
+# Use this as the data to merge into the combined discharge and demographic data
+
+data301 <- left_join(data301, combined.lang.unique[,1:2], by="client_system_id")
+data301$lang <- relevel(factor(data301$lang),ref="Yes")
+
+# Basic univariate model predicting positive outcomes by whether services received in preferred language
+model <- glm(positive_outcomes ~ lang, data = data301, family = "binomial")
+summary(model)
+
+tab <- table(data301$lang,data301$positive_outcomes)
+tab <- addmargins(tab)
+tab <- as.data.frame.matrix(tab)
+
+modtab <- tbl_regression(model, exponentiate = TRUE)
+modtab %>%
+  as_tibble() %>%
+  xlsx::write.xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple language accessibility model.xlsx",sheetName = "model")
+
+xlsx::write.xlsx(tab,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple language accessibility model.xlsx",sheetName = "table",append=T)
 
 ```
