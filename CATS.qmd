@@ -1,0 +1,567 @@
+---
+title: "CATS scoring"
+author: Cristin Young
+format: docx
+editor: visual
+---
+
+# CATS scoring
+
+**Definition:** CATS/CPSS item(s) measuring reduction in child/youth-related PTSD symptoms/severity after the intervention. Assessments showing improvement from pre- to post-time point for clients who discharged from an intervention during the designated time frame.
+
+**Scoring:** The CATS is based on the DSM-5 and is a measure of potentially traumatic events and of posttraumatic stress symptoms (PTSS). The CATS can be administered as a self-report or as an interview and is appropriate for pre-schoolers, children and adolescents. There is a self-report measure for 7-17 year old children/youth, and two caregiver versions; one for 3-6 year old children and one for 7-17 year old children/youth. The younger child version conforms to the DSM-5 3-6 year old PTSD symptom criteria. The interview format may be preferable with younger children or youth with reading comprehension challenges.
+
+The CATS has 15 items measuring traumatic events, 20 items measuring DSM-5 PTSD symptoms, and 5 items measuring psychosocial functioning. The determination of preliminary cutoff scores was done based on an estimation derived from the validation of a previous DSM-IV based questionnaire.
+
+-   Ages 3-6: The total symptom score is calculated by summing up the items 1-16 (possible range = 0-48). We recommend to use a cut-off ≥ 16 as indication of a clinically relevant level of symptoms in preschool children.
+-   Ages 7-17: A total symptom score is calculated by summing up the raw scores of items 1-20 (possible range = 0-60). We recommend to use a cut-off ≥ 21 as indication of a clinically relevant level of symptoms. Include scoring for total scores and subscale scores as well as information on diagnostic or severity cut offs (if any).
+
+**Range:** 3-6: 0-48; 7-17: 0-60
+
+A **decrease** in score indicates a **positive** outcome. Published cut-points are available for both total score and sub-scales.
+
+```{r, reading_in_data}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+library(readr)
+library(tidyverse)
+library(janitor)
+
+# dealing with crazy header rows
+cats_36_raw <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/CATS-caregiver_3-6.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+h1 <- unlist(cats_36_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(cats_36_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+cats_36 <- cats_36_raw[-c(1, 2), ]
+names(cats_36) <- new_names
+cats_36 <- cats_36 %>%
+  select(where(~ !all(is.na(.))))
+
+# dealing with crazy header rows
+cats_P717_raw <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/CATS-caregiver_7-17.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+h1 <- unlist(cats_P717_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(cats_P717_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+cats_P717 <- cats_P717_raw[-c(1, 2), ]
+names(cats_P717) <- new_names
+cats_P717 <- cats_P717 %>%
+  select(where(~ !all(is.na(.))))
+
+# dealing with crazy header rows
+cats_S717_raw <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/CATS-self_7-17.csv", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+h1 <- unlist(cats_S717_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(cats_S717_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+cats_S717 <- cats_S717_raw[-c(1, 2), ]
+names(cats_S717) <- new_names
+cats_S717 <- cats_S717 %>%
+  select(where(~ !all(is.na(.))))
+```
+
+The following data answers the follow study sub-questions:
+
+-   **3.15**: To what extent did children/youth report reductions in PTSD symptoms/PTSD symptom severity after the intervention?
+
+## Functions to score CATS datasets
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+score_cats <- function(df, item_nums, clinical_cutoff) {
+  
+  # Build regex: starts with x1–xN, ends with _score, anything in between
+  pattern <- paste0(
+    "^x(", paste(item_nums, collapse = "|"), ").*_score$"
+  )
+
+  # Identify CATS item columns
+  cats_cols <- names(df)[str_detect(names(df), pattern)]
+
+  if (length(cats_cols) == 0) {
+    stop(
+      "No CATS item columns found. Expected columns starting with x",
+      min(item_nums), "–x", max(item_nums),
+      " and ending with '_score'."
+    )
+  }
+  
+  # Total score
+  df <- df %>%
+    mutate(
+      across(all_of(cats_cols), as.numeric),
+      missing_count_total = rowSums(is.na(across(all_of(cats_cols)))),
+      total_score = rowSums(across(all_of(cats_cols)), na.rm = TRUE),
+      clinically_relevant = if_else(
+        !is.na(total_score) & total_score >= clinical_cutoff, TRUE, FALSE
+      )
+    )
+  return(df)
+}
+```
+
+```{r, calculating_scores}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+cats_36 <- score_cats(cats_36, item_nums = 1:16, clinical_cutoff = 16)
+
+cats_717 <- score_cats(cats_717, item_nums = 1:20, clinical_cutoff = 20)
+
+```
+
+```{r, creating_summary_tables}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+analyze_sdq <- function(df, label = NULL) {
+  
+  message("---- Running analysis for: ", label, " ----")
+  
+  # 1. Histograms
+  print(hist(df$total_score, 
+             main = paste("Total Score:", label),
+             xlab = "Total Score", col = "steelblue"))
+  
+  print(hist(df$externalizing_score, 
+             main = paste("Externalizing Score:", label),
+             xlab = "Externalizing Score", col = "steelblue"))
+  
+  # 2. Min & max
+  print(paste("Total Min:", min(df$total_score, na.rm = TRUE)))
+  print(paste("Total Max:", max(df$total_score, na.rm = TRUE)))
+  print(paste("Externalizing Min:", min(df$externalizing_score, na.rm = TRUE)))
+  print(paste("Externalizing Max:", max(df$externalizing_score, na.rm = TRUE)))
+
+    # 3. Extract key columns
+  scores <- df %>%
+    select(client_system_id, collection, date_completed, total_score, 
+           externalizing_score, cut_off_band, externalizing_band)
+  
+  # 4. Pair by client
+  paired <- scores %>%
+    mutate(date_completed = as.Date(date_completed)) %>% 
+    group_by(client_system_id) %>%
+    arrange(date_completed, .by_group = TRUE) %>%
+    summarise(
+      n_assessments = n(),
+      initial_date  = first(date_completed),
+      follow_up_date  = if_else(n_assessments >= 2, 
+                                last(date_completed), as.Date(NA)),
+      initial_total = first(total_score),
+      follow_up_total = if_else(n_assessments >= 2, 
+                                last(total_score), NA_real_),
+      initial_ext = first(externalizing_score),
+      follow_up_ext = if_else(n_assessments >= 2, last(externalizing_score), NA_real_)
+    ) %>%
+    ungroup() %>% 
+    filter(!is.na(follow_up_date)) %>% 
+    mutate(
+      positive_outcome_total = ifelse(follow_up_total < initial_total, 1, 0), 
+      positive_outcome_ext = ifelse(follow_up_ext < initial_ext, 1, 0), 
+      initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+      follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))
+    )
+  
+  # 5. Summary table: TOTAL
+  tab_total <- paired %>% 
+    filter(!is.na(positive_outcome_total)) %>% 
+    tabyl(follow_up_quarter, positive_outcome_total) %>% 
+    adorn_totals("row") %>% 
+    adorn_percentages("row") %>%
+    adorn_pct_formatting(digits = 0) %>%
+    adorn_ns()
+  
+   # 6. Summary table: EXTERNALIZING
+  tab_ext <- paired %>% 
+    filter(!is.na(positive_outcome_ext)) %>% 
+    tabyl(follow_up_quarter, positive_outcome_ext) %>% 
+    adorn_totals("row") %>% 
+    adorn_percentages("row") %>%
+    adorn_pct_formatting(digits = 0) %>%
+    adorn_ns()
+  
+  # 7. Summary table: TOTAL - NOT BY QUARTER
+  tab_total_overall <- paired %>% 
+    filter(!is.na(positive_outcome_total)) %>% 
+    tabyl(positive_outcome_total) %>% 
+    adorn_pct_formatting(digits = 0) 
+  
+  # 8. Summary table: EXTERNALIZING - NOT BY QUARTER
+  tab_ext_overall <- paired %>% 
+    filter(!is.na(positive_outcome_ext)) %>% 
+    tabyl(positive_outcome_ext) %>% 
+    adorn_pct_formatting(digits = 0) 
+  
+  # print both tabs
+  message("---- Total score outcomes by follow-up quarter ----")
+  print(tab_total)
+  message("---- Externalizing outcomes by follow-up quarter ----")
+  print(tab_ext)
+  message("---- Total score outcomes ----")
+  print(tab_total_overall)
+  message("---- Externalizing outcomes score ----")
+  print(tab_ext_overall)
+  
+  return(list(
+    paired = paired,
+    summary_total = tab_total,
+    summary_externalizing = tab_ext
+  ))
+}
+```
+
+## Scoring the datasets
+
+```{r, running_for_each_df}
+#| echo: false
+#| warning: false
+#| message: false
+library(patchwork)
+# run analysis for each dataset 
+res_P24   <- analyze_sdq(sdq_P24,   label = "Parent SDQ (2–4)")
+res_P24$summary_total
+res_P24$summary_externalizing
+
+res_P410  <- analyze_sdq(sdq_P410,  label = "Parent SDQ (4–10)")
+res_P410$summary_total
+res_P410$summary_externalizing
+
+res_P1117 <- analyze_sdq(sdq_P1117, label = "Parent SDQ (11–17)")
+res_P1117$summary_total
+res_P1117$summary_externalizing
+
+res_S1117 <- analyze_sdq(sdq_S1117, label = "Self SDQ (11–17)")
+res_S1117$summary_total
+res_S1117$summary_externalizing
+
+sdq_list <- list(res_P24, res_P410, res_P1117, res_S1117)
+
+df_from_lists <- imap_dfr(sdq_list, ~ {
+  .x[[1]] %>%                      # first tibble inside each list
+    transmute(
+      subgroup = .y,               # use the list name as subgroup (pop_a, pop_b, etc.)
+      initial_total  = initial_total,
+      follow_up_total = follow_up_total,
+      initial_ext = initial_ext,
+      follow_up_ext = follow_up_ext
+    )
+})
+```
+
+```{r, plotting_total}
+#| echo: false
+#| warning: false
+#| message: false
+# Pivot to long format
+sdq_long_total <- df_from_lists %>%
+  pivot_longer(
+    cols = c(initial_total, follow_up_total),
+    names_to = "timepoint",
+    values_to = "value"
+  )
+
+# Rename and order subgroups
+sdq_long_total$subgroup <- recode(sdq_long_total$subgroup,
+                           "1" = "SDQ Parent (2-4)",
+                           "2" = "SDQ Parent (4-10)",
+                           "3" = "SDQ Parent (11-17)",
+                           "4" = "SDQ Self (11-17)")
+
+sdq_long_total$subgroup <- factor(sdq_long_total$subgroup, levels = c(
+  "SDQ Parent (2-4)", "SDQ Parent (4-10)", "SDQ Parent (11-17)", "SDQ Self (11-17)"))
+
+sdq_long_total$timepoint <- factor(sdq_long_total$timepoint, levels = c("initial_total", "follow_up_total"))
+
+# summary stats
+summary_stats <- sdq_long_total %>% 
+  group_by(subgroup, timepoint) %>% 
+  summarise(
+    mean_score = mean(value, na.rm = TRUE), 
+    median_score = median(value, na.rm = TRUE),
+    sd_score = sd(value, na.rm = TRUE), 
+    n = sum(!is.na(value))
+  )
+
+summary_stats
+#clipr::write_clip(summary_stats)
+
+# Mean difference table
+mean_differences <- sdq_long_total %>%
+  group_by(subgroup, timepoint) %>%
+  summarise(mean_value = mean(value, na.rm = TRUE)) %>%
+  pivot_wider(names_from = timepoint, values_from = mean_value) %>%
+  mutate(difference = follow_up_total - initial_total)
+
+gap_table <- ggplot(mean_differences, aes(x = 1, y = subgroup)) +
+  geom_text(aes(label = round(difference, 2)), size = 3, hjust = 0) +
+  theme_void() +
+  labs(title = "Mean Diff.\n(Follow-up - Initial)\ndecrease indicates\npositive outcome") +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 7, margin = margin(t = 8, b = -15)),
+    axis.text.y = element_blank(),
+    plot.margin = margin(t = 5, b = -5, l = 5, r = 5)
+  ) +
+  scale_y_discrete(limits = levels(sdq_long_total$subgroup))
+
+# Ridgeline plot with top legend and no chart title
+ridge_plot <- ggplot(sdq_long_total, aes(x = value, y = subgroup, fill = timepoint)) +
+  geom_density_ridges(
+    aes(color = timepoint),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("initial_total" = "#8A8C8E", "follow_up_total" = "#BBDB49"),
+    breaks = c("initial_total", "follow_up_total"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+  values = c("initial_total" = "#8A8C8E", "follow_up_total" = "#BBDB49"),
+    breaks = c("initial_total", "follow_up_total"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  labs(x = "SDQ total score", 
+       y = NULL, 
+       title = "Distribution of initial and follow-up total scores by subgroup, SDQ") +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x = element_text(size = 9, hjust = 0),
+    axis.text.y = element_text(size = 9, hjust = 1),
+    axis.text.x = element_text(size = 9),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    legend.box.margin = margin(b = -5),
+    plot.margin = margin(5, 5, 5, 5)
+  )
+
+# Combine with patchwork without title/subtitle
+final_plot <- (ridge_plot | gap_table) +
+  plot_layout(widths = c(5, 1)) +
+  plot_annotation(title = NULL, subtitle = NULL)
+
+# Display final plot
+final_plot
+```
+
+```{r, plotting_ext}
+#| echo: false
+#| warning: false
+#| message: false
+# Pivot to long format
+sdq_long_ext <- df_from_lists %>%
+  pivot_longer(
+    cols = c(initial_ext, follow_up_ext),
+    names_to = "timepoint",
+    values_to = "value"
+  )
+
+# Rename and order subgroups
+sdq_long_ext$subgroup <- recode(sdq_long_ext$subgroup,
+                           "1" = "SDQ Parent (2-4)",
+                           "2" = "SDQ Parent (4-10)",
+                           "3" = "SDQ Parent (11-17)",
+                           "4" = "SDQ Self (11-17)")
+
+sdq_long_ext$subgroup <- factor(sdq_long_ext$subgroup, levels = c(
+  "SDQ Parent (2-4)", "SDQ Parent (4-10)", "SDQ Parent (11-17)", "SDQ Self (11-17)"))
+
+sdq_long_ext$timepoint <- factor(sdq_long_ext$timepoint, levels = c("initial_ext", "follow_up_ext"))
+
+# summary stats
+summary_stats <- sdq_long_ext %>% 
+  group_by(subgroup, timepoint) %>% 
+  summarise(
+    mean_score = mean(value, na.rm = TRUE), 
+    median_score = median(value, na.rm = TRUE),
+    sd_score = sd(value, na.rm = TRUE), 
+    n = sum(!is.na(value))
+  )
+
+summary_stats
+#clipr::write_clip(summary_stats)
+
+# Mean difference table
+mean_differences <- sdq_long_ext %>%
+  group_by(subgroup, timepoint) %>%
+  summarise(mean_value = mean(value, na.rm = TRUE)) %>%
+  pivot_wider(names_from = timepoint, values_from = mean_value) %>%
+  mutate(difference = follow_up_ext - initial_ext)
+
+gap_table <- ggplot(mean_differences, aes(x = 1, y = subgroup)) +
+  geom_text(aes(label = round(difference, 2)), size = 3, hjust = 0) +
+  theme_void() +
+  labs(title = "Mean Diff.\n(Follow-up - Initial)\ndecrease indicates\npositive outcome") +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 7, margin = margin(t = 8, b = -15)),
+    axis.text.y = element_blank(),
+    plot.margin = margin(t = 5, b = -5, l = 5, r = 5)
+  ) +
+  scale_y_discrete(limits = levels(sdq_long_ext$subgroup))
+
+# Ridgeline plot with top legend and no chart title
+ridge_plot <- ggplot(sdq_long_ext, aes(x = value, y = subgroup, fill = timepoint)) +
+  geom_density_ridges(
+    aes(color = timepoint),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("initial_ext" = "#8A8C8E", "follow_up_ext" = "#BBDB49"),
+    breaks = c("initial_ext", "follow_up_ext"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("initial_ext" = "#8A8C8E", "follow_up_ext" = "#BBDB49"),
+    breaks = c("initial_ext", "follow_up_ext"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  labs(x = "SDQ externalizing score", 
+       y = NULL, 
+       title = "Distribution of initial and follow-up externalizing scores by subgroup, SDQ") +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x = element_text(size = 9, hjust = 0),
+    axis.text.y = element_text(size = 9, hjust = 1),
+    axis.text.x = element_text(size = 9),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    legend.box.margin = margin(b = -5),
+    plot.margin = margin(5, 5, 5, 5)
+  )
+
+# Combine with patchwork without title/subtitle
+final_plot <- (ridge_plot | gap_table) +
+  plot_layout(widths = c(5, 1)) +
+  plot_annotation(title = NULL, subtitle = NULL)
+
+# Display final plot
+final_plot
+```
+
+## Reductions in disruptive behaviors (SDQ)
+
+### 2-4 (Provider)
+
+**‘Internalising’ and ‘externalising’ scores**: The internalising score ranges from 0 to 20 and is the sum of the emotional and peer difficulties scales. The externalising score ranges from 0 to 20 and is the sum of the conduct and hyperactivity scales. We will be using the externalising score for this KPI.
+
+**Calculation:** Hyperactivity scale (2, 10, 15, 21, 25) + conduct scale (5, 7, 12, 18, 22) Cut off bands
+
+## Improvements in coping and handling overall difficulties (SDQ)
+
+### 2-4 (Provider)
+
+**Scoring:** In most respects, the 2-4 year old version of the SDQ is scored in an identical way to the 4-17 year old version of the SDQ, and we therefore suggest that you start by reading those instructions. The only differences are:
+
+-   The wording of two items on the ‘conduct’ scales is markedly different in the questionnaire for 2-4 year olds compared to the questionnaire for 4-17 (but the scoring stays the same). One further hyperactivity item is softened slightly in the 2-4 year old questionnaire. These three items are highlighted in Table 1.
+
+-   Large population-based surveys in the UK suggest slightly different population norms for 2-4 year olds compared to older children. The banding of SDQ scores for the 2-4 year old version is shown in Table 3.
+
+**Total difficulties score**: This is generated by summing scores from all the scales except the prosocial scale. The resultant score ranges from 0 to 40, and is counted as missing if one of the 4 component scores is missing.
+
+don't sum: 1, 4, 9, 17, 20
+
+reverse code: 7, 21, 25, 11, 14
+
+**Assumptions:** used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
+
+#### Cut off bands
+
+We used the SDQ distribution data to propose the following banding of SDQ scores for 2-4 year olds. We have sought cut-points such that around 80% of children are ‘close to average’, 12% ‘slightly raised’, 4% ‘high’ and 4% ‘very high’ (or, for the prosocial scale, 80% are close to average, 12% ‘slightly lowered’, 4% ‘low’ and 4% ‘very low’).
+
+Similar cut-points were observed for parent SDQs collected in a smaller American sample (N=307) of 2-4 year olds, and for parent SDQs collected in the English ‘Mental Health of Children And Young People, 2017’ study.
+
+|   | Close to average | Slightly raised (/slightly lowered) | High (/Low) | Very high (/very low) |
+|---------------|:-------------:|:-------------:|:-------------:|:-------------:|
+| Parented completed SDQ total score | 0-12 | 13-15 | 16-18 | 19-40 |
+| Teacher completed SDQ total score | 0-10 | 11-14 | 15-17 | 18-40 |
+
+### 4-10 (Provider)
+
+**Scoring:** The 25 items in the SDQ comprise 5 scales of 5 items each. It is usually easiest to score all 5 scales first before working out the total difficulties score. ‘Somewhat True’ is always scored as 1, but the scoring of ‘Not True’ and ‘Certainly True’ varies with the item, as shown below scale by scale. For each of the 5 scales the score can range from 0 to 10 if all items were completed. These scores can be scaled up pro-rata if at least 3 items were completed, e.g. a score of 4 based on 3 completed items can be scaled up to a score of 7 (6.67 rounded up) for 5 items.
+
+**Total difficulties score**: This is generated by summing scores from all the scales except the prosocial scale. The resultant score ranges from 0 to 40, and is counted as missing of one of the 4 component scores is missing.
+
+don't sum: 1, 4, 9, 17, 20
+
+reverse code: 7, 21, 25, 11, 14
+
+**Assumptions:** used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
+
+#### Cut off bands
+
+|   | Close to average | Slightly raised (/slightly lowered) | High (/Low) | Very high (/very low) |
+|---------------|:-------------:|:-------------:|:-------------:|:-------------:|
+| Parented completed SDQ total score | 0-13 | 14-16 | 17-19 | 20-40 |
+| Teacher completed SDQ total score | 0-11 | 12-15 | 16-18 | 19-40 |
+| Self completed SDQ total score | 0-14 | 15-17 | 18-19 | 20-40 |
+
+### 11-17 (Provider)
+
+**Scoring:** The 25 items in the SDQ comprise 5 scales of 5 items each. It is usually easiest to score all 5 scales first before working out the total difficulties score. ‘Somewhat True’ is always scored as 1, but the scoring of ‘Not True’ and ‘Certainly True’ varies with the item, as shown below scale by scale. For each of the 5 scales the score can range from 0 to 10 if all items were completed. These scores can be scaled up pro-rata if at least 3 items were completed, e.g. a score of 4 based on 3 completed items can be scaled up to a score of 7 (6.67 rounded up) for 5 items.
+
+**Total difficulties score**: This is generated by summing scores from all the scales except the prosocial scale. The resultant score ranges from 0 to 40, and is counted as missing of one of the 4 component scores is missing.
+
+don't sum: 1, 4, 9, 17, 20
+
+reverse code: 7, 21, 25, 11, 14
+
+**Assumptions:** used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
+
+#### Cut off bands
+
+|   | Close to average | Slightly raised (/slightly lowered) | High (/Low) | Very high (/very low) |
+|---------------|:-------------:|:-------------:|:-------------:|:-------------:|
+| Parented completed SDQ total score | 0-13 | 14-16 | 17-19 | 20-40 |
+| Teacher completed SDQ total score | 0-11 | 12-15 | 16-18 | 19-40 |
+| Self completed SDQ total score | 0-14 | 15-17 | 18-19 | 20-40 |
+
+### 11-17 (Self)
+
+**Scoring:** The 25 items in the SDQ comprise 5 scales of 5 items each. It is usually easiest to score all 5 scales first before working out the total difficulties score. ‘Somewhat True’ is always scored as 1, but the scoring of ‘Not True’ and ‘Certainly True’ varies with the item, as shown below scale by scale. For each of the 5 scales the score can range from 0 to 10 if all items were completed. These scores can be scaled up pro-rata if at least 3 items were completed, e.g. a score of 4 based on 3 completed items can be scaled up to a score of 7 (6.67 rounded up) for 5 items.
+
+**Total difficulties score**: This is generated by summing scores from all the scales except the prosocial scale. The resultant score ranges from 0 to 40, and is counted as missing of one of the 4 component scores is missing.
+
+don't sum: 1, 4, 9, 17, 20
+
+reverse code: 7, 21, 25, 11, 14
+
+**Assumptions:** used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
+
+#### Cut off bands
+
+|   | Close to average | Slightly raised (/slightly lowered) | High (/Low) | Very high (/very low) |
+|---------------|:-------------:|:-------------:|:-------------:|:-------------:|
+| Parented completed SDQ total score | 0-13 | 14-16 | 17-19 | 20-40 |
+| Teacher completed SDQ total score | 0-11 | 12-15 | 16-18 | 19-40 |
+| Self completed SDQ total score | 0-14 | 15-17 | 18-19 | 20-40 |
