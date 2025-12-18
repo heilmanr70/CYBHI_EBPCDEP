@@ -1,0 +1,298 @@
+---
+title: "Question_4.02_Annual"
+author: "Tristan Burgess & Cristin Young"
+date: "2025-12-18"
+output: html_document
+---
+
+This notebook answers Question 4.02: What, if any, factors predicted high satisfaction with services ratings by clients?
+
+
+#Read in data
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(gt)
+library(clipr)
+library(gtsummary)
+library(zoo)
+
+all_data <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
+```
+
+THREE inclusion criteria: 1. must have initial time point data (i.e., be
+enrolled in an intervention), 2. must have a valid assessment collected at both intake and discharge time points and 3. must have reported information in the demographic variables of interest.
+
+```{r}
+data301 <- all_data %>% 
+  filter(!is.na(location) & 
+           !is.na(pre_score) & 
+           !is.na(post_score))
+
+data301$positive_outcomes <- factor(data301$positive_outcomes, levels = c("No", "Yes"))
+```
+
+
+##Race data
+
+```{r}
+library(gtsummary)
+detailed_race <- data301 %>% 
+  group_by(code_num) %>% 
+  summarise(
+    total = n(),
+    successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+    perc_success = round(100* successful / total, 1)
+  )
+
+data301$simple_race <- "Other"
+data301$simple_race[is.na(data301$cleaned_race)] <- NA
+data301$simple_race[data301$cleaned_race=='Asian'] <- "Asian"
+data301$simple_race[data301$cleaned_race=='White'] <- "White"
+data301$simple_race[data301$cleaned_race=='Native American/American Indian or Alaska Native'] <- "Native American/American Indian or Alaska Native"
+data301$simple_race[data301$cleaned_race=='Hispanic or Latino'] <- "Hispanic or Latino"
+data301$simple_race[data301$cleaned_race=='Black or African American'] <- "Black or African American"
+data301$simple_race <- relevel(as.factor(data301$simple_race),ref="White")
+
+```
+
+## Ethnicity Data
+
+```{r}
+
+ethnicity_xwalk <- data.frame(table(as.factor(data301$ethnicity)))
+ethnicity_xwalk$Freq <- as.numeric(ethnicity_xwalk$Freq)
+colnames(ethnicity_xwalk)[1] <- 'old'
+ethnicity_xwalk$new <- 'Other'
+ethnicity_xwalk$new[is.na(ethnicity_xwalk$old)]<-NA
+for(i in 1:length(ethnicity_xwalk$old)){
+  if(ethnicity_xwalk$Freq[i]>60){
+    ethnicity_xwalk$new[i] <- ethnicity_xwalk$old[i]
+  }
+}
+ethnicity_xwalk$new[ethnicity_xwalk$Freq > 60] <- as.character(ethnicity_xwalk$old[ethnicity_xwalk$Freq > 60])
+
+ethnicity_xwalk$new[which(grepl("unknow",ethnicity_xwalk$old,ignore.case=TRUE))]<-NA
+ethnicity_xwalk$new[which(grepl("2019",ethnicity_xwalk$old,ignore.case=TRUE))]<-NA
+ethnicity_xwalk$new[which(grepl("dont",ethnicity_xwalk$old,ignore.case=TRUE))]<-NA
+ethnicity_xwalk$new[which(grepl("don't",ethnicity_xwalk$old,ignore.case=TRUE))]<-NA
+ethnicity_xwalk$new[which(grepl("report",ethnicity_xwalk$old,ignore.case=TRUE))]<-NA
+ethnicity_xwalk$new[which(grepl("prefer",ethnicity_xwalk$old,ignore.case=TRUE))]<-NA
+ethnicity_xwalk$new[which(grepl("2_text",ethnicity_xwalk$old,ignore.case=TRUE))]<-NA
+ethnicity_xwalk$new[which(grepl("refuse",ethnicity_xwalk$old,ignore.case=TRUE))]<-NA
+ethnicity_xwalk$new[which(grepl("specify",ethnicity_xwalk$old,ignore.case=TRUE))]<-NA
+ethnicity_xwalk$new[which(ethnicity_xwalk$old=="na")]<-NA
+
+data301$simple_ethnicity <- NA
+data301$simple_ethnicity <- ethnicity_xwalk$new[match(data301$ethnicity, ethnicity_xwalk$old)]  
+
+# Set largest group as reference level
+data301$simple_ethnicity <- relevel(as.factor(data301$simple_ethnicity),ref="Mexican")
+
+```
+
+
+## Age Data
+
+```{r}
+data301$client_type_clean <- data301$client_type
+data301$client_type_clean[data301$client_type=="No Client Type Selected"] <-NA
+
+```
+
+## Sexual Orientation Data
+
+```{r}
+
+data301$sexual_orientation_clean <- data301$sexual_orientation
+data301$sexual_orientation_clean[which(data301$sexual_orientation == "Not Applicable")] <- "No Response"
+data301$sexual_orientation_clean[which(data301$sexual_orientation == "Prefer Not To Answer")] <- "No Response"
+data301$sexual_orientation_clean[which(data301$sexual_orientation == "Don't Know")] <- "No Response"
+data301$sexual_orientation_clean[which(data301$sexual_orientation == "No Sexual Orientation Selected")] <- "No Response"
+data301$sexual_orientation_clean[which(data301$sexual_orientation == "Same Gender Loving")] <- "Lesbian/Gay/SGL"
+data301$sexual_orientation_clean[which(data301$sexual_orientation == "Lesbian/Gay")] <- "Lesbian/Gay/SGL"
+data301$sexual_orientation_clean[which(is.na(data301$sexual_orientation))] <- "No Response"
+data301$sexual_orientation_clean <- relevel(factor(data301$sexual_orientation_clean),ref="Straight")
+
+```
+## Gender Identity Data
+
+```{r}
+data301$gender_identity_clean <- data301$gender_identity
+data301$gender_identity_clean[which(data301$gender_identity == "Not Applicable")] <- "No Response"
+data301$gender_identity_clean[which(data301$gender_identity == "Prefer Not To Answer")] <- "No Response"
+data301$gender_identity_clean[which(data301$gender_identity == "Don't Know")] <- "No Response"
+data301$gender_identity_clean[which(data301$gender_identity == "No Gender Identify Selected")] <- "No Response"
+data301$gender_identity_clean[which(is.na(data301$gender_identity))] <- "No Response"
+data301$gender_identity_clean <- relevel(factor(data301$gender_identity_clean),ref="Woman/girl")
+
+```
+## Load Client Sat Data
+
+```{r}
+# caregiver
+caregiver_raw <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-caregiver.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE) 
+h1 <- unlist(caregiver_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(caregiver_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+caregiver <- caregiver_raw[-c(1, 2), ]
+names(caregiver) <- new_names
+caregiver <- caregiver %>%
+  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+
+# child
+child_raw <- read.csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-child_13-17.csv", na = c("-", "", "NA", "N/A", "0"), header = FALSE) 
+h1 <- unlist(child_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(child_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+child <- child_raw[-c(1, 2), ]
+names(child) <- new_names
+child <- child %>%
+  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+
+# adult
+adult_raw <- read.csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-adult_18-59.csv", na.strings = c("-", "", "NA", "N/A", "0"), skip = 0, header = FALSE)
+h1 <- unlist(adult_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(adult_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+adult <- adult_raw[-c(1, 2), ]
+names(adult) <- new_names
+adult <- adult %>%
+  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+
+# senior
+senior_raw <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-adult_60_plus.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE) 
+h1 <- unlist(senior_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(senior_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+senior <- senior_raw[-c(1, 2), ]
+names(senior) <- new_names
+senior <- senior %>%
+  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+
+# ethnicity_xwalk$new[which(grepl("unknow",ethnicity_xwalk$old,ignore.case=TRUE))]<-NA
+
+# Combine all surveys of all types (relevant columns only)
+caregiver.sat <- data.frame("client_system_id"=caregiver$client_system_id,"sat"=caregiver$x1_overall_i_am_satisfied_with_the_services_my_child_received_response,"date"=caregiver$date_completed)
+child.sat <- data.frame("client_system_id"=child$client_system_id,"sat"=child$x1_overall_i_am_satisfied_with_the_services_i_received_response,"date"=child$date_completed)
+senior.sat <- data.frame("client_system_id"=senior$client_system_id,"sat"=senior$x1_i_like_the_services_that_i_received_here_response,"date"=senior$date_completed)
+adult.sat <- data.frame("client_system_id"=adult$client_system_id,"sat"=adult$x1_i_like_the_services_that_i_received_here_response,"date"=adult$date_completed)
+
+combined.sat <- rbind(caregiver.sat,child.sat,senior.sat, adult.sat)
+combined.sat$date <- as.Date(combined.sat$date, '%Y-%m-%d')
+combined.sat$client_system_id <- as.numeric(combined.sat$client_system_id)
+
+# For each case where there are multiple surveys for a client system ID, take the most recent
+
+combined.sat.unique <- combined.sat %>% 
+  group_by(client_system_id) %>%
+  slice(which.max(as.Date(date, '%Y/%m/%d')))
+
+# Merge overall satisfaction data into the combined discharge and demographic data
+
+data301 <- left_join(data301, combined.sat.unique[,1:2], by="client_system_id")
+data301$sat[which(data301$sat=="Not Applicable")] <- NA
+data301$sat <- relevel(factor(data301$sat),ref="Undecided")
+
+#reorder satisfation scale
+data301$sat <- factor(data301$sat, levels = c("Strongly Disagree","Disagree","Undecided","Agree","Strongly Agree"))
+
+# Univariate proportional odds (ordinal) model predicting satisfaction by ethnicity:
+model <- clm(sat ~ simple_ethnicity, data = data301)
+summary(model)
+
+tab <- table(data301$simple_ethnicity,data301$sat)
+tab <- addmargins(tab)
+tab <- as.data.frame.matrix(tab)
+
+chisq.test(data301$simple_ethnicity,data301$sat)
+
+modtab <- tbl_regression(model, exponentiate = TRUE)
+modtab %>%
+  as_tibble() %>%
+  xlsx::write.xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q4.02/satisfaction by ethnicity model.xlsx",sheetName = "model")
+
+xlsx::write.xlsx(tab,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q4.02/satisfaction by ethnicity model.xlsx",sheetName = "table",append=T)
+
+# Univariate proportional odds (ordinal) model predicting satisfaction by race:
+model <- clm(sat ~ simple_race, data = data301)
+summary(model)
+
+tab <- table(data301$simple_race,data301$sat)
+tab <- addmargins(tab)
+tab <- as.data.frame.matrix(tab)
+
+chisq.test(data301$simple_race,data301$sat)
+
+modtab <- tbl_regression(model, exponentiate = TRUE)
+modtab %>%
+  as_tibble() %>%
+  xlsx::write.xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q4.02/satisfaction by race model.xlsx",sheetName = "model")
+
+xlsx::write.xlsx(tab,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q4.02/satisfaction by race model.xlsx",sheetName = "table",append=T)
+
+# Univariate proportional odds (ordinal) model predicting satisfaction by sexual orientation:
+model <- clm(sat ~ sexual_orientation_clean, data = data301)
+summary(model)
+
+tab <- table(data301$sexual_orientation_clean,data301$sat)
+tab <- addmargins(tab)
+tab <- as.data.frame.matrix(tab)
+
+chisq.test(data301$sexual_orientation_clean,data301$sat)
+
+modtab <- tbl_regression(model, exponentiate = TRUE)
+modtab %>%
+  as_tibble() %>%
+  xlsx::write.xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q4.02/satisfaction by sexual orientation model.xlsx",sheetName = "model")
+
+xlsx::write.xlsx(tab,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q4.02/satisfaction by sexual orientation model.xlsx",sheetName = "table",append=T)
+
+# Univariate proportional odds (ordinal) model predicting satisfaction by gender identity:
+model <- clm(sat ~ gender_identity_clean, data = data301)
+summary(model)
+
+tab <- table(data301$gender_identity_clean,data301$sat)
+tab <- addmargins(tab)
+tab <- as.data.frame.matrix(tab)
+
+chisq.test(data301$gender_identity_clean,data301$sat)
+
+modtab <- tbl_regression(model, exponentiate = TRUE)
+modtab %>%
+  as_tibble() %>%
+  xlsx::write.xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q4.02/satisfaction by gender identity model.xlsx",sheetName = "model")
+
+xlsx::write.xlsx(tab,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q4.02/satisfaction by gender identity model.xlsx",sheetName = "table",append=T)
+
+
+```
