@@ -3026,6 +3026,401 @@ basis24_ridge_plot
 ```
 
 
+
+## 3.15 CPSS-5 Reductions in PTSD symptoms (youth)
+**Definition:** CPSS-5 item(s) measuring reduction in child/youth report of reductions in PTSD symptoms/severity after the intervention. Assessments showing improvement from pre- to post-time point for clients who discharged from an intervention during the designated time frame.
+
+The CPSS-5-I is a 27-item semi-structured interview that assesses PTSD DSM-5 diagnosis and symptom severity in the past month based on interviewer ratings. The CPSS-5-I assesses history of Criterion A traumatic experiences to identify an index trauma. Next, the 20 items assessing DSM-5 PTSD symptoms are presented. The interviewer rates each item from 0 (not at all) to 4 (6 or more times a week/almost always) based on the frequency and severity of the reported symptom experienced in the past month related to the index trauma. Finally, seven items assess impairment of endorsed symptoms on daily functioning pertinent to youth (e.g., fun things you want to do, doing your chores, relationships with your friends). 
+
+**Calculation:** Sum of Q1-Q20; this KPI represents the percent of assessments that show clients who have improvement from pre-post time points out of the total number of assessments from clients who discharge from the intervention and complete pre-post measures by period(s).
+
+**Scoring:** The total severity score ranges from 0 to 80 and is calculated by summing the ratings of the first 20 items. **Higher scores indicate greater severity of symptoms (lower scores are better).** A cut off score of 31 can be used for identifying a probable PTSD diagnosis in children. 
+
+**Assumptions:** used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
+
+**Range:** 0-80
+### Interviewer version
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+cpss_i_raw <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/CPSS-5-Interviewer.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE)
+h1 <- unlist(cpss_i_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(cpss_i_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+cpss_i <- cpss_i_raw[-c(1, 2), ]
+names(cpss_i) <- new_names
+cpss_i <- cpss_i %>%
+  select(where(~ !all(is.na(.))))
+
+#score cols
+score_cols <- names(cpss_i)[endsWith(names(cpss_i), "_score")]
+clinical_cutoff_i <- 31
+
+#make sure columns are numeric
+#add a total score column
+#make sure it's date formatted
+cpss_i_scores <- cpss_i %>% 
+  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(
+    missing_count = sum(is.na(c_across(all_of(score_cols)))),
+    total_score = rowSums(across(all_of(score_cols)), na.rm = TRUE),
+    clinically_relevant = if_else(
+        !is.na(total_score) & total_score >= clinical_cutoff_i, TRUE, FALSE)) %>% 
+  ungroup %>% 
+  mutate(
+    date_completed = as.Date(date_completed),
+    row_id = row_number()                # stable row id for disambiguation
+  ) %>% 
+  select(client_system_id, collection, date_completed, total_score)
+  
+cpss_i_paired <- cpss_i_scores %>%
+  group_by(client_system_id) %>%
+  arrange(date_completed, .by_group = TRUE) %>%
+  summarise(
+    n_assessments = n(),
+    initial_date  = first(date_completed),
+    initial_score = first(total_score),
+    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
+    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
+  ) %>%
+  ungroup() %>% 
+  filter(
+    !is.na(follow_up_date)
+  ) %>% 
+  mutate(
+    positive_outcome = ifelse(follow_up_score < initial_score, 1, 0), 
+    score_change = follow_up_score - initial_score,
+    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+    
+# summary stats
+tab <- cpss_i_paired %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(positive_outcome) %>% 
+  adorn_pct_formatting(digits = 0) 
+
+tab 
+```
+
+Plot it.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+cpss_i_paired_long <- cpss_i_paired %>%
+  ungroup() %>% 
+  select(client_system_id, initial_score, follow_up_score) %>% 
+  pivot_longer(
+    cols = c(initial_score, follow_up_score),
+    names_to = "score_type",
+    values_to = "score_value"
+  ) %>%
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score" = "Initial",
+                        "follow_up_score" = "Follow-up"),
+    score_type = factor(score_type,
+                        levels = c("Initial", "Follow-up"))
+  )
+
+# Plot
+cpss_i_plot <- ggplot(cpss_i_paired_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    #binwidth = 1, 
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width = 0.8,
+    alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Score", 
+       y = "Count",
+       title = "Distribution of Initial and Follow-up Scores, CPSS-5 Interviewer Version") +
+  theme_minimal()+
+  theme(
+     axis.title = element_text(size = 9),
+     axis.text = element_text(size = 9),
+     panel.grid.major = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+     legend.position = "inside",
+     legend.justification = c("left", "top"),
+     legend.title = element_blank(),
+     legend.text = element_text(size = 8),
+     plot.margin = margin(5, 5, 5, 5)) 
+  
+cpss_i_plot
+```
+
+Ridgeline plot
+
+```{r}
+# summary stats by score type
+summary_stats_cpss_i <- cpss_i_paired_long %>% 
+  group_by(score_type) %>% 
+  summarise(
+    mean_score = mean(score_value, na.rm = TRUE), 
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score = sd(score_value, na.rm = TRUE), 
+    n = sum(!is.na(score_value))
+  ) 
+
+summary_stats_cpss_i
+#clipr::write_clip(summary_stats_cpss_i)
+
+# Ridgeline plot
+cpss_i_ridge_plot <- ggplot(cpss_i_paired_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  #scale_x_continuous(limits = c(0,6), breaks = c(1, 2, 3, 4, 5)) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "CPSS Interviewer Total Score", 
+       y = NULL,
+       title = "Distribution of Initial and Follow-up Scores, CPSS Interviewer (lower is better)") +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x = element_text(size = 9, hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 9),
+    panel.grid = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 5),
+    plot.title = element_text(size = 11)
+  ) + 
+  geom_segment(data = summary_stats_cpss_i, 
+               aes(x = median_score, y = 1,
+                   xend = median_score, yend = 1.03,
+                   color = "grey30"), linetype = "dotted") + 
+  geom_text(data = summary_stats_cpss_i,
+            aes(x = median_score, y = 1.035, 
+                label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+                vjust = 2, hjust = 0.5, size = 2)
+
+cpss_i_ridge_plot
+```
+
+### Self version
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+cpss_s_raw <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/CPSS-5-self.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE)
+h1 <- unlist(cpss_s_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(cpss_s_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+cpss_s <- cpss_s_raw[-c(1, 2), ]
+names(cpss_s) <- new_names
+cpss_s <- cpss_s %>%
+  select(where(~ !all(is.na(.))))
+
+#score cols
+score_cols <- names(cpss_s)[endsWith(names(cpss_s), "_score")]
+clinical_cutoff_s <- 31
+
+#make sure columns are numeric
+#add a total score column
+#make sure it's date formatted
+cpss_s_scores <- cpss_s %>% 
+  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
+  rowwise() %>% 
+  mutate(
+    missing_count = sum(is.na(c_across(all_of(score_cols)))),
+    total_score = rowSums(across(all_of(score_cols)), na.rm = TRUE),
+    clinically_relevant = if_else(
+        !is.na(total_score) & total_score >= clinical_cutoff_s, TRUE, FALSE)) %>% 
+  ungroup %>% 
+  mutate(
+    date_completed = as.Date(date_completed),
+    row_id = row_number()                # stable row id for disambiguation
+  ) %>% 
+  select(client_system_id, collection, date_completed, total_score)
+  
+cpss_s_paired <- cpss_s_scores %>%
+  group_by(client_system_id) %>%
+  arrange(date_completed, .by_group = TRUE) %>%
+  summarise(
+    n_assessments = n(),
+    initial_date  = first(date_completed),
+    initial_score = first(total_score),
+    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
+    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
+  ) %>%
+  ungroup() %>% 
+  filter(
+    !is.na(follow_up_date)
+  ) %>% 
+  mutate(
+    positive_outcome = ifelse(follow_up_score < initial_score, 1, 0), 
+    score_change = follow_up_score - initial_score,
+    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
+    
+# summary stats
+tab <- cpss_s_paired %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(positive_outcome) %>% 
+  adorn_pct_formatting(digits = 0) 
+
+tab 
+```
+
+Plot it.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+cpss_s_paired_long <- cpss_s_paired %>%
+  ungroup() %>% 
+  select(client_system_id, initial_score, follow_up_score) %>% 
+  pivot_longer(
+    cols = c(initial_score, follow_up_score),
+    names_to = "score_type",
+    values_to = "score_value"
+  ) %>%
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score" = "Initial",
+                        "follow_up_score" = "Follow-up"),
+    score_type = factor(score_type,
+                        levels = c("Initial", "Follow-up"))
+  )
+
+# Plot
+cpss_s_plot <- ggplot(cpss_s_paired_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    #binwidth = 1, 
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width = 0.8,
+    alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Score", 
+       y = "Count",
+       title = "Distribution of Initial and Follow-up Scores, CPSS-5 Self Version") +
+  theme_minimal()+
+  theme(
+     axis.title = element_text(size = 9),
+     axis.text = element_text(size = 9),
+     panel.grid.major = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+     legend.position = "inside",
+     legend.justification = c("left", "top"),
+     legend.title = element_blank(),
+     legend.text = element_text(size = 8),
+     plot.margin = margin(5, 5, 5, 5)) 
+  
+cpss_s_plot
+```
+
+Ridgeline plot
+
+```{r}
+# summary stats by score type
+summary_stats_cpss_s <- cpss_s_paired_long %>% 
+  group_by(score_type) %>% 
+  summarise(
+    mean_score = mean(score_value, na.rm = TRUE), 
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score = sd(score_value, na.rm = TRUE), 
+    n = sum(!is.na(score_value))
+  ) 
+
+summary_stats_cpss_s
+#clipr::write_clip(summary_stats_cpss_s)
+
+# Ridgeline plot
+cpss_s_ridge_plot <- ggplot(cpss_s_paired_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "CPSS Self Total Score", 
+       y = NULL,
+       title = "Distribution of Initial and Follow-up Scores, CPSS Self (lower is better)") +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x = element_text(size = 9, hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 9),
+    panel.grid = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 5),
+    plot.title = element_text(size = 11)
+  ) + 
+  geom_segment(data = summary_stats_cpss_s, 
+               aes(x = median_score, y = 1,
+                   xend = median_score, yend = 1.03,
+                   color = "grey30"), linetype = "dotted") + 
+  geom_text(data = summary_stats_cpss_s,
+            aes(x = median_score, y = 1.035, 
+                label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+                vjust = 2, hjust = 0.5, size = 2)
+
+cpss_s_ridge_plot
+```
+
+
 ## Question 1.01 improved access to subpopulations
 
 ### Race
@@ -3557,14 +3952,79 @@ tab
 
 ## Rikke's SPSS master file
 
-**Count and Percent of Grantees Funded by Round**
+**Access to services**
+
+Among these clients/participants, the largest share ([XX%]) received services through a Round 2 program implementing [EBP], which [brief context about the intervention—e.g., target population and core focus].
+
+Service reach was also concentrated among [ENTITY TYPE: CBO] ([XX%]) and in Region 8 (Los Angeles County; [XX%]).
+
+At the same time, the Workstream served a diverse set of children, youth, and caregivers across provider types. For example, [XX%] of clients/participants received services through non-traditional behavioral health providers (e.g., hospitals/hospital systems; [XX%]) and tribal entities ([XX%]).
 
 ```{r}
 #| echo: false
 #| warning: false
 #| message: false
 library(haven)
-library(foreign)
 
-master_grantee_file <- foreign::read.spss("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Quant Team File/MasterGranteeSpreadsheet_forBHESQuantTeam_11-21-25.sav")
+# load in spss data
+master_grantee_file <- haven::read_spss("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Quant Team File/MasterGranteeSpreadsheet_forBHESQuantTeam_12-15-25.sav") %>% 
+  zap_missing() %>%
+  mutate(across(where(is.labelled), as.character)) %>%
+  mutate(across(where(is.character), ~ na_if(str_trim(.x), ""))) %>% 
+  rename_with(~ gsub("^@", "", .x)) %>% 
+  janitor::clean_names() %>% 
+  rename_with(~ gsub("^x", "", .x))
+
+#join to all data
+all_data_spss <- left_join(all_data, master_grantee_file, by = c("provider" = "1a_grantee_provider_name", "provider_id" = "2grantee_provider_id", "intervention_name" = "9ebpcdep"))
+
+#get #'s for report 
+all_data_spss %>%
+  filter(`4funding_round` == "Round 4") %>% 
+  distinct(client_system_id, provider) %>%   # one row per client per round
+  tabyl(provider) %>%
+  adorn_totals("row") %>%
+  adorn_rounding(digits = 2)
+
+#join to just demographic data - need to add provider name and intervention first to help with join
+key <- c("client_system_id", "provider_system_id", "provider_id")
+
+discharge_small <- discharge_data_filtered %>%
+  select(all_of(key), provider, intervention_name)
+
+discharge_small %>%
+  count(across(all_of(key)), name = "n") %>%
+  filter(n > 1)
+
+discharge_unique <- discharge_small %>%
+  distinct(across(all_of(key)), .keep_all = TRUE)
+
+demo_discharge <- left_join(demographic_data_filtered, discharge_unique, by = key)
+
+demo_spss <- left_join(demo_discharge, master_grantee_file, by = c("provider_id" = "2grantee_provider_id"))
+
+#get #'s on master spss file
+demo_spss %>% 
+  tabyl(`12a_grantee_entity_type_for_report`) %>% 
+  adorn_totals("row") %>% 
+  adorn_rounding(digits = 2)
+
+demo_spss %>% 
+  tabyl(`12a_grantee_entity_type`) %>% 
+  adorn_totals("row") %>% 
+  adorn_rounding(digits = 2)
+
+demo_spss %>% 
+  tabyl(`8c_regions`) %>% 
+  adorn_totals("row") %>% 
+  adorn_rounding(digits = 2)
+
+test <- demo_spss %>% 
+  filter(is.na(`8c_regions`))
+
+table(test$provider_id)
+
+master_grantee_file %>%
+  count(`2grantee_provider_id`) %>%
+  filter(n > 1)
 ```
