@@ -294,5 +294,20 @@ modtab %>%
 
 xlsx::write.xlsx(tab,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q4.02/satisfaction by gender identity model.xlsx",sheetName = "table",append=T)
 
+# Univariate proportional odds (ordinal) model predicting satisfaction by client type (age):
+model <- clm(sat ~ client_type_clean, data = data301)
+summary(model)
 
+tab <- table(data301$client_type_clean,data301$sat)
+tab <- addmargins(tab)
+tab <- as.data.frame.matrix(tab)
+
+chisq.test(data301$client_type_clean,data301$sat)
+
+modtab <- tbl_regression(model, exponentiate = TRUE)
+modtab %>%
+  as_tibble() %>%
+  xlsx::write.xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q4.02/satisfaction by client type (age) model.xlsx",sheetName = "model")
+
+xlsx::write.xlsx(tab,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q4.02/satisfaction by client type (age) model.xlsx",sheetName = "table",append=T)
 ```
