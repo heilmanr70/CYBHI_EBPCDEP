@@ -55,12 +55,12 @@ grantees <- grantees |>
     )
   )
 
-grantees <- grantees %>%
+grantees <- grantees |> 
   mutate(
     grant_track_ex_st_int_orig = grant_track_ex_st_int,  # optional: keep original
-    .gt = grant_track_ex_st_int %>%
-      as.character() %>%
-      str_squish() %>%
+    .gt = grant_track_ex_st_int |> 
+      as.character() |> 
+      str_squish() |> 
       str_to_lower(),
     
     grant_track_ex_st_int = case_when(
@@ -73,16 +73,18 @@ grantees <- grantees %>%
   ) %>%
   select(-.gt) 
 
-grantees %>%
-  filter(grant_track_ex_st_int == "Other") %>%
+grantees |> 
+  filter(grant_track_ex_st_int == "Other") |> 
   count(grant_track_ex_st_int_orig, sort = TRUE)
+
+# table 3 BETWEEN rounds table of percents ----------------------------------
 
 
 #between rounds table of percents
 round_levels <- paste("Round", 1:5)
 track_levels <- c("Start-up", "Expansion", "Integrated", "Other")
  
-table3 <- grantees |> 
+table3_between <- grantees |> 
  # keep only rows with the fields you need
  filter(!is.na(funding_round), funding_round != "",
         !is.na(grant_track_ex_st_int), grant_track_ex_st_int != "") |> 
@@ -120,15 +122,17 @@ table3 <- grantees |>
    select(-track_n, -grand_n) |> 
    arrange(grant_track_ex_st_int)
 
-table3
+table3_between
+
+# table 3 WITHIN rounds table of percents ----------------------------------
 
 #within rounds table of percents
 round_levels <- paste("Round", 1:5)
 track_levels <- c("Start-up", "Expansion", "Integrated", "Other")
 
-table3 <- grantees %>%
+table3_within <- grantees |> 
   filter(!is.na(funding_round), funding_round != "",
-         !is.na(grant_track_ex_st_int), grant_track_ex_st_int != "") %>%
+         !is.na(grant_track_ex_st_int), grant_track_ex_st_int != "") |> 
   mutate(
     funding_round = str_trim(as.character(funding_round)),
     funding_round = case_when(
@@ -138,39 +142,39 @@ table3 <- grantees %>%
     ),
     funding_round = factor(funding_round, levels = round_levels),
     grant_track_ex_st_int = factor(grant_track_ex_st_int, levels = track_levels)
-  ) %>%
-  count(grant_track_ex_st_int, funding_round, name = "n") %>%
-  complete(grant_track_ex_st_int, funding_round, fill = list(n = 0)) %>%
-  group_by(funding_round) %>%
+  ) |> 
+  count(grant_track_ex_st_int, funding_round, name = "n") |> 
+  complete(grant_track_ex_st_int, funding_round, fill = list(n = 0)) |> 
+  group_by(funding_round) |> 
   mutate(
     round_n = sum(n),
     col_pct = if_else(round_n > 0, n / round_n, 0),
     cell = sprintf("%d (%.1f%%)", n, 100 * col_pct)
-  ) %>%
-  ungroup() %>%
+  ) |> 
+  ungroup() |> 
   # Pivot rounds into columns
-  select(grant_track_ex_st_int, funding_round, cell) %>%
-  pivot_wider(names_from = funding_round, values_from = cell) %>%
+  select(grant_track_ex_st_int, funding_round, cell) |> 
+  pivot_wider(names_from = funding_round, values_from = cell) |> 
   # Add “All Rounds” column: overall track breakdown across the full dataset
   left_join(
-    grantees %>%
+    grantees |> 
       filter(!is.na(funding_round), funding_round != "",
-             !is.na(grant_track_ex_st_int), grant_track_ex_st_int != "") %>%
-      count(grant_track_ex_st_int, name = "track_n") %>%
-      mutate(all_rounds = sprintf("%d (%.1f%%)", track_n, 100 * track_n / sum(track_n))) %>%
+             !is.na(grant_track_ex_st_int), grant_track_ex_st_int != "") |> 
+      count(grant_track_ex_st_int, name = "track_n") |> 
+      mutate(all_rounds = sprintf("%d (%.1f%%)", track_n, 100 * track_n / sum(track_n))) |> 
       select(grant_track_ex_st_int, all_rounds),
     by = "grant_track_ex_st_int"
-  ) %>%
-  rename(`All Rounds` = all_rounds) %>%
+  ) |> 
+  rename(`All Rounds` = all_rounds) |> 
   arrange(grant_track_ex_st_int)
 
-table3
+table3_within
 
 
 # grantees by round and implementation type -------------------------------
 
 #first, cleaning for the table
-grantees <- grantees %>%
+grantees <- grantees |> 
   mutate(
     cdep_ebp = case_when(
       str_to_lower(str_trim(as.character(cdep))) %in% c("yes", "y", "true", "1") ~ "CDEP",
@@ -222,13 +226,14 @@ table5_between
 round_levels <- paste("Round", 1:5)
 cdep_levels  <- c("EBP", "CDEP")
 
-table5_within <- grantees %>%
-  filter(!is.na(funding_round), funding_round != "") %>%
+table5_within <- grantees |> 
+  filter(!is.na(funding_round), funding_round != "") |> 
   mutate(
     funding_round = str_trim(as.character(funding_round)),
     funding_round = case_when(
       funding_round %in% as.character(1:5) ~ paste("Round", funding_round),
-      str_detect(funding_round, "^R\\s*\\d$") ~ paste("Round", funding_round, "\\1_\\2") %>% str_replace("\\\\1_\\\\2",""), # (noop safety)
+      str_detect(funding_round, "^R\\s*\\d$") ~ paste("Round", funding_round, "\\1_\\2") |> 
+        str_replace("\\\\1_\\\\2",""), # (noop safety)
       TRUE ~ funding_round
     ),
     # re-run the correct R# normalization (kept separate to avoid the noop line above if you prefer)
@@ -240,27 +245,27 @@ table5_within <- grantees %>%
     funding_round = factor(funding_round, levels = round_levels),
     
     cdep_ebp = factor(str_trim(as.character(cdep_ebp)), levels = cdep_levels)
-  ) %>%
-  count(cdep_ebp, funding_round, name = "n") %>%
-  complete(cdep_ebp, funding_round, fill = list(n = 0)) %>%
-  group_by(funding_round) %>%
+  ) |> 
+  count(cdep_ebp, funding_round, name = "n") |> 
+  complete(cdep_ebp, funding_round, fill = list(n = 0)) |> 
+  group_by(funding_round) |> 
   mutate(
     round_n = sum(n),
     col_pct = if_else(round_n > 0, n / round_n, 0),
     cell = sprintf("%d (%.1f%%)", n, 100 * col_pct)
-  ) %>%
-  ungroup() %>%
-  select(cdep_ebp, funding_round, cell) %>%
-  pivot_wider(names_from = funding_round, values_from = cell) %>%
+  ) |> 
+  ungroup() |> 
+  select(cdep_ebp, funding_round, cell) |> 
+  pivot_wider(names_from = funding_round, values_from = cell) |> 
   left_join(
-    grantees %>%
-      filter(!is.na(funding_round), funding_round != "") %>%
-      count(cdep_ebp, name = "type_n") %>%
-      mutate(all_rounds = sprintf("%d (%.1f%%)", type_n, 100 * type_n / sum(type_n))) %>%
+    grantees |> 
+      filter(!is.na(funding_round), funding_round != "") |> 
+      count(cdep_ebp, name = "type_n") |> 
+      mutate(all_rounds = sprintf("%d (%.1f%%)", type_n, 100 * type_n / sum(type_n))) |> 
       select(cdep_ebp, all_rounds),
     by = "cdep_ebp"
-  ) %>%
-  rename(`All Rounds` = all_rounds) %>%
+  ) |> 
+  rename(`All Rounds` = all_rounds) |> 
   arrange(cdep_ebp)
 
 table5_within
@@ -322,9 +327,9 @@ table6_between
 
 round_levels <- paste("Round", 1:5)
 
-table6_within <- grantees %>%
+table6_within <- grantees |> 
   filter(!is.na(funding_round), funding_round != "",
-         !is.na(region_label), region_label != "") %>%
+         !is.na(region_label), region_label != "") |> 
   mutate(
     funding_round = str_trim(as.character(funding_round)),
     funding_round = case_when(
@@ -335,28 +340,28 @@ table6_within <- grantees %>%
     funding_round = factor(funding_round, levels = round_levels),
     
     region_label = factor(str_trim(as.character(region_label)), levels = region_levels)
-  ) %>%
-  count(region_label, funding_round, name = "n") %>%
-  complete(region_label, funding_round, fill = list(n = 0)) %>%
-  group_by(funding_round) %>%
+  ) |> 
+  count(region_label, funding_round, name = "n") |> 
+  complete(region_label, funding_round, fill = list(n = 0)) |> 
+  group_by(funding_round) |> 
   mutate(
     round_n = sum(n),
     col_pct = if_else(round_n > 0, n / round_n, 0),
     cell = sprintf("%d (%.1f%%)", n, 100 * col_pct)
-  ) %>%
-  ungroup() %>%
-  select(region_label, funding_round, cell) %>%
-  pivot_wider(names_from = funding_round, values_from = cell) %>%
+  ) |> 
+  ungroup() |> 
+  select(region_label, funding_round, cell) |> 
+  pivot_wider(names_from = funding_round, values_from = cell) |> 
   left_join(
-    grantees %>%
+    grantees |> 
       filter(!is.na(funding_round), funding_round != "",
-             !is.na(region_label), region_label != "") %>%
-      count(region_label, name = "region_n") %>%
-      mutate(all_rounds = sprintf("%d (%.1f%%)", region_n, 100 * region_n / sum(region_n))) %>%
+             !is.na(region_label), region_label != "") |> 
+      count(region_label, name = "region_n") |> 
+      mutate(all_rounds = sprintf("%d (%.1f%%)", region_n, 100 * region_n / sum(region_n))) |> 
       select(region_label, all_rounds),
     by = "region_label"
-  ) %>%
-  rename(`All Rounds` = all_rounds) %>%
+  ) |> 
+  rename(`All Rounds` = all_rounds) |> 
   arrange(region_label)
 
 table6_within
@@ -437,9 +442,9 @@ table4_between
 
 round_levels <- paste("Round", 1:5)
 
-table4_within <- grantees %>%
+table4_within <- grantees |> 
   filter(!is.na(funding_round), funding_round != "",
-         !is.na(entity_type_label), entity_type_label != "") %>%
+         !is.na(entity_type_label), entity_type_label != "") |> 
   mutate(
     funding_round = str_trim(as.character(funding_round)),
     funding_round = case_when(
@@ -450,28 +455,28 @@ table4_within <- grantees %>%
     funding_round = factor(funding_round, levels = round_levels),
     
     entity_type_label = factor(str_trim(as.character(entity_type_label)), levels = entity_levels)
-  ) %>%
-  count(entity_type_label, funding_round, name = "n") %>%
-  complete(entity_type_label, funding_round, fill = list(n = 0)) %>%
-  group_by(funding_round) %>%
+  ) |> 
+  count(entity_type_label, funding_round, name = "n") |> 
+  complete(entity_type_label, funding_round, fill = list(n = 0)) |> 
+  group_by(funding_round) |> 
   mutate(
     round_n = sum(n),
     col_pct = if_else(round_n > 0, n / round_n, 0),
     cell    = sprintf("%d (%.1f%%)", n, 100 * col_pct)
-  ) %>%
-  ungroup() %>%
-  select(entity_type_label, funding_round, cell) %>%
-  pivot_wider(names_from = funding_round, values_from = cell) %>%
+  ) |> 
+  ungroup() |> 
+  select(entity_type_label, funding_round, cell) |> 
+  pivot_wider(names_from = funding_round, values_from = cell) |> 
   left_join(
-    grantees %>%
+    grantees |> 
       filter(!is.na(funding_round), funding_round != "",
-             !is.na(entity_type_label), entity_type_label != "") %>%
-      count(entity_type_label, name = "entity_n") %>%
-      mutate(all_rounds = sprintf("%d (%.1f%%)", entity_n, 100 * entity_n / sum(entity_n))) %>%
+             !is.na(entity_type_label), entity_type_label != "") |> 
+      count(entity_type_label, name = "entity_n") |> 
+      mutate(all_rounds = sprintf("%d (%.1f%%)", entity_n, 100 * entity_n / sum(entity_n))) |> 
       select(entity_type_label, all_rounds),
     by = "entity_type_label"
-  ) %>%
-  rename(`All Rounds` = all_rounds) %>%
+  ) |> 
+  rename(`All Rounds` = all_rounds) |> 
   arrange(entity_type_label)
 
 table4_within
