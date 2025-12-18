@@ -16,6 +16,8 @@ The CATS has 15 items measuring traumatic events, 20 items measuring DSM-5 PTSD 
 -   Ages 3-6: The total symptom score is calculated by summing up the items 1-16 (possible range = 0-48). We recommend to use a cut-off ≥ 16 as indication of a clinically relevant level of symptoms in preschool children.
 -   Ages 7-17: A total symptom score is calculated by summing up the raw scores of items 1-20 (possible range = 0-60). We recommend to use a cut-off ≥ 21 as indication of a clinically relevant level of symptoms. Include scoring for total scores and subscale scores as well as information on diagnostic or severity cut offs (if any).
 
+CATS total symptom scores were calculated by summing responses to the 20 core DSM-5 PTSD symptom items. Trauma exposure items, functional impairment items, and follow-up sub-questions were excluded from scoring, consistent with instrument guidelines.
+
 **Range:** 3-6: 0-48; 7-17: 0-60
 
 A **decrease** in score indicates a **positive** outcome. Published cut-points are available for both total score and sub-scales.
@@ -131,7 +133,8 @@ score_cats <- function(df, item_nums, clinical_cutoff) {
 #| include: false
 cats_36 <- score_cats(cats_36, item_nums = 1:16, clinical_cutoff = 16)
 
-cats_717 <- score_cats(cats_717, item_nums = 1:20, clinical_cutoff = 20)
+cats_S717 <- score_cats(cats_S717, item_nums = 1:20, clinical_cutoff = 20)
+cats_P717 <- score_cats(cats_P717, item_nums = 1:20, clinical_cutoff = 20)
 
 ```
 
@@ -502,7 +505,7 @@ We used the SDQ distribution data to propose the following banding of SDQ scores
 Similar cut-points were observed for parent SDQs collected in a smaller American sample (N=307) of 2-4 year olds, and for parent SDQs collected in the English ‘Mental Health of Children And Young People, 2017’ study.
 
 |   | Close to average | Slightly raised (/slightly lowered) | High (/Low) | Very high (/very low) |
-|---------------|:-------------:|:-------------:|:-------------:|:-------------:|
+|----|:--:|:--:|:--:|:--:|
 | Parented completed SDQ total score | 0-12 | 13-15 | 16-18 | 19-40 |
 | Teacher completed SDQ total score | 0-10 | 11-14 | 15-17 | 18-40 |
 
@@ -521,7 +524,7 @@ reverse code: 7, 21, 25, 11, 14
 #### Cut off bands
 
 |   | Close to average | Slightly raised (/slightly lowered) | High (/Low) | Very high (/very low) |
-|---------------|:-------------:|:-------------:|:-------------:|:-------------:|
+|----|:--:|:--:|:--:|:--:|
 | Parented completed SDQ total score | 0-13 | 14-16 | 17-19 | 20-40 |
 | Teacher completed SDQ total score | 0-11 | 12-15 | 16-18 | 19-40 |
 | Self completed SDQ total score | 0-14 | 15-17 | 18-19 | 20-40 |
@@ -541,7 +544,7 @@ reverse code: 7, 21, 25, 11, 14
 #### Cut off bands
 
 |   | Close to average | Slightly raised (/slightly lowered) | High (/Low) | Very high (/very low) |
-|---------------|:-------------:|:-------------:|:-------------:|:-------------:|
+|----|:--:|:--:|:--:|:--:|
 | Parented completed SDQ total score | 0-13 | 14-16 | 17-19 | 20-40 |
 | Teacher completed SDQ total score | 0-11 | 12-15 | 16-18 | 19-40 |
 | Self completed SDQ total score | 0-14 | 15-17 | 18-19 | 20-40 |
@@ -561,7 +564,7 @@ reverse code: 7, 21, 25, 11, 14
 #### Cut off bands
 
 |   | Close to average | Slightly raised (/slightly lowered) | High (/Low) | Very high (/very low) |
-|---------------|:-------------:|:-------------:|:-------------:|:-------------:|
+|----|:--:|:--:|:--:|:--:|
 | Parented completed SDQ total score | 0-13 | 14-16 | 17-19 | 20-40 |
 | Teacher completed SDQ total score | 0-11 | 12-15 | 16-18 | 19-40 |
 | Self completed SDQ total score | 0-14 | 15-17 | 18-19 | 20-40 |
