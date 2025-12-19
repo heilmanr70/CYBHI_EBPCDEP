@@ -85,6 +85,8 @@ region_success <- data201_spss %>%
     perc_success = round(100 * successful / total, 1)
   ) %>% 
   clipr::write_clip()
+
+region_success
 ```
 
 ###Mapping by region
