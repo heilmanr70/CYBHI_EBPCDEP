@@ -643,6 +643,9 @@ Plot it.
 #| message: false
 q1_child_score_long <- pairs_primary_long_q1 %>%
   ungroup() %>% 
+  filter(!is.na(system_id), 
+         !is.na(initial_score), 
+         !is.na(follow_up_score)) %>% 
   select(system_id, initial_score, follow_up_score) %>% 
   pivot_longer(
     cols = c(initial_score, follow_up_score),
@@ -939,6 +942,9 @@ Plot it.
 #| message: false
 q1_self_score_long <- pairs_primary_long_q1_self %>%
   ungroup() %>% 
+  filter(!is.na(client_system_id), 
+         !is.na(initial_score), 
+         !is.na(follow_up_score)) %>% 
   select(client_system_id, initial_score, follow_up_score) %>% 
   pivot_longer(
     cols = c(initial_score, follow_up_score),
@@ -1186,7 +1192,8 @@ pairs_primary_long_q2 <- pairs_primary_long %>%
 # compute differences in f/u and initial scores
 score_diff_child_q2 <- pairs_primary_long_q2 %>% 
   filter(!is.na(initial_score),
-         !is.na(follow_up_score)) %>% 
+         !is.na(follow_up_score), 
+         !is.na(system_id)) %>% 
   group_by(system_id) %>% 
   summarise(initial_total = sum(initial_score, na.rm = TRUE),
             followup_total = sum(follow_up_score, na.rm = TRUE),
@@ -1366,7 +1373,8 @@ pairs_primary_long_q2_self <- pairs_primary_long_self %>%
 # compute differences in f/u and initial scores
 score_diff_self_q2 <- pairs_primary_long_q2_self %>% 
     filter(!is.na(initial_score),
-         !is.na(follow_up_score)) %>% 
+         !is.na(follow_up_score),
+         !is.na(client_system_id)) %>% 
   group_by(client_system_id) %>% 
   summarise(initial_total = sum(initial_score, na.rm = TRUE),
             followup_total = sum(follow_up_score, na.rm = TRUE),
@@ -1603,7 +1611,8 @@ pairs_primary_long_q3 <- pairs_primary_long %>%
 # compute differences in f/u and initial scores
 score_diff_child_q3 <- pairs_primary_long_q3 %>% 
   filter(!is.na(initial_score),
-         !is.na(follow_up_score)) %>% 
+         !is.na(follow_up_score), 
+         !is.na(system_id)) %>% 
   group_by(system_id) %>% 
   summarise(initial_total = sum(initial_score, na.rm = TRUE),
             followup_total = sum(follow_up_score, na.rm = TRUE),
@@ -1783,7 +1792,8 @@ pairs_primary_long_q3_self <- pairs_primary_long_self %>%
 # compute differences in f/u and initial scores
 score_diff_self_q3 <- pairs_primary_long_q3_self %>% 
   filter(!is.na(initial_score),
-         !is.na(follow_up_score)) %>% 
+         !is.na(follow_up_score),
+         !is.na(client_system_id)) %>% 
   group_by(client_system_id) %>% 
   summarise(initial_total = sum(initial_score, na.rm = TRUE),
             followup_total = sum(follow_up_score, na.rm = TRUE),
@@ -2016,7 +2026,8 @@ pairs_primary_long_q4 <- pairs_primary_long %>%
 # compute differences in f/u and initial scores
 score_diff_child_q4 <- pairs_primary_long_q4 %>% 
     filter(!is.na(initial_score),
-         !is.na(follow_up_score)) %>% 
+         !is.na(follow_up_score), 
+         !is.na(system_id)) %>% 
   group_by(system_id) %>% 
   summarise(initial_total = sum(initial_score, na.rm = TRUE),
             followup_total = sum(follow_up_score, na.rm = TRUE),
@@ -2192,7 +2203,8 @@ pairs_primary_long_q4_self <- pairs_primary_long_self %>%
 # compute differences in f/u and initial scores
 score_diff_self_q4 <- pairs_primary_long_q4_self %>% 
   filter(!is.na(initial_score),
-         !is.na(follow_up_score)) %>% 
+         !is.na(follow_up_score),
+         !is.na(client_system_id)) %>% 
   group_by(client_system_id) %>% 
   summarise(initial_total = sum(initial_score, na.rm = TRUE),
             followup_total = sum(follow_up_score, na.rm = TRUE),
@@ -2281,7 +2293,7 @@ summary_stats_self_q4 <- q4_self_score_long %>%
   mutate(y_text = if_else(score_type == "Initial", 1.1, 1.11))
 
 summary_stats_self_q4
-#clipr::write_clip(summary_stats_self_q3)
+#clipr::write_clip(summary_stats_self_q4)
 
 # Ridgeline plot
 q4_ridge_plot_self <- ggplot(q4_self_score_long, aes(x = score_value, y = 1, fill = score_type)) +
@@ -2405,7 +2417,7 @@ dot_and_arrow_plot_4_5_q4 <- ggplot(dfq4, aes(y = group)) +
 dot_and_arrow_plot_4_5_q4
 ```
 
-## 3.12 Reductions in parent-related stress (PSS)
+## 3.12 PSS Reductions in parent-related stress
 
 **Definition:** PSS item(s) measuring reduction in parent/caregiver-related stress after the intervention. Assessments showing improvement from pre- to post-time point for clients who discharged from an intervention during the designated time frame.
 
@@ -2512,6 +2524,9 @@ Plot it.
 pss_paired_long <- pss_paired %>%
   ungroup() %>% 
   select(client_system_id, initial_score, follow_up_score) %>% 
+  filter(!is.na(client_system_id), 
+         !is.na(initial_score), 
+         !is.na(follow_up_score)) %>% 
   pivot_longer(
     cols = c(initial_score, follow_up_score),
     names_to = "score_type",
@@ -2562,6 +2577,7 @@ Ridgeline plot
 # summary stats by score type
 summary_stats_pss <- pss_paired_long %>% 
   group_by(score_type) %>% 
+  filter(!is.na(score_value)) %>% 
   summarise(
     mean_score = mean(score_value, na.rm = TRUE), 
     median_score = median(score_value, na.rm = TRUE),
@@ -2571,7 +2587,7 @@ summary_stats_pss <- pss_paired_long %>%
   mutate(y_text = if_else(score_type == "Follow-up", 1.08, 1.085))
 
 summary_stats_pss
-#clipr::write_clip(summary_stats_pss)
+clipr::write_clip(summary_stats_pss)
 
 # Ridgeline plot
 pss_ridge_plot <- ggplot(pss_paired_long, aes(x = score_value, y = 1, fill = score_type)) +
@@ -2623,7 +2639,7 @@ pss_ridge_plot <- ggplot(pss_paired_long, aes(x = score_value, y = 1, fill = sco
 pss_ridge_plot
 ```
 
-## 3.13 Reductions in overall distress (YOQ)
+## 3.13 YOQ Reductions in overall distress
 
 **Definition:** This KPI represents the percent of assessments that show clients who have improvement from pre-post time points out of the total number of assessments from clients who discharge from the intervention and complete pre-post measures by period(s).
 
@@ -2813,14 +2829,13 @@ yoq_self_paired %>%
                     values = c("#ABDDDE", "#046C9A"))
 ```
 
-
 ## 3.14 Basis-24 Reductions in adult problematic symptoms
 
 **Definition:** Basis-24 item(s) measuring reduction in parent/caregiver-related problematic symptoms after the intervention. Assessments showing improvement from pre- to post-time point for clients who discharged from an intervention during the designated time frame.
 
 **Calculation:** Sum of Q1-Q24 (reverse Q4-Q9); this KPI represents the percent of assessments that show clients who have improvement from pre-post time points out of the total number of assessments from clients who discharge from the intervention and complete pre-post measures by period(s).
 
-**Scoring:** Each item is rated on a five-point scale from 0, indicating the lowest severity of symptoms, to 4, indicating greatest severity of symptoms. It is important to note that the **rating values for items 4 through 9 are reversed**. Subscale and overall mean scores also range from 0 to 4. The overall range for this 24-item questionnaire is 0-96, with **higher global scores indicating greater functional impairment (lower is better)**.  
+**Scoring:** Each item is rated on a five-point scale from 0, indicating the lowest severity of symptoms, to 4, indicating greatest severity of symptoms. It is important to note that the **rating values for items 4 through 9 are reversed**. Subscale and overall mean scores also range from 0 to 4. The overall range for this 24-item questionnaire is 0-96, with **higher global scores indicating greater functional impairment (lower is better)**.
 
 The six distinct subscales are calculated by summing up and then dividing by the number of non-missing items for that subscale. An overall mean score is also calculated. For example, the Depression/Functioning subscale consists of six items. If the respondent answers all items in this subscale, then the subscale score is the mean of all six items. If one item is omitted, then the subscale score is the sum rating of the items answered, divided by five.
 
@@ -2913,6 +2928,9 @@ Plot it.
 #| message: false
 basis24_paired_long <- basis24_paired %>%
   ungroup() %>% 
+  filter(!is.na(client_system_id), 
+         !is.na(initial_score), 
+         !is.na(follow_up_score)) %>% 
   select(client_system_id, initial_score, follow_up_score) %>% 
   pivot_longer(
     cols = c(initial_score, follow_up_score),
@@ -3025,21 +3043,20 @@ basis24_ridge_plot <- ggplot(basis24_paired_long, aes(x = score_value, y = 1, fi
 basis24_ridge_plot
 ```
 
-
-
 ## 3.15 CPSS-5 Reductions in PTSD symptoms (youth)
+
 **Definition:** CPSS-5 item(s) measuring reduction in child/youth report of reductions in PTSD symptoms/severity after the intervention. Assessments showing improvement from pre- to post-time point for clients who discharged from an intervention during the designated time frame.
 
-The CPSS-5-I is a 27-item semi-structured interview that assesses PTSD DSM-5 diagnosis and symptom severity in the past month based on interviewer ratings. The CPSS-5-I assesses history of Criterion A traumatic experiences to identify an index trauma. Next, the 20 items assessing DSM-5 PTSD symptoms are presented. The interviewer rates each item from 0 (not at all) to 4 (6 or more times a week/almost always) based on the frequency and severity of the reported symptom experienced in the past month related to the index trauma. Finally, seven items assess impairment of endorsed symptoms on daily functioning pertinent to youth (e.g., fun things you want to do, doing your chores, relationships with your friends). 
+The CPSS-5-I is a 27-item semi-structured interview that assesses PTSD DSM-5 diagnosis and symptom severity in the past month based on interviewer ratings. The CPSS-5-I assesses history of Criterion A traumatic experiences to identify an index trauma. Next, the 20 items assessing DSM-5 PTSD symptoms are presented. The interviewer rates each item from 0 (not at all) to 4 (6 or more times a week/almost always) based on the frequency and severity of the reported symptom experienced in the past month related to the index trauma. Finally, seven items assess impairment of endorsed symptoms on daily functioning pertinent to youth (e.g., fun things you want to do, doing your chores, relationships with your friends).
 
 **Calculation:** Sum of Q1-Q20; this KPI represents the percent of assessments that show clients who have improvement from pre-post time points out of the total number of assessments from clients who discharge from the intervention and complete pre-post measures by period(s).
 
-**Scoring:** The total severity score ranges from 0 to 80 and is calculated by summing the ratings of the first 20 items. **Higher scores indicate greater severity of symptoms (lower scores are better).** A cut off score of 31 can be used for identifying a probable PTSD diagnosis in children. 
+**Scoring:** The total severity score ranges from 0 to 80 and is calculated by summing the ratings of the first 20 items. **Higher scores indicate greater severity of symptoms (lower scores are better).** A cut off score of 31 can be used for identifying a probable PTSD diagnosis in children.
 
 **Assumptions:** used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
 
-**Range:** 0-80
-### Interviewer version
+**Range:** 0-80 \### Interviewer version
+
 ```{r}
 #| echo: false
 #| warning: false
@@ -3119,6 +3136,9 @@ Plot it.
 #| message: false
 cpss_i_paired_long <- cpss_i_paired %>%
   ungroup() %>% 
+    filter(!is.na(client_system_id), 
+         !is.na(initial_score), 
+         !is.na(follow_up_score)) %>% 
   select(client_system_id, initial_score, follow_up_score) %>% 
   pivot_longer(
     cols = c(initial_score, follow_up_score),
@@ -3231,6 +3251,7 @@ cpss_i_ridge_plot
 ```
 
 ### Self version
+
 ```{r}
 #| echo: false
 #| warning: false
@@ -3310,6 +3331,9 @@ Plot it.
 #| message: false
 cpss_s_paired_long <- cpss_s_paired %>%
   ungroup() %>% 
+     filter(!is.na(client_system_id), 
+         !is.na(initial_score), 
+         !is.na(follow_up_score)) %>% 
   select(client_system_id, initial_score, follow_up_score) %>% 
   pivot_longer(
     cols = c(initial_score, follow_up_score),
@@ -3371,6 +3395,8 @@ summary_stats_cpss_s <- cpss_s_paired_long %>%
 summary_stats_cpss_s
 #clipr::write_clip(summary_stats_cpss_s)
 
+wilcox.test(cpss_s_paired$follow_up_score, cpss_s_paired$initial_score, paired = TRUE)
+
 # Ridgeline plot
 cpss_s_ridge_plot <- ggplot(cpss_s_paired_long, aes(x = score_value, y = 1, fill = score_type)) +
   geom_density_ridges(
@@ -3419,7 +3445,6 @@ cpss_s_ridge_plot <- ggplot(cpss_s_paired_long, aes(x = score_value, y = 1, fill
 
 cpss_s_ridge_plot
 ```
-
 
 ## Question 1.01 improved access to subpopulations
 
@@ -3954,11 +3979,11 @@ tab
 
 **Access to services**
 
-Among these clients/participants, the largest share ([XX%]) received services through a Round 2 program implementing [EBP], which [brief context about the intervention—e.g., target population and core focus].
+Among these clients/participants, the largest share (\[XX%\]) received services through a Round 2 program implementing \[EBP\], which \[brief context about the intervention—e.g., target population and core focus\].
 
-Service reach was also concentrated among [ENTITY TYPE: CBO] ([XX%]) and in Region 8 (Los Angeles County; [XX%]).
+Service reach was also concentrated among \[ENTITY TYPE: CBO\] (\[XX%\]) and in Region 8 (Los Angeles County; \[XX%\]).
 
-At the same time, the Workstream served a diverse set of children, youth, and caregivers across provider types. For example, [XX%] of clients/participants received services through non-traditional behavioral health providers (e.g., hospitals/hospital systems; [XX%]) and tribal entities ([XX%]).
+At the same time, the Workstream served a diverse set of children, youth, and caregivers across provider types. For example, \[XX%\] of clients/participants received services through non-traditional behavioral health providers (e.g., hospitals/hospital systems; \[XX%\]) and tribal entities (\[XX%\]).
 
 ```{r}
 #| echo: false
