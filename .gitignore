@@ -50,3 +50,4 @@
 
 #RSTudio files
 .Rproj.user/
+.DS_Store
