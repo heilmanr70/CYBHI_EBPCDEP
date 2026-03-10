@@ -11,9 +11,19 @@ editor: visual
 
 ### Participants Served
 
-**Data used**: Discharge data, which includes 338 clients that had more than one complete intervention.
+**Data used**: Discharge data, which includes 382 clients that had more than one complete intervention.
 
-**Nitty gritty cleaning**: took out DEMO data; checked to see which `client_ids` had `pre_measure_s` AND `post_measure_s` per row (i.e., had a complete intervention); left those in; filtered for `intervention_start <= "2025-09-30"`
+**Nitty gritty cleaning**: took out DEMO data; checked to see which `client_ids` had `pre_measure_s` AND `post_measure_s` per row (i.e., had a complete intervention); left those in; filtered only for `intervention_start <= "2025-11-30"`
+
+**External report to DHCS**: by round,
+
+-   [x] \# of clients served;
+
+-   [x] percent of cases with improved outcomes;
+
+-   [x] percent with satisfaction with services;
+
+-   [x] percent with successful discharges.
 
 ```{r}
 #| echo: false
@@ -21,13 +31,28 @@ editor: visual
 #| message: false
 library(readr)
 library(tidyverse)
-discharge_data_filtered <- read_csv("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
-discharge_data_filtered <- discharge_data_filtered %>% 
-  filter(intervention_start <= "2025-09-30")
-  
-part_served <- table(discharge_data_filtered$funding_round)
-part_served
+library(haven)
 
+# load in all data
+all_data <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
+all_data <- all_data %>% 
+  filter(intervention_start <= "2025-11-30")
+  
+# load in spss data
+master_grantee_file <- haven::read_spss("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Quant Team File/MasterGranteeSpreadsheet_forBHESQuantTeam_12-15-25.sav") %>% 
+  zap_missing() %>%
+  mutate(across(where(is.labelled), as.character)) %>%
+  mutate(across(where(is.character), ~ na_if(str_trim(.x), ""))) %>% 
+  rename_with(~ gsub("^@", "", .x)) %>% 
+  janitor::clean_names() %>% 
+  rename_with(~ gsub("^x", "", .x))
+
+# join to all data
+all_data_spss <- left_join(all_data, master_grantee_file, by = c("provider" = "1a_grantee_provider_name", "provider_id" = "2grantee_provider_id", "intervention_name" = "9ebpcdep"))
+
+# participants served
+part_served <- table(all_data_spss$`4funding_round`)
+part_served
 ```
 
 ### Improved outcomes
@@ -39,14 +64,14 @@ part_served
 #| include: false
 library(janitor)
 # number of rows in discharge data 
-nrow(discharge_data_filtered)
+nrow(all_data_spss)
 
 # number of rows with positive_outcomes != NA
-count_pos <- nrow(discharge_data_filtered %>% filter(!is.na(positive_outcomes)))
+count_pos <- nrow(all_data_spss %>% filter(!is.na(positive_outcomes)))
 count_pos
 
 # table of positive outcomes 
-tab <- discharge_data_filtered %>%
+tab <- all_data_spss %>%
   tabyl(positive_outcomes) %>%               
   adorn_pct_formatting(digits = 1)
 tab
@@ -57,7 +82,7 @@ yes_pct <- tab %>%
   pull(valid_percent)
 ```
 
-Out of `{r} nrow(discharge_data_filtered)` rows of clients in EInsight's discharge data dashboard, `{r} count_pos` had both a pre- and post-score. Of those clients with complete intervention data in EInsight, `{r} yes_pct` had a positive outcome.
+Out of `{r} nrow(all_data_spss)` rows of clients with an intervention start date prior to 11-30-2025, `{r} count_pos` had both a pre- and post-score. Of those clients with complete intervention data in EInsight, `{r} yes_pct` had a positive outcome.
 
 The results below show % of positive outcomes by round, once NA's are removed from the data.
 
@@ -68,9 +93,9 @@ The results below show % of positive outcomes by round, once NA's are removed fr
 #| warning: false
 #| message: false
 # table of positive outcomes by funding round
-tab2 <- discharge_data_filtered %>% 
+tab2 <- all_data_spss %>% 
   filter(!is.na(positive_outcomes)) %>% 
-  tabyl(positive_outcomes, funding_round) %>% 
+  tabyl(positive_outcomes, `4funding_round`) %>% 
   adorn_totals("row") %>% 
   adorn_percentages("col") %>%
   adorn_pct_formatting(digits = 0) %>%
@@ -88,7 +113,7 @@ tab2
 library(zoo)
 
 # caregiver
-caregiver_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-caregiver.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE) 
+caregiver_raw <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-caregiver.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE) 
 h1 <- unlist(caregiver_raw[1, ], use.names = FALSE)           # question text row
 h2 <- unlist(caregiver_raw[2, ], use.names = FALSE)           # subheaders
 h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
@@ -105,7 +130,7 @@ caregiver <- caregiver %>%
   filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
 
 # child
-child_raw <- read.csv("/Users/cristin/Dropbox/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-child_13-17.csv", na = c("-", "", "NA", "N/A", "0"), header = FALSE) 
+child_raw <- read.csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-child_13-17.csv", na = c("-", "", "NA", "N/A", "0"), header = FALSE) 
 h1 <- unlist(child_raw[1, ], use.names = FALSE)           # question text row
 h2 <- unlist(child_raw[2, ], use.names = FALSE)           # subheaders
 h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
@@ -122,7 +147,7 @@ child <- child %>%
   filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
 
 # adult
-adult_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-adult_18-59.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE)
+adult_raw <- read.csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-adult_18-59.csv", na.strings = c("-", "", "NA", "N/A", "0"), skip = 0, header = FALSE)
 h1 <- unlist(adult_raw[1, ], use.names = FALSE)           # question text row
 h2 <- unlist(adult_raw[2, ], use.names = FALSE)           # subheaders
 h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
@@ -139,7 +164,7 @@ adult <- adult %>%
   filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
 
 # senior
-senior_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-adult_60_plus.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE) 
+senior_raw <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-adult_60_plus.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE) 
 h1 <- unlist(senior_raw[1, ], use.names = FALSE)           # question text row
 h2 <- unlist(senior_raw[2, ], use.names = FALSE)           # subheaders
 h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
@@ -190,7 +215,7 @@ combined_q1 <- bind_rows(
     mutate(source = "senior"))
 
 combined_q1 <- combined_q1 %>% 
-  filter(date_completed <= "2025-09-30")
+  filter(date_completed <= "2025-11-30")
 ```
 
 The following is the % of high satisfaction by source:
@@ -232,22 +257,22 @@ Overall, `{r} pct_4_5`% of survey respondents were highly satisfied based on que
 library(readxl)
 library(janitor)
 # reading in provider data for funding round. this doesn't have client_system_id though
-provider_demo <- readxl::read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Admin Report Exports/2025-10-29-provider_demographics.xlsx", na = c("-", "", "NA", "N/A")) %>% 
-  janitor::clean_names() %>% 
-  select(provider, provider_id, provider_system_id, funding_round)
+# provider_demo <- readxl::read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Admin Report Exports/2025-10-29-provider_demographics.xlsx", na = c("-", "", "NA", "N/A")) %>% 
+#   janitor::clean_names() %>% 
+#   select(provider, provider_id, provider_system_id, funding_round)
 
-# getting funding round via discharge data because this has client_system_id
-funding <- discharge_data_filtered %>% 
-  select(provider, provider_id, provider_system_id, client_system_id, funding_round) %>% 
-  #distinct(provider_id, provider, provider_system_id, funding_round, .keep_all = TRUE) %>% 
-  filter(!is.na(funding_round))
-         #!str_detect(funding_round, ","))
-funding %>% filter(str_detect(funding_round, ","))
-
-provider_unique <- provider_demo %>%
-  distinct(provider_id, provider, provider_system_id, funding_round, .keep_all = TRUE) %>% 
-  filter(!is.na(funding_round),
-         !str_detect(funding_round, ","))
+# # getting funding round via discharge data because this has client_system_id
+# funding <- discharge_data_filtered %>% 
+#   select(provider, provider_id, provider_system_id, client_system_id, funding_round) %>% 
+#   #distinct(provider_id, provider, provider_system_id, funding_round, .keep_all = TRUE) %>% 
+#   filter(!is.na(funding_round))
+#          #!str_detect(funding_round, ","))
+# funding %>% filter(str_detect(funding_round, ","))
+# 
+# provider_unique <- provider_demo %>%
+#   distinct(provider_id, provider, provider_system_id, funding_round, .keep_all = TRUE) %>% 
+#   filter(!is.na(funding_round),
+#          !str_detect(funding_round, ","))
 
 # combining all satisfaction survey data
 combined_all <- bind_rows(
@@ -272,21 +297,19 @@ combined_all <- bind_rows(
     rename(q = matches("^x")) %>% 
     mutate(source = "senior"))
 combined_all <- combined_all %>% 
-  filter(date_completed <= "2025-09-30") 
+  filter(date_completed <= "2025-11-30") 
 
 # get funding round data
-# can't figure out what to join to for SSOT on funding round data 
 combined_round <- combined_all %>% 
-  left_join(funding %>%  
-              mutate(provider_system_id = as.character(provider_system_id),
-                     client_system_id = as.character(client_system_id)),
-            by = c("provider", "provider_id", "provider_system_id", "client_system_id")) %>% 
+  left_join(master_grantee_file,
+            by = c("provider" = "1a_grantee_provider_name", 
+                   "provider_id" = "2grantee_provider_id")) %>% 
   distinct(cps_id, date_completed, .keep_all = TRUE) 
 
 # Question 1 satisfaction by round
 pct_4_5_round <- combined_round %>% 
-  filter(!is.na(funding_round)) %>% 
-  group_by(funding_round) %>% 
+  filter(!is.na(`4funding_round`)) %>% 
+  group_by(`4funding_round`) %>% 
   summarise(
     pct_4_5 = round((100 * sum(q2 %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q2))), 1)
   )
@@ -356,8 +379,8 @@ The following table shows high survey satisfaction results by funding round, for
 #| warning: false
 #| message: false
 summary_agree_round <- combined_round %>%
-  group_by(funding_round) %>% 
-  filter(!is.na(funding_round)) %>% 
+  group_by(`4funding_round`) %>% 
+  filter(!is.na(`4funding_round`)) %>% 
   # keep only question columns
   select(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) %>%
   mutate(across(everything(), ~ as.numeric(.))) %>% 
@@ -408,11 +431,11 @@ summary_agree_round
 #| message: false
 #| include: false
 # number of rows with a reason for discharge
-count_rows <- nrow(discharge_data_filtered %>% filter(!is.na(reason_for_discharge)))
+count_rows <- nrow(all_data_spss %>% filter(!is.na(reason_for_discharge)))
 
 # number of rows with successful discharge
 # table of positive outcomes 
-tab3 <- discharge_data_filtered %>%
+tab3 <- all_data_spss %>%
   tabyl(reason_for_discharge) %>%               
   adorn_pct_formatting(digits = 0)
 tab3
@@ -430,7 +453,7 @@ yes_pct3 <- tab3 %>%
 yes_pct3
 ```
 
-Successful discharges were defined as those clients that had "Mutually agreed cessation of treatment (Successful Completion)" as the `reason_for_discharge` in the discharge data from EInsight. Of `{r} nrow(discharge_data_filtered)` rows of discharge data, `{r} count_rows` rows had a reason for discharge stated. Of individuals with a reason for discharge stated, `{r} yes_count` (`{r} yes_pct3`) were successfully discharged.
+Successful discharges were defined as those clients that had "Mutually agreed cessation of treatment (Successful Completion)" as the `reason_for_discharge` in the discharge data from EInsight. Of `{r} nrow(all_data_spss)` rows of discharge data, `{r} count_rows` rows had a reason for discharge stated. Of individuals with a reason for discharge stated, `{r} yes_count` (`{r} yes_pct3`) were successfully discharged.
 
 The results below show % of successful discharges by round, once NA's are removed from the data.
 
@@ -439,9 +462,9 @@ The results below show % of successful discharges by round, once NA's are remove
 #| warning: false
 #| message: false
 # total table of successful discharges by funding round
-tab4 <- discharge_data_filtered %>% 
+tab4 <- all_data_spss %>% 
   filter(!is.na(reason_for_discharge)) %>% 
-  tabyl(reason_for_discharge, funding_round) %>% 
+  tabyl(reason_for_discharge, `4funding_round`) %>% 
   adorn_totals("row") %>% 
   adorn_percentages("col") %>%
   adorn_pct_formatting(digits = 0) %>%
@@ -449,14 +472,130 @@ tab4 <- discharge_data_filtered %>%
 tab4
 ```
 
+How does Rikke's SPSS file compare to the EInsight `funding_round` variable?
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+all_data_spss %>% 
+  tabyl(funding_round, `4funding_round`)
+```
+
 ## Final table
 
 |  |  |  |  |  |  |  |  |
 |----|----|----|----|----|----|----|----|
 | Round | Theme | Participants Served | Improved Outcomes | Satisfaction - Q1 | Satisfaction - Overall | Successful Discharges | Quote |
-| 1 | Parent/Caregivers Programs and Practices | `{r} part_served[1]` | `{r} tab2[["1"]][2]` | `{r} pct_4_5_round[["pct_4_5"]][1]` | `{r} summary_agree_round$pct_meeting_80pct[1]` | `{r} tab4[["1"]][3]` |  |
-| 2 | Trauma-Informed Programs and Practices | `{r} part_served[2]` | `{r} tab2[["2"]][2]` | `{r} pct_4_5_round$pct_4_5[2]` | `{r} summary_agree_round$pct_meeting_80pct[2]` | `{r} tab4[["2"]][3]` |  |
-| 3 | Early Childhood Wraparound Services | `{r} part_served[3]` | `{r} tab2[["3"]][2]` | `{r} pct_4_5_round$pct_4_5[3]` | `{r} summary_agree_round$pct_meeting_80pct[3]` | `{r} tab4[["3"]][3]` |  |
-| 4 | Youth-Driven Programs | `{r} part_served[4]` | `{r} tab2[["4"]][2]` | `{r} pct_4_5_round$pct_4_5[4]` | `{r} summary_agree_round$pct_meeting_80pct[4]` | `{r} tab4[["4"]][3]` |  |
-| 5 | Early Intervention Programs and Practices | `{r} part_served[5]` | `{r} tab2[["5"]][2]` | `{r} pct_4_5_round$pct_4_5[5]` | `{r} summary_agree_round$pct_meeting_80pct[5]` | `{r} tab4[["5"]][3]` |  |
-| 6 | No funding round selected | `{r} part_served[6]` | `{r} tab2[["No Funding Round Selected"]][2]` | `{r} pct_4_5_round$pct_4_5[6]` | `{r} summary_agree_round$pct_meeting_80pct[6]` | `{r} tab4[["No Funding Round Selected"]][3]` |  |
+| 1 | Parent/Caregivers Programs and Practices | `{r} part_served[1]` | `{r} tab2[[2]][2]` | `{r} pct_4_5_round[["pct_4_5"]][1]` | `{r} summary_agree_round$pct_meeting_80pct[1]` | `{r} tab4[[2]][3]` |  |
+| 2 | Trauma-Informed Programs and Practices | `{r} part_served[2]` | `{r} tab2[[3]][2]` | `{r} pct_4_5_round$pct_4_5[2]` | `{r} summary_agree_round$pct_meeting_80pct[2]` | `{r} tab4[[3]][3]` |  |
+| 3 | Early Childhood Wraparound Services | `{r} part_served[3]` | `{r} tab2[[4]][2]` | `{r} pct_4_5_round$pct_4_5[3]` | `{r} summary_agree_round$pct_meeting_80pct[3]` | `{r} tab4[[4]][3]` |  |
+| 4 | Youth-Driven Programs | `{r} part_served[4]` | `{r} tab2[[5]][2]` | `{r} pct_4_5_round$pct_4_5[4]` | `{r} summary_agree_round$pct_meeting_80pct[4]` | `{r} tab4[[5]][3]` |  |
+| 5 | Early Intervention Programs and Practices | `{r} part_served[5]` | `{r} tab2[[6]][2]` | `{r} pct_4_5_round$pct_4_5[5]` | `{r} summary_agree_round$pct_meeting_80pct[5]` | `{r} tab4[[6]][3]` |  |
+
+## Quarterly Report Results
+
+**For quarterly report:** by round,
+
+-   [x] number and percent enrolled and discharged;
+
+-   [x] overall (not by round) number and percent of client type categories and average age for each category;
+
+-   [ ] overall (not by round) number and percent of cases for caregiver/parent highest level of education
+
+### Number and % enrolled
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+all_data_spss %>% 
+  tabyl(`4funding_round`) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+```
+
+### Number and % discharged
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+all_data_spss %>% 
+  filter(!is.na(reason_for_discharge)) %>% 
+  tabyl(reason_for_discharge, `4funding_round`) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+```
+
+### Number (%) of client type categories
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+all_data_spss %>% 
+  tabyl(client_type) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+```
+
+### Number (%) of client type categories with average age for each category
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# first get client type counts
+tab_counts <- all_data_spss %>%
+  tabyl(client_type) %>%
+  adorn_totals("row") %>%
+  adorn_pct_formatting(digits = 1)
+
+# then average age for each category
+all_data_spss <- all_data_spss %>%
+  mutate(
+    age_start_tx_num = case_when(
+      age_at_start_of_treatment_in_years %in% c("No Age Provided", "", " ") ~ NA_character_,
+      TRUE ~ age_at_start_of_treatment_in_years
+    ) %>% as.numeric())
+    
+tab_age <- all_data_spss %>%
+  group_by(client_type) %>%
+  summarise(
+    mean_age = round(mean(age_start_tx_num, na.rm = TRUE), 1),
+    n_with_age = sum(!is.na(age_start_tx_num)),
+    .groups = "drop"
+  )
+tab_age
+
+# create final table
+final_table <- tab_counts %>%
+  left_join(tab_age, by = "client_type") %>%
+  select(
+    client_type,
+    n,
+    percent,
+    mean_age,
+    n_with_age
+  )
+
+final_table
+```
+
+### Number (%) of cases for caregiver/parent highest level of education
+
+WILL FILL IN ONCE I GET DATA FROM STEVE
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+```

@@ -1,0 +1,872 @@
+---
+title: "DHCS Dyadic Care Model Report-02-10-2026"
+author: "Cristin Young"
+format: 
+  docx:
+    page-width: 7.5
+editor: visual
+---
+
+## Dyadic Care Data
+
+Interventions are:
+
+-   HealthySteps
+
+-   Parent-Child Interaction Therapy (PCIT)
+
+-   Attachment and Biobehavioral Catch-up (ABC)
+
+-   Child-Parent Psychotherapy (CPP)
+
+### Participants Served
+
+**Data used**: Discharge data for above four interventions, which includes XX clients that had more than one complete intervention.
+
+**Nitty gritty cleaning**: took out DEMO data; checked to see which `client_ids` had `pre_measure_s` AND `post_measure_s` per row (i.e., had a complete intervention); left those in; filtered for `intervention_name ==` as above.
+
+**UPDATE:**
+
+-   funding rounds for discharge data
+
+-   Update EVERYTHING with date_completed_response
+
+## Setup
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+library(readr)
+library(tidyverse)
+library(janitor)
+library(openxlsx)
+
+# reading in data
+discharge_data_filtered <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv") 
+
+all_data <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv") 
+
+demographic_data_filtered <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv") 
+
+# narrowing to desired grantees
+
+## for those with interventions
+cdeps <- c("HealthySteps", "PCIT (Parent-Child Interaction Therapy)", "CPP (Child Parent Psychotherapy)", "ABC (Attachment and Biobehavioral Catch-Up)")
+
+discharge_cdep <- discharge_data_filtered %>% 
+  filter(intervention_name %in% cdeps)
+
+## get their provider ids because the demo data doesn't have provider names
+discharge_cdep_ids <- discharge_cdep %>% 
+  distinct(provider_id)
+
+## add in 470, 076, 190
+discharge_cdep_ids <- discharge_cdep_ids %>% 
+  add_row(provider_id = c("470", "076", "190"))
+
+## filter demo data for cdep ids
+demo_cdep <- demographic_data_filtered %>% 
+  filter(provider_id %in% discharge_cdep_ids$provider_id)
+
+all_data_cdep <- all_data %>% 
+  filter(provider_id %in% discharge_cdep_ids$provider_id,
+         intervention_name %in% cdeps)
+```
+
+## Results
+
+### Number and % enrolled
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# grantees 
+discharge_cdep %>% 
+  distinct(provider, .keep_all = TRUE) %>% 
+  tabyl(funding_round) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+
+#by funding round
+discharge_cdep %>% 
+  filter(!is.na(intervention_start)) %>% 
+  tabyl(funding_round) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+
+#by intervention
+discharge_cdep %>% 
+  filter(!is.na(intervention_start)) %>% 
+  tabyl(intervention_name) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+
+#by intervention and funding round
+discharge_cdep %>% 
+  filter(!is.na(intervention_start)) %>% 
+  tabyl(intervention_name, funding_round) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 1) %>%
+  adorn_ns()
+```
+
+### Number and % discharged
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+#by intervention
+discharge_cdep %>% 
+  filter(!is.na(intervention_end)) %>% 
+  tabyl(intervention_name) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+
+#by discharge reason
+discharge_cdep %>% 
+  filter(!is.na(intervention_end)) %>% 
+  tabyl(reason_for_discharge) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+
+# by discharge reason and funding round
+discharge_cdep %>% 
+  filter(!is.na(intervention_start)) %>% 
+   # filter(!is.na(reason_for_discharge),
+   #     reason_for_discharge != "No Reason Selected",
+   #    intervention_end <= "2025-12-31") %>%
+  tabyl(reason_for_discharge, funding_round) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 1) %>%
+  adorn_ns()
+
+# by discharge reason and intervention
+discharge_cdep %>% 
+  filter(!is.na(intervention_start)) %>% 
+    filter(!is.na(reason_for_discharge)) %>% 
+   #     reason_for_discharge != "No Reason Selected",
+   #    intervention_end <= "2025-12-31") %>%
+  tabyl(reason_for_discharge, intervention_name) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 1) %>%
+  adorn_ns()
+```
+
+### Number (%) of client type categories
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# by client_type
+demo_cdep %>% 
+  #filter(!is.na(client_type)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(client_type) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+
+# by intervention and funding round
+all_data_cdep %>% 
+  filter(!is.na(intervention_start)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(client_type, funding_round) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 1) %>%
+  adorn_ns()
+
+# by intervention and client type
+all_data_cdep %>% 
+  filter(!is.na(intervention_start)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(client_type, intervention_name) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 1) %>%
+  adorn_ns()
+```
+
+## Extras
+
+### Primary Language
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# don't know, prefer not to answer, n/a and n/a all summed
+demo_cdep %>% 
+  # filter(primary_language != "Don't Know",
+  #        primary_language != "No Primary Language Selected",
+  #        primary_language != "Not Applicable",
+  #        primary_language != "Prefer Not To Answer",
+  #        !is.na(primary_language)) %>%
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(primary_language) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+```
+
+### Housing Status
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# don't know, prefer not to answer, n/a and n/a all summed
+demo_cdep %>% 
+  filter(housing_status != "Don't Know",
+         housing_status != "No Housing Status Selected",
+         housing_status != "Not Applicable",
+         housing_status != "Prefer Not To Answer",
+         !is.na(housing_status)) %>%
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(housing_status) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+```
+
+### Number (%) of client type categories with average age for each category
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# first get client type counts
+tab_counts <- demo_cdep %>%
+  #filter(client_type != "No Client Type Selected",
+   #      !is.na(client_type)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(client_type) %>%
+  adorn_totals("row") %>%
+  adorn_pct_formatting(digits = 1)
+
+tab_counts
+
+# then average age for each category
+demo_cdep_distinct <- demo_cdep %>%
+  mutate(
+    age_start_tx_num = case_when(
+      age_at_start_of_treatment_in_years %in% c("No Age Provided", "", " ") ~ NA_character_,
+      TRUE ~ age_at_start_of_treatment_in_years
+    ) %>% as.numeric()) %>% 
+  distinct(client_system_id, .keep_all = TRUE) 
+    
+tab_age <- demo_cdep_distinct %>%
+  group_by(client_type) %>%
+  summarise(
+    mean_age = round(mean(age_start_tx_num, na.rm = TRUE), 1),
+    n_with_age = sum(!is.na(age_start_tx_num)),
+    .groups = "drop"
+  )
+
+tab_age
+
+# create final table
+final_table <- tab_counts %>%
+  left_join(tab_age, by = "client_type") %>%
+  select(
+    client_type,
+    n,
+    percent,
+    mean_age,
+    n_with_age
+  )
+
+final_table
+
+# client type by intervention
+demo_cdep %>%
+  #filter(client_type != "No Client Type Selected",
+   #      !is.na(client_type)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(client_type) %>%
+  adorn_totals("row") %>%
+  adorn_pct_formatting(digits = 1)
+```
+
+### Insurance Status
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# don't know, prefer not to answer, n/a and n/a all summed
+demo_cdep %>% 
+  filter(insurance_status != "Don't Know",
+         insurance_status != "No Insurance Status Selected",
+         insurance_status != "Not Applicable",
+         insurance_status != "Prefer Not To Answer",
+         !is.na(insurance_status)) %>%
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(insurance_status) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+```
+
+### Gender Identity
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# don't know, prefer not to answer, n/a and n/a all summed
+demo_cdep %>% 
+  # filter(gender_identity != "Don't Know",
+  #        gender_identity != "No Gender Identify Selected",
+  #        gender_identity != "Not Applicable",
+  #        gender_identity != "Prefer Not To Answer",
+  #        !is.na(gender_identity)) %>%
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(gender_identity) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+```
+
+### Sexual Orientation
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# don't know, prefer not to answer, n/a and n/a all summed
+demo_cdep %>% 
+ # filter(sexual_orientation != "Don't Know",
+ #        sexual_orientation != "No Sexual Orientation Selected",
+ #        sexual_orientation != "Not Applicable",
+ #        sexual_orientation != "Prefer Not To Answer",
+ #        !is.na(sexual_orientation)) %>%
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(sexual_orientation) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+```
+
+### Race
+
+1.  Asian
+
+2.  Black or African American
+
+3.  Hispanic or Latino
+
+4.  Middle Eastern or North African
+
+5.  Native American/American Indian or Alaska Native
+
+6.  Native Hawaiian or Pacific Islander
+
+7.  White
+
+8.  2+ races selected
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# don't know, prefer not to answer, n/a and n/a all summed
+demo_cdep %>% 
+filter(race != "Don't Know",
+       race != "No Race Selected",
+       race != "Not Applicable",
+       race != "Prefer Not To Answer",
+       !is.na(race)) %>%
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(code_num) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+```
+
+### Ethnicity
+
+1.  Chinese
+2.  Asian Indian
+3.  Filipino
+4.  Vietnamese
+5.  Korean
+6.  Japanese
+7.  African American
+8.  Jamaican
+9.  Haitian
+10. Nigerian
+11. Somali
+12. Mexican
+13. Puerto Rican
+14. Salvadoran
+15. Cuban
+16. Dominican
+17. Guatemalan
+18. Native Hawaiian
+19. Samoan
+20. Chamorro
+21. English
+22. German
+23. Irish
+24. Italian
+25. Polish
+26. Scottish
+27. 2+ ethnicities selected = 88
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# don't know, prefer not to answer, n/a and n/a all summed
+all_data_cdep %>% 
+# filter(ethnicity != "Don't Know",
+#        ethnicity != "No Ethnicity Selected",
+#        ethnicity != "Not Applicable",
+#        ethnicity != "Prefer Not To Answer",
+#        !is.na(ethnicity)) %>%
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(ethn_num) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+```
+
+## Satisfaction survey stuff
+
+\% percentage satisfied by intervention - Q1 and whole survey
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+library(zoo)
+
+# caregiver
+caregiver_raw <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-caregiver.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE) 
+h1 <- unlist(caregiver_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(caregiver_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+caregiver <- caregiver_raw[-c(1, 2), ]
+names(caregiver) <- new_names
+caregiver <- caregiver %>%
+  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+
+# child
+child_raw <- read.csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-child_13-17.csv", na = c("-", "", "NA", "N/A", "0"), header = FALSE) 
+h1 <- unlist(child_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(child_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+child <- child_raw[-c(1, 2), ]
+names(child) <- new_names
+child <- child %>%
+  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+
+# adult
+adult_raw <- read.csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-adult_18-59.csv", na.strings = c("-", "", "NA", "N/A", "0"), skip = 0, header = FALSE)
+h1 <- unlist(adult_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(adult_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+adult <- adult_raw[-c(1, 2), ]
+names(adult) <- new_names
+adult <- adult %>%
+  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+
+# senior
+senior_raw <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-adult_60_plus.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE) 
+h1 <- unlist(senior_raw[1, ], use.names = FALSE)           # question text row
+h2 <- unlist(senior_raw[2, ], use.names = FALSE)           # subheaders
+h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+h1_ff <- str_squish(h1_ff)
+new_names <- ifelse(
+  is.na(h1_ff) | h1_ff == "",
+  h2,                                  # keep subheader only
+  paste(h1_ff, h2, sep = " - ")        # combine when applicable
+)
+new_names <- janitor::make_clean_names(new_names)
+senior <- senior_raw[-c(1, 2), ]
+names(senior) <- new_names
+senior <- senior %>%
+  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+```
+
+Satisfaction is defined two ways below. The first is the percent of individuals who answered question 1 as "Agree" or "Strongly Agree" on the satisfaction survey. The second definition is the percent of individuals who selected "Agree" or "Strongly Agree" on 80% or more of the questions completed.
+
+**Nitty gritty:** There are four satisfaction surveys: Caregiver (n=`{r} nrow(caregiver)`), Child (13-17) (n=`{r} nrow(child)`), Adult (18-59) (n=`{r} nrow(adult)`), and Adult (60+) (n=`{r} nrow(senior)`). A separate data frame was made for question 1, and high satisfaction was defined as the percent of individuals who answered a 4 or 5 for question 1.
+
+### Question 1 Satisfaction
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+combined_q1 <- bind_rows(
+  caregiver %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x1_")) %>% 
+    rename(q1 = matches("^x1_")) %>% 
+    mutate(source = "caregiver"),
+  child %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x1_")) %>% 
+    rename(q1 = matches("^x1_")) %>% 
+    mutate(source = "child"),
+  adult %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x1_")) %>% 
+    rename(q1 = matches("^x1_")) %>% 
+    mutate(source = "adult"),
+  senior %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x1_")) %>% 
+    rename(q1 = matches("^x1_")) %>% 
+    mutate(source = "senior"))
+
+all_data_cdep_distinct <- all_data_cdep %>% 
+  distinct(client_system_id, .keep_all = TRUE) 
+
+all_data_cdep_distinct <- all_data_cdep_distinct %>% 
+  mutate(provider_system_id = as.character(provider_system_id),
+         client_system_id = as.character(client_system_id))
+
+combined_q1 <- combined_q1 %>% 
+  mutate(provider_system_id = as.character(provider_system_id),
+         client_system_id = as.character(client_system_id))
+
+combined_q1 <- left_join(combined_q1, all_data_cdep_distinct, by = c("provider", "provider_id", "provider_system_id", "client_system_id")) 
+combined_q1 <- combined_q1 %>% 
+  filter(!is.na(intervention_name))
+```
+
+The following is the % of high satisfaction by intervention:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+combined_q1 %>%
+  group_by(intervention_name) %>%
+  summarise(
+    n_total = sum(!is.na(q12)),
+    n_4_5 = sum(q12 %in% c(4, 5), na.rm = TRUE),
+    pct_4_5 = round((100 * n_4_5 / n_total), 1)
+  )
+```
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+pct_4_5 <- combined_q1 %>%
+  summarise(
+    pct_4_5 = round((100 * sum(q12 %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q12))), 1)
+  ) %>%
+  pull(pct_4_5)
+
+pct_4_5
+```
+
+Overall, `{r} pct_4_5`% of survey respondents were highly satisfied based on question 1 answers. The following table shows high survey satisfaction by round.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+library(readxl)
+library(janitor)
+
+# combining all satisfaction survey data
+combined_all <- bind_rows(
+  caregiver %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x")) %>% 
+    rename(q = matches("^x")) %>% 
+    mutate(source = "caregiver"),
+  child %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x")) %>% 
+    rename(q = matches("^x")) %>% 
+    mutate(source = "child"),
+  adult %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x")) %>% 
+    rename(q = matches("^x")) %>% 
+    mutate(source = "adult"),
+  senior %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, matches("^x")) %>% 
+    rename(q = matches("^x")) %>% 
+    mutate(source = "senior"))
+
+combined_all <- combined_all %>% 
+  mutate(provider_system_id = as.character(provider_system_id),
+         client_system_id = as.character(client_system_id))
+
+combined_all <- left_join(combined_all, all_data_cdep_distinct, by = c("provider", "provider_id", "provider_system_id", "client_system_id")) 
+
+combined_all <- combined_all %>% 
+  filter(!is.na(intervention_name))
+```
+
+### Combined Survey Satisfaction
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+
+summary_agree <- combined_all %>%
+  # keep only question columns
+  select(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) %>%
+  mutate(across(everything(), ~ as.numeric(.))) 
+
+df2 <- summary_agree %>% 
+  mutate(across(everything(), ~ na_if(., 0))) %>% 
+  # calculate per-person proportion of "Agree"/"Strongly Agree"
+  rowwise() %>%
+  summarise(
+    n_answered = sum(!is.na(c_across(everything()))),
+    n_agree = sum(c_across(everything()) %in% c(4,5), na.rm = TRUE),
+    pct_agree = n_agree / n_answered
+  ) %>%
+  ungroup() %>% 
+  summarise(
+    n_total = n(),
+    n_meeting_80pct = sum(pct_agree >= 0.8, na.rm = TRUE),
+    pct_meeting_80pct = round((100 * n_meeting_80pct / n_total), 1)
+  )
+
+df2
+```
+
+Overall, `{r} df4$pct_meeting_80pct`% of survey respondents were highly satisfied, defined as selecting "Agree" or "Strongly Agree" on 80% or more of the questions completed, for those who completed a survey on or before February 10, 2026.
+
+The following table shows high survey satisfaction results by funding round, for data where both client_id and `intervention_name` were available.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+summary_agree_intervention <- combined_all %>%
+  group_by(intervention_name) %>% 
+  filter(!is.na(intervention_name)) %>% 
+  # keep only question columns
+  select(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) %>%
+  mutate(across(everything(), ~ as.numeric(.))) %>% 
+  # calculate per-person proportion of "Agree"/"Strongly Agree"
+  rowwise() %>%
+  summarise(
+    n_answered = sum(!is.na(c_across(everything()))),
+    n_agree = sum(c_across(everything()) %in% c(4, 5)),
+    pct_agree = n_agree / n_answered
+  ) %>%
+  summarise(
+    n_total = n(),
+    n_meeting_80pct = sum(pct_agree >= 0.8, na.rm = TRUE),
+    pct_meeting_80pct = round((100 * n_meeting_80pct / n_total), 1)
+  )
+
+summary_agree_intervention
+```
+
+### Preferred Language by Satisfaction Survey
+
+**Definition:** Clients from the primary evaluation who indicate services received in their preferred language on the satisfaction survey divided by the total number of clients served by the grantees who completed a satisfaction survey after an intervention during the designated time frame.
+
+**Calculation:** This KPI represents ***the percent*** of clients that report services received in their preferred language on the satisfaction survey out of the total that completed the satisfaction survey by period(s).
+
+**Assumptions:** I cleaned dates with "002X" and "292X" and replaced them with "202X." I also filtered dates in the future (\<= "2026-02-10"). I filtered out NAs for both the quarter label and the question first before calculating %.
+
+The following table shows the percent of clients who received services in their preferred language on the satisfaction survey by quarter:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# combining all satisfaction survey data
+client_lang_all <- bind_rows(
+  caregiver %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+    mutate(source = "caregiver"),
+  child %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+    mutate(source = "child"),
+  adult %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+    mutate(source = "adult"),
+  senior %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+    mutate(source = "senior"))
+
+# first clean date column
+client_lang_all <- client_lang_all %>% 
+  mutate(
+    date_clean = str_replace(date_completed, "^00", "20"), # replace 00xx with 20xx
+    date_clean = str_replace(date_clean, "^29", "20"), # replace 29xx with 20xx
+    date_clean = as.Date(date_clean)
+  )
+
+# add in a quarter column 
+client_lang_all <- client_lang_all %>% 
+  filter(!is.na(date_clean),
+         date_clean <= Sys.Date()) %>% 
+  mutate(quarter_label = paste0("Q", quarter(date_clean), " ", year(date_clean)),
+       quarter_label = factor(quarter_label, levels = unique(quarter_label)) #to sort chronologically
+  )
+
+client_lang_all <- client_lang_all %>% 
+  mutate(provider_system_id = as.character(provider_system_id),
+         client_system_id = as.character(client_system_id))
+
+client_lang_all <- left_join(client_lang_all, all_data_cdep_distinct, by = c("provider", "provider_id", "provider_system_id", "client_system_id")) 
+
+client_lang_all <- client_lang_all %>% 
+  filter(!is.na(intervention_name))
+
+table(client_lang_all$were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response, useNA = "ifany")
+```
+
+## Participant outcomes
+
+### Number and % improved outcome
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# make improved outcome variable
+assessment_rules <- tibble::tribble(
+  ~trimmed_pre_assessment_name, ~higher_is_better, ~min_change,
+  "CATS",          FALSE,            1,
+  "GAD-7",         FALSE,            1,
+  "NOMS",          TRUE,             1,
+  "Pediatric",     FALSE,            1,
+  "PHQ-9",         FALSE,            1,
+  "PSS",           FALSE,            1,
+  "SDQ",           FALSE,            1,
+  "YOQ",           FALSE,            1
+)
+
+# create sign change where positive always means better
+discharge_cdep_outcome <- discharge_cdep %>%
+  left_join(assessment_rules, by = "trimmed_pre_assessment_name") %>%
+  mutate(
+    raw_change = post_score - pre_score,
+    better_change = if_else(higher_is_better, raw_change, -raw_change),
+    min_change = coalesce(min_change, 0),  # default if you didn’t set one
+    outcome = case_when(
+      is.na(pre_score) | is.na(post_score) ~ NA_character_,
+      better_change >=  min_change ~ "improved",
+      better_change <= -min_change ~ "worsened",
+      TRUE                         ~ "no_change"
+    ),
+    outcome = factor(outcome, levels = c("worsened", "no_change", "improved"))
+  )
+
+# checks
+discharge_cdep_outcome %>% 
+  count(trimmed_pre_assessment_name, outcome)
+discharge_cdep_outcome %>% 
+  group_by(trimmed_pre_assessment_name) %>% summarise(missing_rules = sum(is.na(higher_is_better)))
+
+table(discharge_cdep_outcome$outcome)
+
+# by outcome
+discharge_cdep_outcome %>% 
+ # distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(outcome) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+
+# by intervention and outcome
+discharge_cdep_outcome %>% 
+  filter(!is.na(intervention_start),
+         !is.na(outcome)) %>% 
+         #!is.na(outcome)) %>% 
+#  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(intervention_name, outcome) %>% 
+  adorn_totals("row") %>% 
+  adorn_totals("col") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 1) %>%
+  adorn_ns()
+
+  # by outcome and funding round
+discharge_cdep_outcome %>% 
+ # filter(!is.na(intervention_start)) %>% 
+ # distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(outcome, funding_round) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 1) %>%
+  adorn_ns()
+
+# by outcome and measure
+discharge_cdep_outcome %>% 
+  filter(!is.na(outcome)) %>% 
+  #distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(post_assessment_name, outcome) %>% 
+  adorn_totals("row") %>% 
+  adorn_totals("col") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 1) %>%
+  adorn_ns()
+```
+
+## % of clients who met treatment goals
+
+Two criteria must be met for a client/individual to have ‘met treatment goals’: 1) a discharge reason of Mutually agreed to cessation of treatment and 2) an improvement according to pre and post measures collected (i.e., the NOMS sub-scales). For this metric, a simple difference between the pre and post score (in the positive direction depending on the tool) is used to determine a positive outcome.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| 
+discharge_cdep_outcome %>% 
+    filter(outcome == "no_change" | outcome == "improved") %>% 
+  tabyl(reason_for_discharge) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+
+```

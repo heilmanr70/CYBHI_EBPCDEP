@@ -1,0 +1,521 @@
+---
+title: "Q1.01 Improved Access to Subpopulations"
+author: "Cristin Young"
+format: 
+  docx:
+    page-width: 7.5
+editor: visual
+---
+
+## Question 1.01 improved access to subpopulations
+
+### Race
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by race.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and race is recoded as follows:
+
+**Codebook:**
+
+0.  NA, don't know, prefer not to answer
+1.  Asian
+2.  Black or African American
+3.  Hispanic or Latino
+4.  Middle Eastern or North African
+5.  Native American/American Indian or Alaska Native
+6.  Native Hawaiian or Pacific Islander
+7.  White
+8.  2+ races selected
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have race characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients).
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+library(readr)
+library(tidyverse)
+
+# using all data to get quarters/interventions
+all_data <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
+
+all_data <- all_data |> 
+  filter(!is.na(intervention_start), # has to have an intervention start date
+         !is.na(intervention_name),
+         intervention_start <= "2025-11-30") # has to have an intervention type named
+
+tab <- all_data |> 
+  filter(intervention_start >= "2024-01-01") |> 
+         #!is.na(code_num)) |> 
+  distinct(client_system_id, .keep_all = TRUE) |> 
+  tabyl(code_num) |> 
+  adorn_totals("row") |> 
+  #adorn_percentages("row") |>
+  adorn_pct_formatting(digits = 1)
+
+tab 
+
+tab <- all_data |> 
+   filter(!is.na(client_type),
+          !is.na(code_num)) |> 
+  distinct(client_system_id, .keep_all = TRUE) |> 
+  tabyl(client_type, code_num) |> 
+  adorn_totals("row") |> 
+  adorn_percentages("row") |>
+  adorn_pct_formatting(digits = 0) |>
+  adorn_ns() 
+
+tab 
+
+```
+
+### Insurance status
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by insurance status.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and insurance is recoded as follows:
+
+**Codebook:**
+
+0.  NA, don't know, prefer not to answer
+
+1.  Private insurance
+
+2.  Medi-Cal/Medi-Care
+
+3.  No Insurance Status Selected
+
+4.  No insurance/Indigent
+
+5.  Other
+
+6.  Veterans Benefits
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have insurance status characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients).
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Define coding for single responses
+codebook_insurance <- c("Private Insurance" = 1, 
+              "Medi-Cal/Medi-Care" = 2, 
+              "No insurance/Indigent" = 3,
+              "Other" = 4,
+              "Veterans Benefits" = 5,
+              "Don't Know" = 6,
+              "Prefer Not To Answer" = 7,
+              "Not Applicable" = 8, 
+              "No Insurance Status Selected" = 9)
+
+all_data <- all_data |> 
+  mutate(
+    # normalize text a bit
+    insurance_status_clean = str_squish(insurance_status),
+    # make 3 categories missing
+    insurance_status_clean = if_else(
+      insurance_status_clean %in% c("Don't Know", "Prefer Not To Answer",
+                                    "Not Applicable", "No Insurance Status Selected") |
+      insurance_status_clean == "",
+      NA_character_,
+      insurance_status_clean),
+    # numeric code (NA if not in codebook or was set to NA above)
+    insurance_num = unname(codebook_insurance[insurance_status]) |> 
+      as.integer())
+  
+
+tab <- all_data |> 
+  filter(intervention_start >= "2024-01-01",
+         intervention_start <= "2025-11-30") |> 
+         # !is.na(insurance_num)) |> 
+  distinct(client_system_id, .keep_all = TRUE) |> 
+  tabyl(insurance_status) |> 
+  adorn_totals("row") |> 
+  adorn_pct_formatting(digits = 2)
+
+tab
+
+tab <- all_data |> 
+  filter(!is.na(client_type),
+         !is.na(insurance_num)) |> 
+  distinct(client_system_id, .keep_all = TRUE) |> 
+  tabyl(client_type, insurance_num) |> 
+  adorn_totals("row") |> 
+  adorn_percentages("row") |>
+  adorn_pct_formatting(digits = 0) |>
+  adorn_ns() 
+
+tab 
+
+
+```
+
+### Sexual orientation
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by sexual orientation.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and sexual orientation is recoded as follows:
+
+**Codebook:**
+
+0.  NA, don't know, prefer not to answer, no sexual orientation selected
+
+1.  Asexual
+
+2.  Bisexual
+
+3.  Lesbian/Gay
+
+4.  Other
+
+5.  Pansexual
+
+6.  Same Gender Loving
+
+7.  Straight
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have sexual orientation characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients).
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Define coding for single responses
+codebook_sexual_orientation <- c("Asexual" = 1, 
+              "Bisexual" = 2, 
+              "Lesbian/Gay" = 3,
+              "Other" = 4,
+              "Pansexual" = 5,
+              "Same Gender Loving" = 6,
+              "Straight" = 7)
+
+all_data <- all_data |> 
+  mutate(
+    # normalize text a bit
+    sexual_orientation_clean = str_squish(sexual_orientation),
+    # make 3 categories missing
+    sexual_orientation_clean = if_else(
+      sexual_orientation_clean %in% c("Don't Know", 
+                                      "No Sexual Orientation Selected",
+                                      "Prefer Not To Answer",
+                                    "Not Applicable") |
+      sexual_orientation_clean == "",
+      NA_character_,
+      sexual_orientation_clean),
+    # numeric code (NA if not in codebook or was set to NA above)
+    sexual_orientation_num = unname(codebook_sexual_orientation[sexual_orientation_clean]) |> 
+      as.integer())
+  
+
+tab <- all_data |> 
+  filter(intervention_start >= "2024-01-01",
+         intervention_start <= "2025-11-30") |> 
+         #!is.na(sexual_orientation_num)) |> 
+  distinct(client_system_id, .keep_all = TRUE) |> 
+  tabyl(sexual_orientation) |> 
+  adorn_totals("row") |> 
+  adorn_pct_formatting(digits = 1)
+
+tab 
+
+tab <- all_data |> 
+  filter(intervention_start >= "2024-01-01",
+         !is.na(sexual_orientation_num)) |> 
+  distinct(client_system_id, .keep_all = TRUE) |> 
+  tabyl(client_type, sexual_orientation_num) |> 
+  adorn_totals("row") |> 
+  adorn_percentages("row") |>
+  adorn_pct_formatting(digits = 0) |>
+  adorn_ns() 
+
+tab 
+
+```
+
+### Gender identity
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by gender identity.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and gender identity is recoded as follows:
+
+**Codebook:**
+
+0.  NA, don't know, prefer not to answer
+
+1.  Genderqueer
+
+2.  Man/boy
+
+3.  No Gender Identity Selected
+
+4.  Non-binary
+
+5.  Transgender man/boy
+
+6.  Transgender woman/girl
+
+7.  Two-spirit
+
+8.  Woman/girl
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have gender identity characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients).
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Define coding for single responses
+codebook_gender_identity <- c("Genderqueer" = 1, 
+              "Man/boy" = 2, 
+              "Non-binary" = 3,
+              "Transgender man/boy" = 4,
+              "Transgender woman/girl" = 5,
+              "Two-spirit" = 6,
+              "Woman/girl" = 7)
+
+all_data <- all_data |> 
+  mutate(
+    # normalize text a bit
+    gender_identity_clean = str_squish(gender_identity),
+    # make 3 categories missing
+    gender_identity_clean = if_else(
+      gender_identity_clean %in% c("Don't Know", 
+                                      "Prefer Not To Answer",
+                                    "Not Applicable", "No Gender Identify Selected") |
+      gender_identity_clean == "",
+      NA_character_,
+      gender_identity_clean),
+    # numeric code (NA if not in codebook or was set to NA above)
+    gender_identity_num = unname(codebook_gender_identity[gender_identity_clean]) |> 
+      as.integer())
+
+tab <- all_data |> 
+  filter(intervention_start >= "2024-01-01",
+         intervention_start <= "2025-11-30") |> 
+  #       gender_identity_num != 3) |> 
+         #!is.na(gender_identity_num)) |> 
+  distinct(client_system_id, .keep_all = TRUE) |> 
+  tabyl(gender_identity) |> 
+  adorn_totals("row") |> 
+  adorn_pct_formatting(digits = 1) 
+
+tab 
+
+```
+
+## Preferred language
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by preferred language.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and preferred language is recoded as follows:
+
+**Codebook:**
+
+0.  NA, don't know, prefer not to answer, no preferred language selected
+
+1.  English
+
+2.  Spanish
+
+3.  Other
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have preferred language characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients). Any language with \<200 rows of data is grouped into "Other" category
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+all_data <- all_data |> 
+  mutate(
+    # normalize text a bit
+    preferred_language_clean = str_squish(preferred_language),
+    # make 3 categories missing
+    preferred_language_clean = case_when(
+      preferred_language_clean %in% c("Don't Know", 
+                                      "Prefer Not To Answer",
+                                      "Not Applicable", 
+                                      "") ~ NA_character_,
+      preferred_language_clean %in% c("English", "Spanish") ~ preferred_language_clean,
+      TRUE ~ "Other"),
+    # numeric code (NA if not in codebook or was set to NA above)
+    preferred_language_num = case_when(
+      preferred_language_clean == "English" ~ 1,
+      preferred_language_clean == "Spanish" ~ 2,
+      preferred_language_clean == "Other" ~ 3,
+      TRUE ~ NA_integer_
+    ))
+  
+
+tab <- all_data |> 
+  filter(intervention_start >= "2024-01-01",
+         !is.na(preferred_language_clean)) |> 
+  distinct(client_system_id, .keep_all = TRUE) |> 
+  tabyl(intervention_start_quarter, preferred_language_clean) |> 
+  adorn_totals("row") |> 
+  adorn_percentages("row") |>
+  adorn_pct_formatting(digits = 0) |>
+  adorn_ns() 
+
+tab 
+
+tab <- all_data |> 
+  filter(!is.na(client_type),
+         !is.na(preferred_language_clean)) |> 
+  distinct(client_system_id, .keep_all = TRUE) |> 
+  tabyl(client_type, preferred_language_clean) |> 
+  adorn_totals("row") |> 
+  adorn_percentages("row") |>
+  adorn_pct_formatting(digits = 0) |>
+  adorn_ns() 
+
+tab 
+
+```
+
+## Client_groups: primary language
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by primary language.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and primary language is recoded as follows:
+
+**Codebook:**
+
+0.  NA, don't know, prefer not to answer, no primary language selected
+
+<!-- -->
+
+1.  English
+
+2.  Spanish
+
+3.  Other
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have primary language characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients). Any language with \<200 rows of data is grouped into "Other" category
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+all_data <- all_data |> 
+  mutate(
+    # normalize text a bit
+    primary_language_clean = str_squish(primary_language),
+    # make 3 categories missing
+    primary_language_clean = case_when(
+      primary_language_clean %in% c("Don't Know", 
+                                      "Prefer Not To Answer",
+                                      "Not Applicable", 
+                                      "") ~ NA_character_,
+      primary_language_clean %in% c("English", "Spanish") ~ primary_language_clean,
+      TRUE ~ "Other"),
+    # numeric code (NA if not in codebook or was set to NA above)
+    primary_language_num = case_when(
+      primary_language_clean == "English" ~ 1,
+      primary_language_clean == "Spanish" ~ 2,
+      primary_language_clean == "Other" ~ 3,
+      TRUE ~ NA_integer_
+    ))
+  
+
+tab <- all_data |> 
+  filter(intervention_start >= "2024-01-01",
+         !is.na(primary_language_clean)) |> 
+  distinct(client_system_id, .keep_all = TRUE) |> 
+  tabyl(intervention_start_quarter, primary_language_clean) |> 
+  adorn_totals("row") |> 
+  adorn_percentages("row") |>
+  adorn_pct_formatting(digits = 0) |>
+  adorn_ns() 
+
+tab 
+
+tab <- all_data |> 
+  filter(!is.na(client_type),
+         !is.na(primary_language_clean)) |> 
+  distinct(client_system_id, .keep_all = TRUE) |> 
+  tabyl(client_type, primary_language_clean) |> 
+  adorn_totals("row") |> 
+  adorn_percentages("row") |>
+  adorn_pct_formatting(digits = 0) |>
+  adorn_ns() 
+
+tab 
+```
+
+## Client_groups: housing status
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by housing status.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and housing status is recoded as follows:
+
+**Codebook:**
+
+0.  NA, don't know, prefer not to answer, no housing status selected
+
+<!-- -->
+
+1.  Housed
+
+2.  Unhoused
+
+3.  Other (i.e. treatment facility)
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have housing status characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients).
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+all_data <- all_data |> 
+  mutate(
+    # normalize text a bit
+    housing_status_clean = str_squish(housing_status),
+    # make 3 categories missing
+    housing_status_clean = case_when(
+      housing_status_clean %in% c("Don't Know", 
+                                      "Prefer Not To Answer",
+                                      "Not Applicable", 
+                                      "") ~ NA_character_,
+      housing_status_clean %in% c("Housed", "Unhoused") ~ housing_status_clean,
+      TRUE ~ "Other (i.e. treatment facility)"),
+    # numeric code (NA if not in codebook or was set to NA above)
+    housing_status_num = case_when(
+      housing_status_clean == "Housed" ~ 1,
+      housing_status_clean == "Unhoused" ~ 2,
+      housing_status_clean == "Other (i.e. treatment facility)" ~ 3,
+      TRUE ~ NA_integer_
+    ))
+  
+
+tab <- all_data |> 
+  filter(intervention_start >= "2024-01-01",
+         !is.na(housing_status_clean)) |> 
+  distinct(client_system_id, .keep_all = TRUE) |> 
+  tabyl(intervention_start_quarter, housing_status_clean) |> 
+  adorn_totals("row") |> 
+  adorn_percentages("row") |>
+  adorn_pct_formatting(digits = 0) |>
+  adorn_ns() 
+
+tab 
+
+tab <- all_data |> 
+  filter(!is.na(client_type),
+         !is.na(housing_status_clean)) |> 
+  distinct(client_system_id, .keep_all = TRUE) |> 
+  tabyl(client_type, housing_status_clean) |> 
+  adorn_totals("row") |> 
+  adorn_percentages("row") |>
+  adorn_pct_formatting(digits = 0) |>
+  adorn_ns() 
+
+tab 
+
+```
+

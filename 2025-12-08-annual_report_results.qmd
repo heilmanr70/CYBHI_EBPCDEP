@@ -35,7 +35,8 @@ discharge_data_filtered <- discharge_data_filtered %>%
          !is.na(intervention_name)) # has to have an intervention type named
 
 client_serve <- discharge_data_filtered %>% 
-  filter(intervention_start >= "2024-01-01") %>%
+  filter(intervention_start >= "2024-01-01",
+         intervention_start <= "2025-12-31") %>%
     tabyl(intervention_start_year)
 client_serve 
 
@@ -209,6 +210,10 @@ combined_all <- combined_all %>%
        quarter_label = factor(quarter_label, levels = unique(quarter_label)) #to sort chronologically
   )
 
+combined_q1 <- combined_q1 %>%
+  filter(!is.na(date_completed),
+         date_completed <= "2025-11-30") 
+
 #add in a year column
 combined_all$year <- year(combined_all$date_clean)
 
@@ -234,6 +239,38 @@ pct_4_5_overall <- combined_all %>%
   )
 
 pct_4_5_overall 
+
+all_data_distinct <- all_data %>% 
+  distinct(client_system_id, .keep_all = TRUE) 
+
+all_data_distinct <- all_data_distinct %>% 
+  mutate(provider_system_id = as.character(provider_system_id),
+         client_system_id = as.character(client_system_id))
+
+combined_q1 <- combined_q1 %>% 
+  mutate(provider_system_id = as.character(provider_system_id),
+         client_system_id = as.character(client_system_id))
+
+combined_q1 <- left_join(combined_q1, all_data_distinct, by = c("provider", "provider_id", "provider_system_id", "client_system_id")) 
+combined_q1 <- combined_q1 %>% 
+  filter(!is.na(intervention_name))
+
+combined_q1 %>% 
+  filter(!is.na(q11),
+           q11 != "Not Applicable") %>% 
+  tabyl(q11) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+
+combined_q1 %>% 
+  filter(!is.na(q11),
+         q11 != "Not Applicable") %>% 
+  tabyl(client_type, q11) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
 
 openxlsx::write.xlsx(pct_4_5_year,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Question 1 Satisfaction.xlsx",sheetName="by year")
 # xlsx::write.xlsx(pct_4_5_year,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Question 1 Satisfaction.xlsx",sheetName="by year")
@@ -340,7 +377,7 @@ openxlsx::write.xlsx(summary_agree_quarter,"/Users/cristin/CWS Dropbox/Cristin Y
 
 **Calculation:** This KPI represents ***the percent*** of clients who have a disenrollment/discharge response as "mutually agreed cessation of treatment" out of the total number of clients with a discharge reason by period(s).
 
-**Assumptions:** This is discharge data from EInsight, so can have clients in here multiple times (they can have multiple interventions, or the same intervention on multiple dates). I removed NA's from reason_for_discharge, but did not clean dates at all. I filtered by intervention_end date \>= "2024-01-1" and \<= "12-31-2025."
+**Assumptions:** This is discharge data from EInsight, so can have clients in here multiple times (they can have multiple interventions, or the same intervention on multiple dates). I removed NA's from reason_for_discharge, but did not clean dates at all. I filtered by intervention_start date \>= "2024-01-1" and \<= "12-31-2025."
 
 ```{r}
 #| echo: false
@@ -355,8 +392,10 @@ count_rows
 # number of rows with successful discharge
 # table of positive outcomes 
 tab3 <- discharge_data_filtered %>%
+  filter(intervention_start >= "2024-01-01",
+         intervention_start <= "2025-12-31") %>% 
   tabyl(reason_for_discharge) %>%               
-  adorn_pct_formatting(digits = 0)
+  adorn_pct_formatting(digits = 2)
 
 # count of successful discharge
 yes_count <- tab3 %>%
@@ -382,11 +421,9 @@ tab4q <- discharge_data_filtered %>%
   filter(!is.na(reason_for_discharge),
          intervention_end >= "2024-01-01",
          intervention_end <= "2025-12-31") %>% 
-  tabyl(reason_for_discharge, intervention_end_quarter) %>% 
+  tabyl(reason_for_discharge) %>% 
   adorn_totals("row") %>% 
-  adorn_percentages("col") %>%
-  adorn_pct_formatting(digits = 0) %>%
-  adorn_ns() 
+  adorn_pct_formatting(digits = 1)
 
 tab4q %>% filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)")
 
@@ -406,13 +443,19 @@ tab4y %>% filter(reason_for_discharge == "Mutually agreed cessation of treatment
 
 tab4 <- discharge_data_filtered %>% 
   filter(!is.na(reason_for_discharge),
-         intervention_end >= "2024-01-01",
-         intervention_end <= "2025-12-31") %>% 
+         !is.na(intervention_name),
+         !is.na(pre_measure_s),
+         !is.na(post_measure_s),
+         !is.na(location),
+         intervention_start >= "2024-01-01",
+         intervention_start <= "2025-12-31",
+         positive_outcomes == "Yes") %>% 
   tabyl(reason_for_discharge) %>% 
-  adorn_totals("row") %>% 
-  adorn_percentages("col") %>%
-  adorn_pct_formatting(digits = 0) %>%
-  adorn_ns() 
+  adorn_totals("row") %>%
+  adorn_pct_formatting(digits = 1)
+
+tab4
+
 
 tab4 %>% filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)")
 
@@ -500,10 +543,9 @@ tab_y <- client_lang_all %>%
 tab_y 
 
 tab <- client_lang_all %>% 
-  filter(!is.na(quarter_label),
-         !is.na(were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response)) %>% 
+  #filter(!is.na(were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response)) %>% 
   tabyl(were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
-  adorn_pct_formatting(digits = 0) 
+  adorn_pct_formatting(digits = 1) 
 
 tab
 
@@ -3476,21 +3518,21 @@ library(readr)
 library(tidyverse)
 
 # using all data to get quarters/interventions
-all_data <- read_csv("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
+all_data <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
 
 all_data <- all_data %>% 
   filter(!is.na(intervention_start), # has to have an intervention start date
-         !is.na(intervention_name)) # has to have an intervention type named
+         !is.na(intervention_name),
+         intervention_start <= "2025-11-30") # has to have an intervention type named
 
 tab <- all_data %>% 
-  filter(intervention_start >= "2024-01-01",
-         !is.na(code_num)) %>% 
+  filter(intervention_start >= "2024-01-01") %>% 
+         #!is.na(code_num)) %>% 
   distinct(client_system_id, .keep_all = TRUE) %>% 
-  tabyl(intervention_start_quarter, code_num) %>% 
+  tabyl(code_num) %>% 
   adorn_totals("row") %>% 
-  adorn_percentages("row") %>%
-  adorn_pct_formatting(digits = 0) %>%
-  adorn_ns() 
+  #adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 1)
 
 tab 
 
@@ -3519,8 +3561,6 @@ tab
 
 0.  NA, don't know, prefer not to answer
 
-<!-- -->
-
 1.  Private insurance
 
 2.  Medi-Cal/Medi-Care
@@ -3545,10 +3585,13 @@ library(tidyverse)
 # Define coding for single responses
 codebook_insurance <- c("Private Insurance" = 1, 
               "Medi-Cal/Medi-Care" = 2, 
-              "No Insurance Status Selected" = 3,
-              "No insurance/Indigent" = 4,
-              "Other" = 5,
-              "Veterans Benefits" = 6)
+              "No insurance/Indigent" = 3,
+              "Other" = 4,
+              "Veterans Benefits" = 5,
+              "Don't Know" = 6,
+              "Prefer Not To Answer" = 7,
+              "Not Applicable" = 8, 
+              "No Insurance Status Selected" = 9)
 
 all_data <- all_data %>% 
   mutate(
@@ -3557,24 +3600,23 @@ all_data <- all_data %>%
     # make 3 categories missing
     insurance_status_clean = if_else(
       insurance_status_clean %in% c("Don't Know", "Prefer Not To Answer",
-                                    "Not Applicable") |
+                                    "Not Applicable", "No Insurance Status Selected") |
       insurance_status_clean == "",
       NA_character_,
       insurance_status_clean),
     # numeric code (NA if not in codebook or was set to NA above)
-    insurance_num = unname(codebook_insurance[insurance_status_clean]) %>% 
+    insurance_num = unname(codebook_insurance[insurance_status]) %>% 
       as.integer())
   
 
 tab <- all_data %>% 
   filter(intervention_start >= "2024-01-01",
-         !is.na(insurance_num)) %>% 
+         intervention_start <= "2025-11-30") %>% 
+         # !is.na(insurance_num)) %>% 
   distinct(client_system_id, .keep_all = TRUE) %>% 
-  tabyl(intervention_start_quarter, insurance_num) %>% 
+  tabyl(insurance_status_clean) %>% 
   adorn_totals("row") %>% 
-  adorn_percentages("row") %>%
-  adorn_pct_formatting(digits = 0) %>%
-  adorn_ns() 
+  adorn_pct_formatting(digits = 0)
 
 tab
 
@@ -3602,9 +3644,7 @@ tab
 
 **Codebook:**
 
-1.  NA, don't know, prefer not to answer, no sexual orientation selected
-
-<!-- -->
+0.  NA, don't know, prefer not to answer, no sexual orientation selected
 
 1.  Asexual
 
@@ -3656,13 +3696,12 @@ all_data <- all_data %>%
 
 tab <- all_data %>% 
   filter(intervention_start >= "2024-01-01",
-         !is.na(sexual_orientation_num)) %>% 
+         intervention_start <= "2025-11-30") %>% 
+         #!is.na(sexual_orientation_num)) %>% 
   distinct(client_system_id, .keep_all = TRUE) %>% 
-  tabyl(intervention_start_quarter, sexual_orientation_num) %>% 
+  tabyl(sexual_orientation_clean) %>% 
   adorn_totals("row") %>% 
-  adorn_percentages("row") %>%
-  adorn_pct_formatting(digits = 0) %>%
-  adorn_ns() 
+  adorn_pct_formatting(digits = 1)
 
 tab 
 
@@ -3677,6 +3716,7 @@ tab <- all_data %>%
   adorn_ns() 
 
 tab 
+
 #clipr::write_clip(tab)
 ```
 
@@ -3688,9 +3728,7 @@ tab
 
 **Codebook:**
 
-1.  NA, don't know, prefer not to answer
-
-<!-- -->
+0.  NA, don't know, prefer not to answer
 
 1.  Genderqueer
 
@@ -3718,12 +3756,11 @@ tab
 # Define coding for single responses
 codebook_gender_identity <- c("Genderqueer" = 1, 
               "Man/boy" = 2, 
-              "No Gender Identify Selected" = 3,
-              "Non-binary" = 4,
-              "Transgender man/boy" = 5,
-              "Transgender woman/girl" = 6,
-              "Two-spirit" = 7,
-              "Woman/girl" = 8)
+              "Non-binary" = 3,
+              "Transgender man/boy" = 4,
+              "Transgender woman/girl" = 5,
+              "Two-spirit" = 6,
+              "Woman/girl" = 7)
 
 all_data <- all_data %>% 
   mutate(
@@ -3733,24 +3770,23 @@ all_data <- all_data %>%
     gender_identity_clean = if_else(
       gender_identity_clean %in% c("Don't Know", 
                                       "Prefer Not To Answer",
-                                    "Not Applicable") |
+                                    "Not Applicable", "No Gender Identify Selected") |
       gender_identity_clean == "",
       NA_character_,
       gender_identity_clean),
     # numeric code (NA if not in codebook or was set to NA above)
     gender_identity_num = unname(codebook_gender_identity[gender_identity_clean]) %>% 
       as.integer())
-  
 
 tab <- all_data %>% 
   filter(intervention_start >= "2024-01-01",
-         !is.na(gender_identity_num)) %>% 
+         intervention_start <= "2025-11-30") %>% 
+  #       gender_identity_num != 3) %>% 
+         #!is.na(gender_identity_num)) %>% 
   distinct(client_system_id, .keep_all = TRUE) %>% 
-  tabyl(intervention_start_quarter, gender_identity_num) %>% 
+  tabyl(gender_identity) %>% 
   adorn_totals("row") %>% 
-  adorn_percentages("row") %>%
-  adorn_pct_formatting(digits = 0) %>%
-  adorn_ns() 
+  adorn_pct_formatting(digits = 1) 
 
 tab 
 
@@ -3765,9 +3801,7 @@ tab
 
 **Codebook:**
 
-1.  NA, don't know, prefer not to answer, no preferred language selected
-
-<!-- -->
+0.  NA, don't know, prefer not to answer, no preferred language selected
 
 1.  English
 
@@ -3952,11 +3986,14 @@ tab <- all_data %>%
   filter(intervention_start >= "2024-01-01",
          !is.na(housing_status_clean)) %>% 
   distinct(client_system_id, .keep_all = TRUE) %>% 
-  tabyl(intervention_start_quarter, housing_status_clean) %>% 
+  tabyl(housing_status_clean) %>% 
   adorn_totals("row") %>% 
-  adorn_percentages("row") %>%
-  adorn_pct_formatting(digits = 0) %>%
-  adorn_ns() 
+  adorn_pct_formatting(digits = 0) 
+
+  # adorn_totals("row") %>% 
+  # adorn_percentages("row") %>%
+  # adorn_pct_formatting(digits = 0) %>%
+  # adorn_ns() 
 
 tab 
 
@@ -3992,7 +4029,7 @@ At the same time, the Workstream served a diverse set of children, youth, and ca
 library(haven)
 
 # load in spss data
-master_grantee_file <- haven::read_spss("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Quant Team File/MasterGranteeSpreadsheet_forBHESQuantTeam_12-15-25.sav") %>% 
+master_grantee_file <- haven::read_spss("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Quant Team File/MasterGranteeSpreadsheet_forBHESQuantTeam_1-20-26_NEW!.sav") %>% 
   zap_missing() %>%
   mutate(across(where(is.labelled), as.character)) %>%
   mutate(across(where(is.character), ~ na_if(str_trim(.x), ""))) %>% 
@@ -4001,7 +4038,7 @@ master_grantee_file <- haven::read_spss("/Users/cristin/CWS Dropbox/Cristin Youn
   rename_with(~ gsub("^x", "", .x))
 
 #join to all data
-all_data_spss <- left_join(all_data, master_grantee_file, by = c("provider" = "1a_grantee_provider_name", "provider_id" = "2grantee_provider_id", "intervention_name" = "9ebpcdep"))
+all_data_spss <- left_join(all_data, master_grantee_file, by = c("provider" = "1a_grantee_provider_name", "intervention_name" = "9a_ebpcde"))
 
 #get #'s for report 
 all_data_spss %>%
@@ -4030,7 +4067,19 @@ demo_spss <- left_join(demo_discharge, master_grantee_file, by = c("provider_id"
 
 #get #'s on master spss file
 demo_spss %>% 
-  tabyl(`12a_grantee_entity_type_for_report`) %>% 
+  tabyl(`12a_grantee_entity_type_for_report`, `8c_regions`) %>% 
+  adorn_totals("row") %>% 
+  adorn_rounding(digits = 2)
+
+demo_spss %>% 
+  filter(`7a_grant_track` == "Expansion") %>% 
+  tabyl(`12a_grantee_entity_type_for_report`, `8c_regions`) %>% 
+  adorn_totals("row") %>% 
+  adorn_rounding(digits = 2)
+
+master_grantee_file %>% 
+  #filter(`7a_grant_track` == "Expansion") %>% 
+  tabyl(`1a_grantee_provider_name`, `8c_regions`) %>% 
   adorn_totals("row") %>% 
   adorn_rounding(digits = 2)
 
@@ -4052,4 +4101,19 @@ table(test$provider_id)
 master_grantee_file %>%
   count(`2grantee_provider_id`) %>%
   filter(n > 1)
+
+
+demographic_data %>% 
+  filter(!is.na(client_type)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(client_type) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 0)
+
+all_data %>% 
+  filter(!is.na(client_type)) %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
+  tabyl(client_type) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 0)
 ```

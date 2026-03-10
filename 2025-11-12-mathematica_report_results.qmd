@@ -452,7 +452,7 @@ library(zoo)
 library(janitor)
 
 # dealing with crazy header rows
-noms_child_raw <- read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/NOMS-child.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+noms_child_raw <- read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/Archived/NOMS-child.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
 h1 <- unlist(noms_child_raw[1, ], use.names = FALSE)           # question text row
 h2 <- unlist(noms_child_raw[2, ], use.names = FALSE)           # subheaders
 h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
@@ -562,7 +562,7 @@ Use the `pairs_primary_long_self` data frame to compute scores. The following ha
 #| warning: false
 #| message: false
 #| include: false
-noms_self_raw <- read_xlsx("/Users/cristin/Dropbox/Data/eInsight Exports/Individual Assessments/NOMS-self_report.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE)
+noms_self_raw <- read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/NOMS-self_report.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
 h1 <- unlist(noms_self_raw[1, ], use.names = FALSE)           # question text row
 h2 <- unlist(noms_self_raw[2, ], use.names = FALSE)           # subheaders
 h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
@@ -592,7 +592,7 @@ noms_self <- noms_self %>%
     date_completed = as.Date(date_completed),
     row_id = row_number()                # stable row id for disambiguation
   ) %>% 
-  filter(date_completed <= Sys.Date(),     #date of running the code
+  filter(date_completed <= "2025-12-31",     #date of running the code
          date_completed >= "2024-01-01")   #date to filter out random issue dates   
 
 #pivot long to get individual question scores too
@@ -621,7 +621,7 @@ paired_outcomes_self <- noms_self_long %>%
 
 # paired data
 pairs_primary_long_self <- paired_outcomes_self %>% 
-  filter(is_after3 == TRUE) %>% #filtered for assessments >3 days from initial
+  filter(is_after3) %>% #filtered for assessments >3 days from initial
   slice_tail(n = 1) %>%  #paired on LAST assessment
   transmute(
     client_system_id, question,

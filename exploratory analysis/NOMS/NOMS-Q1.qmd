@@ -6,10 +6,10 @@ editor: visual
 ---
 
 # TO DO
-- flip colors on bar blot!!
-- dot and arrow plot: if you came in with a 1, you average X on follow-up
-- go through main study questions across the board
 
+-   flip colors on bar blot!!
+-   dot and arrow plot: if you came in with a 1, you average X on follow-up
+-   go through main study questions across the board
 
 # NOMS scoring
 
