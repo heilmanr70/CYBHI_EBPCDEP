@@ -547,7 +547,7 @@ library(zoo)
 library(janitor)
 
 # dealing with crazy header rows
-noms_child_raw <- read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Dsata/eInsight Exports/Individual Assessments/NOMS-child.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+noms_child_raw <- read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/NOMS-child.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
 h1 <- unlist(noms_child_raw[1, ], use.names = FALSE)           # question text row
 h2 <- unlist(noms_child_raw[2, ], use.names = FALSE)           # subheaders
 h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
