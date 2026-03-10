@@ -107,7 +107,7 @@ noms_self_q2 <- noms_self %>%
 hist(noms_self_q2$total_score)
 ```
 
-## General well-being 
+## General well-being
 
 ### CHILD
 

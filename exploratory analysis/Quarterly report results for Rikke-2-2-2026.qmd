@@ -1,5 +1,5 @@
 ---
-title: "Quarterly Report Results-10-29-2025"
+title: "Quarterly Report Results-1-12-2026"
 author: "Cristin Young"
 format: 
   docx:
@@ -13,7 +13,7 @@ editor: visual
 
 **Data used**: Discharge data, which includes 382 clients that had more than one complete intervention.
 
-**Nitty gritty cleaning**: took out DEMO data; checked to see which `client_ids` had `pre_measure_s` AND `post_measure_s` per row (i.e., had a complete intervention); left those in; filtered only for `intervention_start <= "2025-11-30"`
+**Nitty gritty cleaning**: took out DEMO data; checked to see which `client_ids` had `pre_measure_s` AND `post_measure_s` per row (i.e., had a complete intervention); left those in; filtered only for `intervention_start <= "2025-12-31"`
 
 **External report to DHCS**: by round,
 
@@ -34,24 +34,44 @@ library(tidyverse)
 library(haven)
 
 # load in all data
-all_data <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
-all_data <- all_data %>% 
-  filter(intervention_start <= "2025-11-30")
-  
+discharge_data <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv") %>% 
+  filter(intervention_start <= "2025-12-31")
+all_data <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv") %>% 
+    filter(intervention_start >= "2024-01-01",
+           intervention_start <= "2025-12-31")
+
+discharge_data_distinct <- discharge_data %>% 
+  filter(intervention_start <= "2025-12-31") %>% 
+  distinct(client_system_id, .keep_all = TRUE)
+
+all_data_distinct <- all_data %>% 
+  filter(intervention_start >= "2024-01-01",
+    intervention_start <= "2025-12-31") %>% 
+  distinct(client_system_id, .keep_all = TRUE)
+
+#number of grantees
+all_data %>%
+  summarise(n_distinct = n_distinct(provider_system_id))
+
+# primary language
+# housing status
+# client type
+# average age by client type
+
 # load in spss data
-master_grantee_file <- haven::read_spss("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Quant Team File/MasterGranteeSpreadsheet_forBHESQuantTeam_12-15-25.sav") %>% 
+master_grantee_file <- haven::read_spss("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Quant Team File/MasterGranteeSpreadsheet_forBHESQuantTeam_1-20-26_NEW!.sav") %>%
   zap_missing() %>%
   mutate(across(where(is.labelled), as.character)) %>%
-  mutate(across(where(is.character), ~ na_if(str_trim(.x), ""))) %>% 
-  rename_with(~ gsub("^@", "", .x)) %>% 
-  janitor::clean_names() %>% 
+  mutate(across(where(is.character), ~ na_if(str_trim(.x), ""))) %>%
+  rename_with(~ gsub("^@", "", .x)) %>%
+  janitor::clean_names() %>%
   rename_with(~ gsub("^x", "", .x))
 
 # join to all data
-all_data_spss <- left_join(all_data, master_grantee_file, by = c("provider" = "1a_grantee_provider_name", "provider_id" = "2grantee_provider_id", "intervention_name" = "9ebpcdep"))
-
+# all_data_spss <- left_join(all_data, master_grantee_file, by = c("provider" = "1a_grantee_provider_name", "provider_id" = "2grantee_provider_id", "intervention_name" = "9ebpcdep"))
+# 
 # participants served
-part_served <- table(all_data_spss$`4funding_round`)
+part_served <- table(discharge_data$funding_round, useNA = "ifany")
 part_served
 ```
 
@@ -64,17 +84,22 @@ part_served
 #| include: false
 library(janitor)
 # number of rows in discharge data 
-nrow(all_data_spss)
+nrow(discharge_data)
 
 # number of rows with positive_outcomes != NA
-count_pos <- nrow(all_data_spss %>% filter(!is.na(positive_outcomes)))
-count_pos
+count_outcomes <- nrow(discharge_data %>% filter(!is.na(positive_outcomes)))
+count_outcomes
 
 # table of positive outcomes 
-tab <- all_data_spss %>%
+tab <- discharge_data %>%
+  filter(!is.na(intervention_start),
+         !is.na(intervention_end),
+         !is.na(reason_for_discharge)) %>% 
   tabyl(positive_outcomes) %>%               
   adorn_pct_formatting(digits = 1)
 tab
+
+For rows that had valid data for: reason for discharge, intervention name, pre and post measures, and location, started an intervention between 01-01-2024 and 12-31-2025, and had a positive outcome defined as improvement in pre and post measures collected.
 
 # percent of positive outcomes
 yes_pct <- tab %>%
@@ -93,9 +118,9 @@ The results below show % of positive outcomes by round, once NA's are removed fr
 #| warning: false
 #| message: false
 # table of positive outcomes by funding round
-tab2 <- all_data_spss %>% 
+tab2 <- discharge_data %>% 
   filter(!is.na(positive_outcomes)) %>% 
-  tabyl(positive_outcomes, `4funding_round`) %>% 
+  tabyl(positive_outcomes, funding_round) %>% 
   adorn_totals("row") %>% 
   adorn_percentages("col") %>%
   adorn_pct_formatting(digits = 0) %>%
@@ -215,7 +240,7 @@ combined_q1 <- bind_rows(
     mutate(source = "senior"))
 
 combined_q1 <- combined_q1 %>% 
-  filter(date_completed <= "2025-11-30")
+  filter(date_completed <= "2025-12-31")
 ```
 
 The following is the % of high satisfaction by source:
@@ -297,7 +322,7 @@ combined_all <- bind_rows(
     rename(q = matches("^x")) %>% 
     mutate(source = "senior"))
 combined_all <- combined_all %>% 
-  filter(date_completed <= "2025-11-30") 
+  filter(date_completed <= "2025-12-31") 
 
 # get funding round data
 combined_round <- combined_all %>% 
@@ -306,12 +331,22 @@ combined_round <- combined_all %>%
                    "provider_id" = "2grantee_provider_id")) %>% 
   distinct(cps_id, date_completed, .keep_all = TRUE) 
 
+combined_round <- combined_all %>% 
+  left_join(discharge_data %>%  
+              mutate(provider_system_id = as.character(provider_system_id),
+                     client_system_id = as.character(client_system_id)),
+            by = c("provider", "provider_id", "provider_system_id", "client_system_id")) 
+#%>% 
+   #distinct(cps_id, date_completed, .keep_all = TRUE) 
+
 # Question 1 satisfaction by round
 pct_4_5_round <- combined_round %>% 
-  filter(!is.na(`4funding_round`)) %>% 
-  group_by(`4funding_round`) %>% 
+  filter(!is.na(funding_round)) %>% 
+  group_by(funding_round) %>% 
   summarise(
-    pct_4_5 = round((100 * sum(q2 %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q2))), 1)
+    n_surveys = n(),
+    pct_4_5 = round((100 * sum(q2 %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q2))), 1),
+    .groups = "drop"
   )
 
 pct_4_5_round 
@@ -370,7 +405,7 @@ df4 <- df3 %>%
 df4
 ```
 
-Overall, `{r} df4$pct_meeting_80pct`% of survey respondents were highly satisfied, defined as selecting "Agree" or "Strongly Agree" on 80% or more of the questions completed, for those who completed a survey on or before September 30, 2025.
+Overall, `{r} df4$pct_meeting_80pct`% of survey respondents were highly satisfied, defined as selecting "Agree" or "Strongly Agree" on 80% or more of the questions completed, for those who completed a survey on or before November 30, 2025.
 
 The following table shows high survey satisfaction results by funding round, for data where both client_id and `funding_round` were available.
 
@@ -431,13 +466,17 @@ summary_agree_round
 #| message: false
 #| include: false
 # number of rows with a reason for discharge
-count_rows <- nrow(all_data_spss %>% filter(!is.na(reason_for_discharge)))
+count_rows <- nrow(discharge_data %>% filter(!is.na(reason_for_discharge)))
+count_rows
 
 # number of rows with successful discharge
 # table of positive outcomes 
-tab3 <- all_data_spss %>%
+tab3 <- discharge_data %>%
+  filter(
+    !is.na(reason_for_discharge),
+         reason_for_discharge != "No Reason Selected") %>% 
   tabyl(reason_for_discharge) %>%               
-  adorn_pct_formatting(digits = 0)
+  adorn_pct_formatting(digits = 1)
 tab3
 
 # count of successful discharge
@@ -462,12 +501,12 @@ The results below show % of successful discharges by round, once NA's are remove
 #| warning: false
 #| message: false
 # total table of successful discharges by funding round
-tab4 <- all_data_spss %>% 
+tab4 <- discharge_data %>% 
   filter(!is.na(reason_for_discharge)) %>% 
-  tabyl(reason_for_discharge, `4funding_round`) %>% 
+  tabyl(reason_for_discharge, funding_round) %>% 
   adorn_totals("row") %>% 
   adorn_percentages("col") %>%
-  adorn_pct_formatting(digits = 0) %>%
+  adorn_pct_formatting(digits = 1) %>%
   adorn_ns() 
 tab4
 ```
@@ -510,8 +549,9 @@ all_data_spss %>%
 #| warning: false
 #| message: false
 
-all_data_spss %>% 
-  tabyl(`4funding_round`) %>% 
+discharge_data %>% 
+  filter(intervention_start <= "2025-12-31") %>% 
+  tabyl(funding_round) %>% 
   adorn_totals("row") %>% 
   adorn_pct_formatting(digits = 1)
 ```
@@ -523,13 +563,38 @@ all_data_spss %>%
 #| warning: false
 #| message: false
 
-all_data_spss %>% 
-  filter(!is.na(reason_for_discharge)) %>% 
-  tabyl(reason_for_discharge, `4funding_round`) %>% 
+discharge_data %>% 
+    filter(!is.na(reason_for_discharge), 
+         reason_for_discharge != "No Reason Selected",
+         intervention_end <= "2025-12-31") %>% 
+  tabyl(reason_for_discharge, funding_round) %>% 
   adorn_totals("row") %>% 
   adorn_percentages("col") %>%
-  adorn_pct_formatting(digits = 0) %>%
-  adorn_ns() 
+  adorn_pct_formatting(digits = 1) %>%
+  adorn_ns()
+
+#NOT unique by client
+# subtract round by no reason selected --> NA
+discharge_data %>% 
+  filter(!is.na(reason_for_discharge), 
+         reason_for_discharge != "No Reason Selected",
+         intervention_end <= "2025-12-31") %>% 
+  tabyl(reason_for_discharge) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+
+discharge_data %>% filter(!is.na(intervention_end) & is.na(reason_for_discharge))
+
+#round3 <- all_data_spss %>% 
+ # filter(`4funding_round` == "Round 3")
+
+# discharge_data_filtered %>% 
+#   filter(!is.na(reason_for_discharge)) %>% 
+#   tabyl(reason_for_discharge, funding_round) %>% 
+#   adorn_totals("row") %>% 
+#   adorn_percentages("col") %>%
+#   adorn_pct_formatting(digits = 0) %>%
+#   adorn_ns()
 ```
 
 ### Number (%) of client type categories
@@ -539,8 +604,48 @@ all_data_spss %>%
 #| warning: false
 #| message: false
 
-all_data_spss %>% 
+all_data_distinct %>% 
+  filter(!is.na(client_type)) %>% 
+  #distinct(client_system_id, .keep_all = TRUE) %>% 
   tabyl(client_type) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+```
+
+### Preferred Language
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# don't know, prefer not to answer, n/a and n/a all summed
+all_data_distinct %>% 
+  # filter(primary_language != "Don't Know",
+  #        primary_language != "No Primary Language Selected",
+  #        primary_language != "Not Applicable",
+  #        primary_language != "Prefer Not To Answer",
+  #        !is.na(primary_language)) %>%
+  tabyl(primary_language) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+```
+
+### Housing Status
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# don't know, prefer not to answer, n/a and n/a all summed
+all_data_distinct %>% 
+  # filter(housing_status != "Don't Know",
+  #        housing_status != "No Housing Status Selected",
+  #        housing_status != "Not Applicable",
+  #        housing_status != "Prefer Not To Answer",
+  #        !is.na(housing_status)) %>%
+  tabyl(housing_status) %>% 
   adorn_totals("row") %>% 
   adorn_pct_formatting(digits = 1)
 ```
@@ -553,26 +658,31 @@ all_data_spss %>%
 #| message: false
 
 # first get client type counts
-tab_counts <- all_data_spss %>%
+tab_counts <- all_data_distinct %>%
+  #filter(client_type != "No Client Type Selected",
+   #      !is.na(client_type)) %>% 
   tabyl(client_type) %>%
   adorn_totals("row") %>%
   adorn_pct_formatting(digits = 1)
 
+tab_counts
+
 # then average age for each category
-all_data_spss <- all_data_spss %>%
+all_data_distinct <- all_data_distinct %>%
   mutate(
     age_start_tx_num = case_when(
       age_at_start_of_treatment_in_years %in% c("No Age Provided", "", " ") ~ NA_character_,
       TRUE ~ age_at_start_of_treatment_in_years
     ) %>% as.numeric())
     
-tab_age <- all_data_spss %>%
+tab_age <- all_data_distinct %>%
   group_by(client_type) %>%
   summarise(
     mean_age = round(mean(age_start_tx_num, na.rm = TRUE), 1),
     n_with_age = sum(!is.na(age_start_tx_num)),
     .groups = "drop"
   )
+
 tab_age
 
 # create final table
@@ -589,13 +699,164 @@ final_table <- tab_counts %>%
 final_table
 ```
 
-### Number (%) of cases for caregiver/parent highest level of education
-
-WILL FILL IN ONCE I GET DATA FROM STEVE
+### Insurance Status
 
 ```{r}
 #| echo: false
 #| warning: false
 #| message: false
 
+# don't know, prefer not to answer, n/a and n/a all summed
+all_data_distinct %>% 
+  filter(insurance_status != "Don't Know",
+         insurance_status != "No Insurance Status Selected",
+         insurance_status != "Not Applicable",
+         insurance_status != "Prefer Not To Answer",
+         !is.na(housing_status)) %>%
+  tabyl(insurance_status) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+```
+
+### Gender Identity
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# don't know, prefer not to answer, n/a and n/a all summed
+all_data_distinct %>% 
+  filter(gender_identity != "Don't Know",
+         gender_identity != "No Gender Identify Selected",
+         gender_identity != "Not Applicable",
+         gender_identity != "Prefer Not To Answer",
+         !is.na(gender_identity)) %>%
+  tabyl(gender_identity) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+```
+
+### Sexual Orientation
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# don't know, prefer not to answer, n/a and n/a all summed
+all_data_distinct %>% 
+ filter(sexual_orientation != "Don't Know",
+        sexual_orientation != "No Sexual Orientation Selected",
+        sexual_orientation != "Not Applicable",
+        sexual_orientation != "Prefer Not To Answer",
+        !is.na(sexual_orientation)) %>%
+  tabyl(sexual_orientation) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+```
+
+### Race
+
+1.  Asian
+
+2.  Black or African American
+
+3.  Hispanic or Latino
+
+4.  Middle Eastern or North African
+
+5.  Native American/American Indian or Alaska Native
+
+6.  Native Hawaiian or Pacific Islander
+
+7.  White
+
+8.  2+ races selected
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# don't know, prefer not to answer, n/a and n/a all summed
+all_data_distinct %>% 
+# filter(race != "Don't Know",
+#        race != "No Race Selected",
+#        race != "Not Applicable",
+#        race != "Prefer Not To Answer",
+#        !is.na(race)) %>%
+  tabyl(code_num) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+```
+
+### Ethnicity
+
+1.  Chinese
+2.  Asian Indian
+3.  Filipino
+4.  Vietnamese
+5.  Korean
+6.  Japanese
+7.  African American
+8.  Jamaican
+9.  Haitian
+10. Nigerian
+11. Somali
+12. Mexican
+13. Puerto Rican
+14. Salvadoran
+15. Cuban
+16. Dominican
+17. Guatemalan
+18. Native Hawaiian
+19. Samoan
+20. Chamorro
+21. English
+22. German
+23. Irish
+24. Italian
+25. Polish
+26. Scottish
+27. 2+ ethnicities selected = 88
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# don't know, prefer not to answer, n/a and n/a all summed
+all_data_distinct %>% 
+# filter(race != "Don't Know",
+#        race != "No Race Selected",
+#        race != "Not Applicable",
+#        race != "Prefer Not To Answer",
+#        !is.na(race)) %>%
+  tabyl(ethn_num) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+```
+
+### 
+
+### Number (%) of cases for caregiver/parent highest level of education
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+all_data_new <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
+
+all_data_new_distinct <- all_data_new %>% 
+  filter(intervention_start >= "2024-01-01",
+         intervention_start <= "2025-12-31") %>% 
+  distinct(client_system_id, .keep_all = TRUE)
+
+all_data_new_distinct %>% 
+  #filter(!is.na(highest_caregiver_education_level)) %>%  
+  tabyl(highest_caregiver_education_level) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
 ```

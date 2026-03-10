@@ -62,9 +62,14 @@ Recoded race variable (code_num):
 codebook_eth <- c("Chinese" = 1, "Asian Indian" = 2, "Filipino" = 3, "Vietnamese" = 4, "Korean" = 5,"Japanese" = 6, "African American" = 7,"Jamaican" = 8, "Haitian" = 9, "Nigerian" = 10, "Somali" = 11, "Mexican" = 12, "Puerto Rican" = 13, "Salvadoran" = 14, "Cuban" = 15, "Dominican" = 16, "Guatemalan" = 17, "Native Hawaiian" = 18, "Samoan" = 19, "Chamorro" = 20, "English" = 21, "German" = 22, "Irish" = 23, "Italian" = 24, "Polish" = 25, "Scottish" = 26, "2+ ethnicities selected" = 88)
 ```{r}
 all_data_filtered %>% 
+  filter(intervention_start >= "2024-01-01",
+         intervention_start <= "2025-11-30") %>% 
+  distinct(client_system_id, .keep_all = TRUE) %>% 
   tabyl(ethn_num) %>% 
   adorn_pct_formatting(digits = 1) %>% 
   adorn_totals("row")
+
+tab 
 ```
 
 ###gender identity

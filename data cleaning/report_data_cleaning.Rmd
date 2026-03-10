@@ -24,14 +24,20 @@ ACTION ITEMS
 library(tidyverse)
 library(janitor)
 library(gt)
+library(readxl)
+library(openxlsx)
 
-discharge_data <- readxl::read_excel("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Discharge Report Export/2025-12-08-discharge_report.xlsx", na = c("-", "", "NA", "N/A"), ) %>% 
+discharge_data <- read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Discharge Report Export/2026-02-10-discharge_report.xlsx", na = c("-", "", "NA", "N/A")) %>% 
   janitor::clean_names() 
 discharge_data$pre_completion_date <- janitor::convert_to_date(discharge_data$pre_completion_date)
 discharge_data$post_completion_date <- janitor::convert_to_date(discharge_data$post_completion_date)
 
-demographic_data <- readxl::read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Admin Report Exports/2025-12-08-client_demographics.xlsx", na = c("-", "", "NA", "N/A")) %>% 
+demographic_data <- readxl::read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Admin Report Exports/2026-02-10-client_demographics.xlsx", na = c("-", "", "NA", "N/A")) %>% 
   janitor::clean_names()
+
+demographic_data_new <- readxl::read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Admin Report Exports/2026-01-16-client_demographics.xlsx", na = c("-", "", "NA", "N/A")) %>%
+janitor::clean_names()
+
 
 # discharge_data <- readxl::read_xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Dishcharge_Report.xlsx", na = c("-", "", "NA"))
 # demographic_data <- readxl::read_xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Client_Demographics.xlsx", na = c("-", "", "NA"))
@@ -47,11 +53,16 @@ length(unique(demographic_data$client_system_id))
 demographic_data_filtered <- demographic_data %>%
   filter(!if_any(c(provider_id, client_system_id), ~ str_detect(as.character(.x), "DEMO")))
 
+demographic_data_new <- demographic_data_new %>%
+filter(!if_any(c(provider_id, client_system_id), ~ str_detect(as.character(.x), "DEMO")))
+
 # are there unique client IDs? 
-length(unique(demographic_data_filtered$client_system_idid)) == nrow(demographic_data_filtered)
+length(unique(demographic_data_filtered$client_system_id)) == nrow(demographic_data_filtered)
+length(unique(demographic_data_new$client_system_id)) == nrow(demographic_data_new)
 
 # which IDs have been repeated and how many times? 
-duplicates <- demographic_data_filtered %>% 
+#duplicates <- demographic_data_filtered %>% 
+duplicates <- demographic_data %>%   
   group_by(client_system_id) %>% 
    filter(n() > 1) %>%
   tally() 
@@ -77,10 +88,12 @@ duplicate_list <- demographic_data_filtered %>%
 write_csv(duplicate_list, "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_duplicate_list.csv")
 
 #for now, drop the 53 clients (186 rows)
-demographic_data_filtered <- demographic_data_filtered %>% 
+#demographic_data_filtered <- demographic_data_filtered %>% 
+demographic_data_filtered <- demographic_data %>%   
   filter(!(client_system_id %in% duplicates$client_system_id))
 
 #check again for duplicate ids, just in case
+#length(unique(demographic_data_filtered$client_system_id)) == nrow(demographic_data_filtered)
 length(unique(demographic_data_filtered$client_system_id)) == nrow(demographic_data_filtered)
 ```
 
@@ -229,6 +242,25 @@ mutate(trimmed_match = trimmed_pre_assessment_name == trimmed_post_assessment_na
 #this is the same thing - they just wrote out SDQ for post
 discharge_data_filtered %>% 
   filter(trimmed_match == FALSE)
+
+#cleaning funding rounds for specific providers
+# monterey health dept = round 2
+# children of the rainbow = round 2
+# youth for change = round 1
+# homeless children's network = round 2
+# placer county office of education = round 1 
+discharge_data_filtered_clean <- discharge_data_filtered %>%
+  mutate(
+    funding_round = case_when(
+      provider_id == "604" & funding_round == "No Funding Round Selected" ~ "2",
+      provider_id == "604" & funding_round == "No Funding Round Selected" ~ "2",
+      provider_id == "508" & funding_round == "No Funding Round Selected" ~ "2",
+      provider_id == "607" & funding_round == "No Funding Round Selected" ~ "1",
+      provider_id == "573" ~ "2",
+      provider_id == "709" & funding_round == "No Funding Round Selected" ~ "1",
+      TRUE ~ funding_round
+    )
+  )
 ```
 
 # DISCHARGE DATA EDA - Look at clients with >1 intervention
@@ -301,8 +333,14 @@ nrow(dup_clients_diff_time) + nrow(dup_clients_same_time)
 Now join demographic and discharge data by client ID
 ```{r}
 #assessment-level data
-all_data <- left_join(discharge_data_filtered, demographic_data_filtered, by = c("client_system_id", "provider_id", "provider_system_id"))
-head(all_data)
+demographic_data_filtered <- demographic_data_filtered %>% 
+  mutate(provider_system_id = as.character(provider_system_id),
+         client_system_id = as.character(client_system_id))
+discharge_data_filtered_clean <- discharge_data_filtered_clean %>% 
+  mutate(provider_system_id = as.character(provider_system_id),
+         client_system_id = as.character(client_system_id))
+
+all_data <- left_join(discharge_data_filtered_clean, demographic_data_filtered, by = c("client_system_id", "provider_id", "provider_system_id"))
 ```
 
 #how many unique clients were served?
@@ -327,5 +365,5 @@ write_csv(demographic_data_filtered, "/Users/cristin/CWS Dropbox/Cristin Young/C
 
 #clean dishcarge data
 # write_csv(discharge_data_filtered, "/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
-write_csv(discharge_data_filtered, "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
+write_csv(discharge_data_filtered_clean, "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
 ```

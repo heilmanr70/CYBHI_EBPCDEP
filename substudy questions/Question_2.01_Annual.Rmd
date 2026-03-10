@@ -24,9 +24,14 @@ library(tidyverse)
 library(janitor)
 library(gt)
 library(clipr)
+library(svglite)
 
 all_data <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
+
+discharge_data <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv", show_col_types = FALSE)
 #all_data <- read_csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
+
+demographic_data <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
 ```
 
 # Question 2.01: Did successful transition rates out of EBP/CDEP services differ by location?
@@ -46,6 +51,9 @@ data201 <- all_data %>%
            !is.na(reason_for_discharge))
 
 data201$positive_outcomes <- factor(data201$positive_outcomes, levels = c("No", "Yes"))
+
+data201 <- data201 %>% 
+  filter(intervention_start <= "2025-11-30")
 ```
 
 ## % reported Mutually agreed upon cessation of Tx/successful completion at Discharge by location
@@ -55,26 +63,57 @@ perc_successful_table <- data201 %>%
   summarise(
     total = n(),
     successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
-    perc_success = round(100 * successful / total, 1)
+    perc_success = round(100 * (successful / total), 1)
   )
               
 perc_successful_table %>% 
   knitr::kable() %>% 
-  clipr::write_clip(allow_non_interactive = TRUE)
+   clipr::write_clip(allow_non_interactive = TRUE)
 
 openxlsx::write.xlsx(perc_successful_table,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.01/perc_successful_table.xlsx")
 ```
 
 ## % reported Mutually agreed upon cessation of Tx/successful completion at discharge by Region
 ```{r}
-spss <- read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/SPSS Master File Exports/MasterGranteeSpreasheet_forBHESQuantTeam_11-21-25.xlsx") %>% 
+library(haven)
+
+# load in spss data
+spss <- haven::read_spss("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Quant Team File/MasterGranteeSpreadsheet_forBHESQuantTeam_1-20-26_NEW!.sav") %>% 
+  zap_missing() %>%
+  mutate(across(where(is.labelled), as.character)) %>%
+  mutate(across(where(is.character), ~ na_if(str_trim(.x), ""))) %>% 
   rename_with(~ gsub("^@", "", .x)) %>% 
   janitor::clean_names() %>% 
   rename_with(~ gsub("^x", "", .x))
 
-data201_spss <- left_join(data201, spss, by = c("provider" = "1a_grantee_provider_name", "provider_id" = "2grantee_provider_id"))
+
+data201_spss <- left_join(data201, spss, by = c("provider" = "1a_grantee_provider_name", "provider_id" = "2grantee_provider_id")) %>% 
+  distinct(client_system_id, .keep_all = TRUE)
+
+#join to just demographic data - need to add provider name and intervention first to help with join
+key <- c("client_system_id", "provider_system_id", "provider_id")
+discharge_small <- discharge_data %>% 
+  select(all_of(key), provider, intervention_name)
+
+discharge_small <- discharge_data %>%
+  select(all_of(key), provider, intervention_name)
+
+discharge_small %>%
+  count(across(all_of(key)), name = "n") %>%
+  filter(n > 1)
+
+discharge_unique <- discharge_small %>%
+  distinct(across(all_of(key)), .keep_all = TRUE)
+
+demo_discharge <- left_join(demographic_data, discharge_unique, by = key)
+
+demo_spss <- left_join(demo_discharge, spss, by = c("provider_id" = "2grantee_provider_id")) %>% 
+  distinct(client_system_id, .keep_all = TRUE)
 
 data201_spss <- data201_spss %>% 
+  rename(region = `8c_regions`)
+
+demo_spss <- demo_spss %>% 
   rename(region = `8c_regions`)
 
 region_success <- data201_spss %>% 
@@ -82,7 +121,7 @@ region_success <- data201_spss %>%
   summarise(
     total = n(),
     successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
-    perc_success = round(100 * successful / total, 1)
+    perc_success = round(100 * (successful / total), 1)
   ) %>% 
   clipr::write_clip()
 
@@ -190,19 +229,34 @@ ca_census_regions <- ca_counties_region %>%
   arrange(region)
 
 #plot to make sure it's right
-ggplot(ca_census_regions) +
+ca_census_regions %>% 
+ggplot() +
   geom_sf(aes(fill = factor(region)), color = "white", linewidth = 0.3) +
   scale_fill_viridis_d(name = "Region") +
   theme_minimal() +
   labs(title = "California Census Regions (1–10)")
 
 #now merge with outcomes data
+ca_census_regions <- ca_census_regions %>% 
+  mutate(region = as.character(region))
+
+region_success <- region_success %>% 
+  mutate(region = as.character(region))
+
 ca_regions_data <- ca_census_regions %>% 
   left_join(region_success, by = "region")
 
+clients_by_region <- demo_spss %>%
+  group_by(region) %>%
+  summarise(clients_served = n_distinct(client_system_id), .groups = "drop")
+
+ca_regions_demo_data <- ca_regions_data %>%
+  left_join(clients_by_region, by = "region") %>% 
+  mutate(label_color = if_else(clients_served < 2200, "white", "black"))
+
 #make label colors
 ca_regions_data <- ca_regions_data %>%
-  mutate(label_color = if_else(perc_success > 91, "white", "black"))
+  mutate(label_color = if_else(perc_success < 90, "white", "black"))
 
 #plot  
 ggplot(ca_regions_data) +
@@ -211,15 +265,14 @@ ggplot(ca_regions_data) +
     aes(label = paste0("Region ", region, "\n", perc_success, "%"),
     color = label_color
         ),
-    size = 1.2,
+    size = 3,
     lineheight = 0.9
   ) +
   scale_color_identity() +
-  scale_fill_viridis_c(
-    option = "C", 
-    direction = -1,
+   scale_fill_gradientn(
+    colours = c("#003C71", "#8BD3DD", "#BBDB49"),
     name = "% successful",
-    limits = c(90, 100)
+    limits = c(87, 100)
   ) +
   labs(
     title = "% Successful Outcomes by Region",
@@ -234,6 +287,38 @@ ggplot(ca_regions_data) +
     plot.title = element_text(size = 14, face = "bold"),
     plot.subtitle = element_text(size = 11)
   )
+
+#plot demo data
+ggplot(ca_regions_demo_data) +
+  geom_sf(aes(fill = clients_served), color = "white", linewidth = 0.3) +
+  geom_sf_text(
+    aes(
+      label = paste0("Region ", region, "\n", scales::comma(clients_served)),
+      color = label_color
+    ),
+    size = 3,
+    lineheight = 0.9
+  ) +
+  scale_color_identity() +
+  scale_fill_gradientn(
+    colours = c("#003C71", "#8BD3DD", "#BBDB49"),
+    name = "Clients served",
+    limits = c(1200,5500)
+  ) +
+  labs(
+    title = "Clients Served by Region",
+    fill = "Clients"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    panel.grid = element_blank(),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 11)
+  )
+
+ggsave("/Users/cristin/Downloads/map_clients.svg", width = 8, height = 5)
 ```
 
 ###Mapping by primary county

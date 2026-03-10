@@ -9,7 +9,7 @@ editor: visual
 
 ## Period
 
-2024-01-01 - 2025-11-30
+2024-01-01 - 2025-12-31
 
 ## Question 1.00 clients served
 
@@ -205,14 +205,10 @@ combined_all <- combined_all %>%
 # add in a quarter column
 combined_all <- combined_all %>%
   filter(!is.na(date_clean),
-         date_clean <= "2025-11-30") %>%
+         date_clean <= "2025-12-30") %>%
   mutate(quarter_label = paste0("Q", quarter(date_clean), " ", year(date_clean)),
        quarter_label = factor(quarter_label, levels = unique(quarter_label)) #to sort chronologically
   )
-
-combined_q1 <- combined_q1 %>%
-  filter(!is.na(date_completed),
-         date_completed <= "2025-11-30") 
 
 #add in a year column
 combined_all$year <- year(combined_all$date_clean)
@@ -239,38 +235,6 @@ pct_4_5_overall <- combined_all %>%
   )
 
 pct_4_5_overall 
-
-all_data_distinct <- all_data %>% 
-  distinct(client_system_id, .keep_all = TRUE) 
-
-all_data_distinct <- all_data_distinct %>% 
-  mutate(provider_system_id = as.character(provider_system_id),
-         client_system_id = as.character(client_system_id))
-
-combined_q1 <- combined_q1 %>% 
-  mutate(provider_system_id = as.character(provider_system_id),
-         client_system_id = as.character(client_system_id))
-
-combined_q1 <- left_join(combined_q1, all_data_distinct, by = c("provider", "provider_id", "provider_system_id", "client_system_id")) 
-combined_q1 <- combined_q1 %>% 
-  filter(!is.na(intervention_name))
-
-combined_q1 %>% 
-  filter(!is.na(q11),
-           q11 != "Not Applicable") %>% 
-  tabyl(q11) %>% 
-  adorn_totals("row") %>% 
-  adorn_pct_formatting(digits = 1)
-
-combined_q1 %>% 
-  filter(!is.na(q11),
-         q11 != "Not Applicable") %>% 
-  tabyl(client_type, q11) %>% 
-  adorn_totals("row") %>% 
-  adorn_percentages("row") %>%
-  adorn_pct_formatting(digits = 0) %>%
-  adorn_ns() 
-
 
 openxlsx::write.xlsx(pct_4_5_year,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Question 1 Satisfaction.xlsx",sheetName="by year")
 # xlsx::write.xlsx(pct_4_5_year,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Question 1 Satisfaction.xlsx",sheetName="by year")
@@ -583,7 +547,7 @@ library(zoo)
 library(janitor)
 
 # dealing with crazy header rows
-noms_child_raw <- read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/NOMS-child.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
+noms_child_raw <- read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Dsata/eInsight Exports/Individual Assessments/NOMS-child.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
 h1 <- unlist(noms_child_raw[1, ], use.names = FALSE)           # question text row
 h2 <- unlist(noms_child_raw[2, ], use.names = FALSE)           # subheaders
 h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
@@ -614,7 +578,8 @@ noms_child <- noms_child %>%
     row_id = row_number()                # stable row id for disambiguation
   ) %>% 
   filter(date_completed <= Sys.Date(),     #date of running the code
-         date_completed >= "2024-01-01")   #date to filter out random issue dates   
+         date_completed >= "2024-01-01")  %>% #date to filter out random issue dates   
+  filter(date_completed <= "2025-12-31")
 
 #pivot long to get individual question scores too
 noms_child_long <- noms_child %>% 
@@ -913,7 +878,8 @@ noms_self <- noms_self %>%
     row_id = row_number()                # stable row id for disambiguation
   ) %>% 
   filter(date_completed <= Sys.Date(),     #date of running the code
-         date_completed >= "2024-01-01")   #date to filter out random issue dates   
+         date_completed >= "2024-01-01") %>% #date to filter out random issue dates   
+  filter(date_completed <= "2025-12-31")
 
 #pivot long to get individual question scores too
 noms_self_long <- noms_self %>% 
@@ -2485,7 +2451,8 @@ dot_and_arrow_plot_4_5_q4
 #| echo: false
 #| warning: false
 #| message: false
-raw_pss <- read.csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/PSS.csv", na = c("-", "", "NA", "N/A", "0"), header = FALSE) 
+# raw_pss <- read.csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/PSS.csv", na = c("-", "", "NA", "N/A", "0"), header = FALSE) 
+raw_pss <- read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/PSS.xlsx", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE) 
 h1 <- unlist(raw_pss[1, ], use.names = FALSE)           # question text row
 h2 <- unlist(raw_pss[2, ], use.names = FALSE)           # subheaders
 h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
@@ -2499,7 +2466,8 @@ new_names <- janitor::make_clean_names(new_names)
 pss <- raw_pss[-c(1, 2), ]
 names(pss) <- new_names
 pss <- pss %>%
-  select(where(~ !all(is.na(.))))
+  select(where(~ !all(is.na(.)))) %>% 
+  filter(date_completed <= "2025-12-31")
 
 #reverse scored q's
 rev_idx <- c(1, 2, 5, 6, 7, 8, 17, 18)
@@ -2583,6 +2551,7 @@ pss_paired_long <- pss_paired %>%
   )
 
 # Plot
+library(ggridges)
 pss_plot <- ggplot(pss_paired_long, aes(x = score_value, fill = score_type)) +
   geom_bar(
     #binwidth = 1, 
@@ -2891,7 +2860,7 @@ There are no specified clinical cutoffs for the BASIS-24. Subjective interpretat
 #| echo: false
 #| warning: false
 #| message: false
-raw_basis24 <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/Basis-24.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE)
+raw_basis24 <- read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/Basis-24.xlsx", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE)
 h1 <- unlist(raw_basis24[1, ], use.names = FALSE)           # question text row
 h2 <- unlist(raw_basis24[2, ], use.names = FALSE)           # subheaders
 h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
@@ -3117,7 +3086,8 @@ new_names <- janitor::make_clean_names(new_names)
 cpss_i <- cpss_i_raw[-c(1, 2), ]
 names(cpss_i) <- new_names
 cpss_i <- cpss_i %>%
-  select(where(~ !all(is.na(.))))
+  select(where(~ !all(is.na(.)))) %>% 
+  filter(date_completed <= "2025-12-31")
 
 #score cols
 score_cols <- names(cpss_i)[endsWith(names(cpss_i), "_score")]
@@ -3312,7 +3282,8 @@ new_names <- janitor::make_clean_names(new_names)
 cpss_s <- cpss_s_raw[-c(1, 2), ]
 names(cpss_s) <- new_names
 cpss_s <- cpss_s %>%
-  select(where(~ !all(is.na(.))))
+  select(where(~ !all(is.na(.)))) %>% 
+  filter(date_completed <= "2025-12-31")
 
 #score cols
 score_cols <- names(cpss_s)[endsWith(names(cpss_s), "_score")]
@@ -3614,9 +3585,9 @@ tab <- all_data %>%
          intervention_start <= "2025-11-30") %>% 
          # !is.na(insurance_num)) %>% 
   distinct(client_system_id, .keep_all = TRUE) %>% 
-  tabyl(insurance_status_clean) %>% 
+  tabyl(insurance_status) %>% 
   adorn_totals("row") %>% 
-  adorn_pct_formatting(digits = 0)
+  adorn_pct_formatting(digits = 2)
 
 tab
 
@@ -3699,7 +3670,7 @@ tab <- all_data %>%
          intervention_start <= "2025-11-30") %>% 
          #!is.na(sexual_orientation_num)) %>% 
   distinct(client_system_id, .keep_all = TRUE) %>% 
-  tabyl(sexual_orientation_clean) %>% 
+  tabyl(sexual_orientation) %>% 
   adorn_totals("row") %>% 
   adorn_pct_formatting(digits = 1)
 
@@ -3986,14 +3957,11 @@ tab <- all_data %>%
   filter(intervention_start >= "2024-01-01",
          !is.na(housing_status_clean)) %>% 
   distinct(client_system_id, .keep_all = TRUE) %>% 
-  tabyl(housing_status_clean) %>% 
+  tabyl(intervention_start_quarter, housing_status_clean) %>% 
   adorn_totals("row") %>% 
-  adorn_pct_formatting(digits = 0) 
-
-  # adorn_totals("row") %>% 
-  # adorn_percentages("row") %>%
-  # adorn_pct_formatting(digits = 0) %>%
-  # adorn_ns() 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
 
 tab 
 
@@ -4101,19 +4069,4 @@ table(test$provider_id)
 master_grantee_file %>%
   count(`2grantee_provider_id`) %>%
   filter(n > 1)
-
-
-demographic_data %>% 
-  filter(!is.na(client_type)) %>% 
-  distinct(client_system_id, .keep_all = TRUE) %>% 
-  tabyl(client_type) %>% 
-  adorn_totals("row") %>% 
-  adorn_pct_formatting(digits = 0)
-
-all_data %>% 
-  filter(!is.na(client_type)) %>% 
-  distinct(client_system_id, .keep_all = TRUE) %>% 
-  tabyl(client_type) %>% 
-  adorn_totals("row") %>% 
-  adorn_pct_formatting(digits = 0)
 ```

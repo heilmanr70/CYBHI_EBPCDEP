@@ -1,0 +1,114 @@
+---
+title: "Client End / Discharge"
+author: "Cristin Young"
+format: 
+  docx:
+    page-width: 7.5
+editor: visual
+---
+
+```{r setup}
+#| echo: false
+#| warning: false
+#| message: false
+# NOTE: requires discharge_data_filtered — render after q1-00_clients-served.qmd
+library(tidyverse)
+library(janitor)
+library(openxlsx)
+```
+
+
+## Client_end
+
+**Definition:** Clients from the primary evaluation whose discharge reason is "mutually agreed cessation of treatment" for clients who discharged from an intervention during the designated time frame, divided by the total number of clients from the primary evaluation served and who have a discharge reason recorded.
+
+**Calculation:** This KPI represents ***the percent*** of clients who have a disenrollment/discharge response as "mutually agreed cessation of treatment" out of the total number of clients with a discharge reason by period(s).
+
+**Assumptions:** This is discharge data from EInsight, so can have clients in here multiple times (they can have multiple interventions, or the same intervention on multiple dates). I removed NA's from reason_for_discharge, but did not clean dates at all. I filtered by intervention_start date \>= "2024-01-1" and \<= "12-31-2025."
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+
+# number of rows with a reason for discharge
+count_rows <- nrow(discharge_data_filtered |> filter(!is.na(reason_for_discharge)))
+count_rows
+
+# number of rows with successful discharge
+# table of positive outcomes 
+tab3 <- discharge_data_filtered |>
+  filter(intervention_start >= "2024-01-01",
+         intervention_start <= "2025-12-31") |> 
+  tabyl(reason_for_discharge) |>               
+  adorn_pct_formatting(digits = 2)
+
+# count of successful discharge
+yes_count <- tab3 |>
+  filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)") |>
+  pull(n)
+
+# percent of successful discharge
+yes_pct3 <- tab3 |>
+  filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)") |>
+  pull(valid_percent)
+
+tab3
+```
+
+The results below show % of successful discharges by `intervention_end_quarter`, once NA's are removed from the data.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# total table of successful discharges by quarter of intervention END
+tab4q <- discharge_data_filtered |> 
+  filter(!is.na(reason_for_discharge),
+         intervention_end >= "2024-01-01",
+         intervention_end <= "2025-12-31") |> 
+  tabyl(reason_for_discharge) |> 
+  adorn_totals("row") |> 
+  adorn_pct_formatting(digits = 1)
+
+tab4q |> filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)")
+
+discharge_data_filtered$intervention_end_year <- year(discharge_data_filtered$intervention_end)
+
+tab4y <- discharge_data_filtered |> 
+  filter(!is.na(reason_for_discharge),
+         intervention_end >= "2024-01-01",
+         intervention_end <= "2025-12-31") |> 
+  tabyl(reason_for_discharge, intervention_end_year) |> 
+  adorn_totals("row") |> 
+  adorn_percentages("col") |>
+  adorn_pct_formatting(digits = 0) |>
+  adorn_ns() 
+
+tab4y |> filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)")
+
+tab4 <- discharge_data_filtered |> 
+  filter(!is.na(reason_for_discharge),
+         !is.na(intervention_name),
+         !is.na(pre_measure_s),
+         !is.na(post_measure_s),
+         !is.na(location),
+         intervention_start >= "2024-01-01",
+         intervention_start <= "2025-12-31",
+         positive_outcomes == "Yes") |> 
+  tabyl(reason_for_discharge) |> 
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1)
+
+tab4
+
+
+tab4 |> filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)")
+
+
+openxlsx::write.xlsx(tab4q,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Client_End.xlsx",sheetName="tab4_quarterly")
+openxlsx::write.xlsx(tab4y,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Client_End.xlsx",sheetName="tab4_yearly",append=T)
+openxlsx::write.xlsx(tab4,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Client_End.xlsx",sheetName="tab4_overall",append=T)
+```
+

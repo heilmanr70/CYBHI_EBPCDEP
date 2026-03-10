@@ -42,6 +42,8 @@ sdq_P24 <- sdq_P24_raw[-c(1, 2), ]
 names(sdq_P24) <- new_names
 sdq_P24 <- sdq_P24 %>%
   select(where(~ !all(is.na(.))))
+sdq_P24 <- sdq_P24 %>%
+  filter(date_completed <= "2025-12-31")
 
 # NOTE: All items appear present and correct, but three are in an odd column order, relocated to the start. Impact items have a score column, but it's all NAs. The impact items have a lot of missing data.
 
@@ -62,6 +64,8 @@ sdq_P410 <- sdq_P410_raw[-c(1, 2), ]
 names(sdq_P410) <- new_names
 sdq_P410 <- sdq_P410 %>%
   select(where(~ !all(is.na(.))))
+sdq_P410 <- sdq_P410 %>%
+  filter(date_completed <= "2025-12-31")
 
 # NOTE: All items appear present and correct and they're even in order! Sadly impact variables appear to be missing.
 
@@ -82,7 +86,8 @@ sdq_P1117 <- sdq_P1117_raw[-c(1, 2), ]
 names(sdq_P1117) <- new_names
 sdq_P1117 <- sdq_P1117 %>%
   select(where(~ !all(is.na(.))))
-
+sdq_P1117 <- sdq_P1117 %>%
+  filter(date_completed <= "2025-12-31")
 #NOTE: All score variables present, seemingly random column order. Impact variables present, but no score columns for these.
 
 # dealing with crazy header rows
@@ -101,7 +106,10 @@ new_names <- janitor::make_clean_names(new_names)
 sdq_S1117 <- sdq_S1117_raw[-c(1, 2), ]
 names(sdq_S1117) <- new_names
 sdq_S1117 <- sdq_S1117 %>%
-  select(where(~ !all(is.na(.))))
+  select(where(~ !all(is.na(.)))) 
+sdq_S1117 <- sdq_S1117 %>%
+  filter(date_completed <= "2025-12-31",
+         date_completed >= "2024-01-01")
 
 # NOTE: All items appear present and correct and they're even in order! Impact variables present and have score columns but the score columns are all NAs.
 ```
@@ -664,7 +672,7 @@ We used the SDQ distribution data to propose the following banding of SDQ scores
 Similar cut-points were observed for parent SDQs collected in a smaller American sample (N=307) of 2-4 year olds, and for parent SDQs collected in the English ‘Mental Health of Children And Young People, 2017’ study.
 
 |   | Close to average | Slightly raised (/slightly lowered) | High (/Low) | Very high (/very low) |
-|---------------|:-------------:|:-------------:|:-------------:|:-------------:|
+|----|:--:|:--:|:--:|:--:|
 | Parented completed SDQ total score | 0-12 | 13-15 | 16-18 | 19-40 |
 | Teacher completed SDQ total score | 0-10 | 11-14 | 15-17 | 18-40 |
 
@@ -683,7 +691,7 @@ reverse code: 7, 21, 25, 11, 14
 #### Cut off bands
 
 |   | Close to average | Slightly raised (/slightly lowered) | High (/Low) | Very high (/very low) |
-|---------------|:-------------:|:-------------:|:-------------:|:-------------:|
+|----|:--:|:--:|:--:|:--:|
 | Parented completed SDQ total score | 0-13 | 14-16 | 17-19 | 20-40 |
 | Teacher completed SDQ total score | 0-11 | 12-15 | 16-18 | 19-40 |
 | Self completed SDQ total score | 0-14 | 15-17 | 18-19 | 20-40 |
@@ -703,7 +711,7 @@ reverse code: 7, 21, 25, 11, 14
 #### Cut off bands
 
 |   | Close to average | Slightly raised (/slightly lowered) | High (/Low) | Very high (/very low) |
-|---------------|:-------------:|:-------------:|:-------------:|:-------------:|
+|----|:--:|:--:|:--:|:--:|
 | Parented completed SDQ total score | 0-13 | 14-16 | 17-19 | 20-40 |
 | Teacher completed SDQ total score | 0-11 | 12-15 | 16-18 | 19-40 |
 | Self completed SDQ total score | 0-14 | 15-17 | 18-19 | 20-40 |
@@ -723,7 +731,7 @@ reverse code: 7, 21, 25, 11, 14
 #### Cut off bands
 
 |   | Close to average | Slightly raised (/slightly lowered) | High (/Low) | Very high (/very low) |
-|---------------|:-------------:|:-------------:|:-------------:|:-------------:|
+|----|:--:|:--:|:--:|:--:|
 | Parented completed SDQ total score | 0-13 | 14-16 | 17-19 | 20-40 |
 | Teacher completed SDQ total score | 0-11 | 12-15 | 16-18 | 19-40 |
 | Self completed SDQ total score | 0-14 | 15-17 | 18-19 | 20-40 |
