@@ -1,0 +1,513 @@
+---
+title: "Annual Report Data Analysis - Question 3.03 and 3.04"
+author: "Tristan Burgess and Cristin Young"
+date: "`r Sys.Date()`"
+output:
+  html_notebook: default
+  word_document: default
+  html_document: default
+  pdf_document: default
+editor_options:
+  chunk_output_type: inline
+  markdown:
+    wrap: 72
+---
+
+# 3. Did EBP/CDEP services impact clinical and functional outcomes for clients who participated?
+
+**Inclusion criteria:** 1. must have initial time point data (i.e., be enrolled in an intervention), 2. must have a valid assessment collected at both intake and discharge time points, and 3. limited to tools with a clinical cut-off.
+
+**Scoring:** An **increase** in score indicates a positive outcome. There are no benchmarks or clinical cutoffs established for NOMS scoring — if the follow-up assessment score is higher than the initial score, a positive outcome is indicated.
+
+**Assumptions:** Filtered out dates before 2024-01-01 and after the date the code was run. Filtered data that's \>3 days from initial assessment and paired to the LAST follow-up. Filtered positive outcomes that had NAs before computing %.
+
+```{r setup}
+#| echo: false
+#| warning: false
+#| message: false
+library(tidyverse)
+library(janitor)
+library(ggridges)
+library(scales)
+```
+
+```{r load_data}
+#| echo: false
+#| warning: false
+#| message: false
+assess_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+# Produced by data cleaning/noms_data_cleaning.qmd
+pairs_primary_long_self <- read_csv(
+  file.path(assess_dir, "noms_self_pairs_clean.csv"),
+  show_col_types = FALSE
+)
+
+pairs_primary_long <- read_csv(
+  file.path(assess_dir, "noms_child_pairs_clean.csv"),
+  show_col_types = FALSE
+)
+```
+
+## 3.03 To what extent did parents/caregivers report improved mental health for themselves and their child after receiving the intervention?
+
+Range: 1–5; Sum = Q1.
+
+Use the `pairs_primary_long_self` data frame to compute scores. The following had a positive outcome by follow-up quarter:
+
+```{r self_q1_summary}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q1_self <- pairs_primary_long_self |>
+  filter(question == "q1_how_would_you_rate_your_overall_mental_health_right_now_score")
+
+score_diff_self_q1 <- pairs_primary_long_q1_self |>
+  mutate(
+    score_change     = follow_up_score - initial_score,
+    positive_outcome = ifelse(follow_up_score > initial_score, 1, 0),
+    initial_quarter  = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))
+  )
+
+score_diff_self_q1 |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+```
+
+Plot it.
+
+```{r self_q1_bar_plot}
+#| echo: false
+#| warning: false
+#| message: false
+q1_self_score_long <- pairs_primary_long_q1_self |>
+  ungroup() |>
+  filter(
+    !is.na(client_system_id),
+    !is.na(initial_score),
+    !is.na(follow_up_score)
+  ) |>
+  select(client_system_id, initial_score, follow_up_score) |>
+  pivot_longer(
+    cols      = c(initial_score, follow_up_score),
+    names_to  = "score_type",
+    values_to = "score_value"
+  ) |>
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score"   = "Initial",
+                        "follow_up_score" = "Follow-up"),
+    score_type = factor(score_type, levels = c("Initial", "Follow-up"))
+  )
+
+ggplot(q1_self_score_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width = 0.8,
+    alpha = 0.8
+  ) +
+  scale_fill_manual(values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49")) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    x     = "Measure: Mental Health Score (1-5)",
+    y     = "Count",
+    title = "Distribution of Initial and Follow-up Scores, NOMS Self Q1"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.title                = element_text(size = 9),
+    axis.text                 = element_text(size = 9),
+    panel.grid.major          = element_blank(),
+    panel.grid.minor.x        = element_blank(),
+    axis.line.x               = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position           = "inside",
+    legend.justification      = c("left", "top"),
+    legend.title              = element_blank(),
+    legend.text               = element_text(size = 8),
+    plot.margin               = margin(5, 5, 5, 5)
+  )
+```
+
+Ridgeline plot
+
+```{r self_q1_ridgeline}
+#| echo: false
+#| warning: false
+#| message: false
+summary_stats_self_score_type <- q1_self_score_long |>
+  group_by(score_type) |>
+  summarise(
+    mean_score   = mean(score_value, na.rm = TRUE),
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score     = sd(score_value, na.rm = TRUE),
+    n            = sum(!is.na(score_value))
+  )
+
+summary_stats_self_score_type
+
+ggplot(q1_self_score_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha          = 0.7,
+    scale          = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_x_continuous(limits = c(0, 6), breaks = c(1, 2, 3, 4, 5)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    x     = "Measure: Mental Health Score (1-5 Likert Scale)",
+    y     = NULL,
+    title = "Distribution of Initial and Follow-up Scores, NOMS Self"
+  ) +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x         = element_text(size = 9, hjust = 0.5),
+    axis.text.y          = element_blank(),
+    axis.text.x          = element_text(size = 9),
+    panel.grid           = element_blank(),
+    axis.ticks.y         = element_blank(),
+    axis.line.x          = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position      = "inside",
+    legend.justification = c("left", "top"),
+    legend.title         = element_blank(),
+    legend.text          = element_text(size = 8),
+    plot.margin          = margin(5, 5, 5, 5),
+    plot.title           = element_text(size = 11)
+  )
+```
+
+Dot and arrow plot
+
+```{r self_q1_dot_arrow}
+#| echo: false
+#| warning: false
+#| message: false
+score_diff_self_q1 |>
+  filter(
+    !is.na(initial_score),
+    !is.na(follow_up_score),
+    !is.na(positive_outcome)
+  ) |>
+  mutate(direction = case_when(
+    positive_outcome == 1 ~ "Improved",
+    positive_outcome == 0 ~ "Declined",
+    TRUE                  ~ "No Change"
+  )) |>
+  filter(!is.na(direction), direction != "No Change") |>
+  ggplot(aes(y = client_system_id)) +
+  geom_segment(
+    aes(
+      x = initial_score, xend = follow_up_score,
+      yend = client_system_id, color = direction
+    ),
+    alpha = 0.7,
+    arrow = arrow(length = unit(0.2, "cm"))
+  ) +
+  geom_point(aes(x = initial_score),   size = 1, color = "grey30") +
+  geom_point(aes(x = follow_up_score), size = 1, color = "grey30") +
+  scale_color_manual(values = c("Improved" = "forestgreen", "Declined" = "firebrick", "No Change" = "gray50")) +
+  labs(
+    x     = "Score",
+    y     = "Client",
+    title = "Change in direction of Q1 score: Self"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.title         = element_text(size = 9),
+    axis.text          = element_text(size = 9),
+    axis.text.y        = element_blank(),
+    panel.grid.major   = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    axis.line.x        = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.text        = element_text(size = 8),
+    plot.margin        = margin(5, 5, 5, 5)
+  )
+```
+
+#### Summary stats
+
+The percent of those who selected ratings of 4 or higher (excellent or very good) across Q1 at initial and discharge time points were:
+
+```{r self_q1_pct_4_5}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q1_self |>
+  ungroup() |>
+  summarise(
+    initial_4_5  = round(100 * mean(initial_score[!is.na(initial_score)]   %in% c(4, 5), na.rm = TRUE), 2),
+    followup_4_5 = round(100 * mean(follow_up_score[!is.na(follow_up_score)] %in% c(4, 5), na.rm = TRUE), 2)
+  )
+```
+
+### Summary stats overall
+
+```{r self_summary_dot_arrow}
+#| echo: false
+#| warning: false
+#| message: false
+df <- tribble(
+  ~group,   ~initial, ~followup,
+  "Child",  25.15,    53.46,
+  "Self",   30.23,    46
+)
+
+ggplot(df, aes(y = group)) +
+  geom_segment(
+    aes(x = initial, xend = followup, yend = group),
+    arrow     = arrow(length = unit(0.2, "cm")),
+    color     = "gray40",
+    linewidth = 0.8
+  ) +
+  geom_point(aes(x = initial,  color = "Initial"),   size = 12, show.legend = TRUE) +
+  geom_text(aes(x  = initial,  label = paste0(round(initial),  "%")), size = 3.5, color = "grey20") +
+  geom_point(aes(x = followup, color = "Follow-up"), size = 12, show.legend = TRUE) +
+  geom_text(aes(x  = followup, label = paste0(round(followup), "%")), size = 3.5, color = "grey20") +
+  scale_x_continuous(limits = c(0, 100), labels = label_percent(scale = 1)) +
+  scale_color_manual(
+    name   = "Timepoint",
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49")
+  ) +
+  labs(
+    x     = "Score",
+    y     = "",
+    title = "Change in direction of scores for those who selected 4 or higher on NOMS Q1 by subgroup"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.title         = element_text(size = 9),
+    axis.text          = element_text(size = 9),
+    panel.grid.major   = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    axis.line.x        = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.text        = element_text(size = 8),
+    legend.position    = c(0.98, 0.98),
+    legend.justification = c("right", "top"),
+    plot.margin        = margin(5, 5, 5, 5)
+  )
+```
+
+## 3.04 To what extent did the youth report improved mental health after receiving the intervention?
+
+Range: 1–5; Sum = Q1.
+
+Use the `pairs_primary_long` data frame to compute scores. The following had a positive outcome by follow-up quarter:
+
+```{r child_q1_summary}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q1 <- pairs_primary_long |>
+  filter(question == "q1_how_would_you_rate_your_child_s_overall_mental_health_right_now_score")
+
+score_diff_child_q1 <- pairs_primary_long_q1 |>
+  mutate(
+    score_change      = follow_up_score - initial_score,
+    positive_outcome  = ifelse(follow_up_score > initial_score, 1, 0),
+    initial_quarter   = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))
+  )
+
+score_diff_child_q1 |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+```
+
+Plot it.
+
+```{r child_q1_bar_plot}
+#| echo: false
+#| warning: false
+#| message: false
+q1_child_score_long <- pairs_primary_long_q1 |>
+  ungroup() |>
+  filter(
+    !is.na(system_id),
+    !is.na(initial_score),
+    !is.na(follow_up_score)
+  ) |>
+  select(system_id, initial_score, follow_up_score) |>
+  pivot_longer(
+    cols      = c(initial_score, follow_up_score),
+    names_to  = "score_type",
+    values_to = "score_value"
+  ) |>
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score"   = "Initial",
+                        "follow_up_score" = "Follow-up"),
+    score_type = factor(score_type, levels = c("Initial", "Follow-up"))
+  )
+
+ggplot(q1_child_score_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width = 0.8,
+    alpha = 0.8
+  ) +
+  scale_fill_manual(values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49")) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    x     = "Measure: Mental Health Score (1-5)",
+    y     = "Count",
+    title = "Distribution of Initial and Follow-up Scores, NOMS Child Q1"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.title           = element_text(size = 9),
+    axis.text            = element_text(size = 9),
+    panel.grid.major     = element_blank(),
+    panel.grid.minor.x   = element_blank(),
+    axis.line.x          = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position      = "inside",
+    legend.justification = c("left", "top"),
+    legend.title         = element_blank(),
+    legend.text          = element_text(size = 8),
+    plot.margin          = margin(5, 5, 5, 5)
+  )
+```
+
+Ridgeline plot
+
+```{r child_q1_ridgeline}
+#| echo: false
+#| warning: false
+#| message: false
+summary_stats_child_score_type <- q1_child_score_long |>
+  group_by(score_type) |>
+  summarise(
+    mean_score   = mean(score_value, na.rm = TRUE),
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score     = sd(score_value, na.rm = TRUE),
+    n            = sum(!is.na(score_value))
+  )
+
+summary_stats_child_score_type
+
+ggplot(q1_child_score_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha          = 0.7,
+    scale          = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_x_continuous(limits = c(0, 6), breaks = c(1, 2, 3, 4, 5)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    x     = "Measure: Mental Health Score (1-5 Likert Scale)",
+    y     = NULL,
+    title = "Distribution of Initial and Follow-up Scores, NOMS Child"
+  ) +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x         = element_text(size = 9, hjust = 0.5),
+    axis.text.y          = element_blank(),
+    axis.text.x          = element_text(size = 9),
+    panel.grid           = element_blank(),
+    axis.ticks.y         = element_blank(),
+    axis.line.x          = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position      = "inside",
+    legend.justification = c("left", "top"),
+    legend.title         = element_blank(),
+    legend.text          = element_text(size = 8),
+    plot.margin          = margin(5, 5, 5, 5),
+    plot.title           = element_text(size = 11)
+  ) +
+  geom_segment(
+    data = summary_stats_child_score_type,
+    aes(x = median_score, y = 1, xend = median_score, yend = 1.05, color = "grey30"),
+    linetype = "dotted"
+  ) +
+  geom_text(
+    data = summary_stats_child_score_type,
+    aes(x = median_score, y = 1.062,
+        label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+    vjust = 2, hjust = 0.5, size = 2
+  )
+```
+
+Dot and arrow plot
+
+```{r child_q1_dot_arrow}
+#| echo: false
+#| warning: false
+#| message: false
+score_diff_child_q1 |>
+  filter(
+    !is.na(initial_score),
+    !is.na(follow_up_score),
+    !is.na(positive_outcome)
+  ) |>
+  mutate(direction = case_when(
+    positive_outcome == 1 ~ "Improved",
+    positive_outcome == 0 ~ "Declined",
+    TRUE                  ~ "No Change"
+  )) |>
+  filter(!is.na(direction), direction != "No Change") |>
+  ggplot(aes(y = system_id)) +
+  geom_segment(
+    aes(
+      x = initial_score, xend = follow_up_score,
+      yend = system_id, color = direction
+    ),
+    arrow = arrow(length = unit(0.2, "cm"))
+  ) +
+  geom_point(aes(x = initial_score),   size = 1, color = "grey30") +
+  geom_point(aes(x = follow_up_score), size = 1, color = "grey30") +
+  scale_color_manual(values = c("Improved" = "forestgreen", "Declined" = "firebrick", "No Change" = "gray50")) +
+  labs(
+    x     = "Score",
+    y     = "Client",
+    title = "Change in direction of Q1 score: Child"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.title         = element_text(size = 9),
+    axis.text          = element_text(size = 9),
+    axis.text.y        = element_blank(),
+    panel.grid.major   = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    axis.line.x        = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.text        = element_text(size = 8),
+    plot.margin        = margin(5, 5, 5, 5)
+  )
+```
+
+#### Summary stats
+
+The percent of those who selected ratings of 4 or higher (excellent or very good) across Q1 at initial and discharge time points were:
+
+```{r child_q1_pct_4_5}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q1 |>
+  ungroup() |>
+  summarise(
+    initial_4_5  = round(100 * mean(initial_score[!is.na(initial_score)]     %in% c(4, 5), na.rm = TRUE), 2),
+    followup_4_5 = round(100 * mean(follow_up_score[!is.na(follow_up_score)] %in% c(4, 5), na.rm = TRUE), 2)
+  )
+```

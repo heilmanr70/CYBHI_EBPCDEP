@@ -55,112 +55,26 @@ openxlsx::write.xlsx(client_serve,"/Users/cristin/CWS Dropbox/Cristin Young/CYBH
 #| warning: false
 #| message: false
 #| include: false
-library(zoo)
 
-# caregiver
-caregiver_raw <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-caregiver.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE) 
-h1 <- unlist(caregiver_raw[1, ], use.names = FALSE)           # question text row
-h2 <- unlist(caregiver_raw[2, ], use.names = FALSE)           # subheaders
-h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
-h1_ff <- str_squish(h1_ff)
-new_names <- ifelse(
-  is.na(h1_ff) | h1_ff == "",
-  h2,                                  # keep subheader only
-  paste(h1_ff, h2, sep = " - ")        # combine when applicable
-)
-new_names <- janitor::make_clean_names(new_names)
-caregiver <- caregiver_raw[-c(1, 2), ]
-names(caregiver) <- new_names
-caregiver <- caregiver %>%
-  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+# Produced by data cleaning/satisfaction_data_cleaning.qmd
+# Contains all four survey types; date-cleaned; filtered to reporting period;
+# includes year and quarter_label columns.
+sat_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
 
-# child
-child_raw <- read.csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-child_13-17.csv", na = c("-", "", "NA", "N/A", "0"), header = FALSE) 
-h1 <- unlist(child_raw[1, ], use.names = FALSE)           # question text row
-h2 <- unlist(child_raw[2, ], use.names = FALSE)           # subheaders
-h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
-h1_ff <- str_squish(h1_ff)
-new_names <- ifelse(
-  is.na(h1_ff) | h1_ff == "",
-  h2,                                  # keep subheader only
-  paste(h1_ff, h2, sep = " - ")        # combine when applicable
-)
-new_names <- janitor::make_clean_names(new_names)
-child <- child_raw[-c(1, 2), ]
-names(child) <- new_names
-child <- child %>%
-  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
-
-# adult
-adult_raw <- read.csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-adult_18-59.csv", na.strings = c("-", "", "NA", "N/A", "0"), skip = 0, header = FALSE)
-h1 <- unlist(adult_raw[1, ], use.names = FALSE)           # question text row
-h2 <- unlist(adult_raw[2, ], use.names = FALSE)           # subheaders
-h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
-h1_ff <- str_squish(h1_ff)
-new_names <- ifelse(
-  is.na(h1_ff) | h1_ff == "",
-  h2,                                  # keep subheader only
-  paste(h1_ff, h2, sep = " - ")        # combine when applicable
-)
-new_names <- janitor::make_clean_names(new_names)
-adult <- adult_raw[-c(1, 2), ]
-names(adult) <- new_names
-adult <- adult %>%
-  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
-
-# senior
-senior_raw <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-adult_60_plus.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE) 
-h1 <- unlist(senior_raw[1, ], use.names = FALSE)           # question text row
-h2 <- unlist(senior_raw[2, ], use.names = FALSE)           # subheaders
-h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
-h1_ff <- str_squish(h1_ff)
-new_names <- ifelse(
-  is.na(h1_ff) | h1_ff == "",
-  h2,                                  # keep subheader only
-  paste(h1_ff, h2, sep = " - ")        # combine when applicable
-)
-new_names <- janitor::make_clean_names(new_names)
-senior <- senior_raw[-c(1, 2), ]
-names(senior) <- new_names
-senior <- senior %>%
-  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+combined_all <- read_csv(
+  file.path(sat_dir, "combined_satisfaction_clean.csv"),
+  show_col_types = FALSE
+) %>%
+  mutate(quarter_label = fct_inorder(quarter_label))
 ```
 
 Satisfaction is defined two ways below. The first is the percent of individuals who answered question 1 as "Agree" or "Strongly Agree" on the satisfaction survey. The second definition is the percent of individuals who selected "Agree" or "Strongly Agree" on 80% or more of the questions completed.
 
-**Nitty gritty:** There are four satisfaction surveys: Caregiver (n=`{r} nrow(caregiver)`), Child (13-17) (n=`{r} nrow(child)`), Adult (18-59) (n=`{r} nrow(adult)`), and Adult (60+) (n=`{r} nrow(senior)`). A separate data frame was made for question 1, and high satisfaction was defined as the percent of individuals who answered a 4 or 5 for question 1.
+**Nitty gritty:** There are four satisfaction surveys: Caregiver (n=`{r} sum(combined_all$source == "caregiver")`), Child (13-17) (n=`{r} sum(combined_all$source == "child")`), Adult (18-59) (n=`{r} sum(combined_all$source == "adult")`), and Adult (60+) (n=`{r} sum(combined_all$source == "senior")`). A separate data frame was made for question 1, and high satisfaction was defined as the percent of individuals who answered a 4 or 5 for question 1.
 
 **Assumptions:** I cleaned dates with "002X" and "292X" and replaced them with "202X." I also filtered dates in the future (\<= "2025-12-31").
 
 #### Question 1 Satisfaction
-
-```{r, client_sat_q1}
-#| echo: false
-#| warning: false
-#| message: false
-#| include: false
-combined_q1 <- bind_rows(
-  caregiver %>% 
-    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
-           date_completed, matches("^x1_")) %>% 
-    rename(q1 = matches("^x1_")) %>% 
-    mutate(source = "caregiver"),
-  child %>% 
-    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
-           date_completed, matches("^x1_")) %>% 
-    rename(q1 = matches("^x1_")) %>% 
-    mutate(source = "child"),
-  adult %>% 
-    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
-           date_completed, matches("^x1_")) %>% 
-    rename(q1 = matches("^x1_")) %>% 
-    mutate(source = "adult"),
-  senior %>% 
-    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
-           date_completed, matches("^x1_")) %>% 
-    rename(q1 = matches("^x1_")) %>% 
-    mutate(source = "senior"))
-```
 
 The following table shows high survey satisfaction by year.
 
@@ -168,50 +82,6 @@ The following table shows high survey satisfaction by year.
 #| echo: false
 #| warning: false
 #| message: false
-
-# combining all satisfaction survey data
-combined_all <- bind_rows(
-  caregiver %>% 
-    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
-           date_completed, matches("^x")) %>% 
-    rename(q = matches("^x")) %>% 
-    mutate(source = "caregiver"),
-  child %>% 
-    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
-           date_completed, matches("^x")) %>% 
-    rename(q = matches("^x")) %>% 
-    mutate(source = "child"),
-  adult %>% 
-    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
-           date_completed, matches("^x")) %>% 
-    rename(q = matches("^x")) %>% 
-    mutate(source = "adult"),
-  senior %>% 
-    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
-           date_completed, matches("^x")) %>% 
-    rename(q = matches("^x")) %>% 
-    mutate(source = "senior"))
-
-# first clean date column
-#unique(combined_all$date_completed)
-combined_all <- combined_all %>% 
-  mutate(
-    date_clean = str_replace(date_completed, "^00", "20"), # replace 00xx with 20xx
-    date_clean = str_replace(date_clean, "^29", "20"), # replace 29xx with 20xx
-    date_clean = as.Date(date_clean)
-  )
-#unique(combined_all$date_clean)
-
-# add in a quarter column
-combined_all <- combined_all %>%
-  filter(!is.na(date_clean),
-         date_clean <= "2025-12-30") %>%
-  mutate(quarter_label = paste0("Q", quarter(date_clean), " ", year(date_clean)),
-       quarter_label = factor(quarter_label, levels = unique(quarter_label)) #to sort chronologically
-  )
-
-#add in a year column
-combined_all$year <- year(combined_all$date_clean)
 
 # Question 1 satisfaction by year
 pct_4_5_year <- combined_all %>% 
@@ -239,8 +109,8 @@ pct_4_5_overall
 openxlsx::write.xlsx(pct_4_5_year,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Question 1 Satisfaction.xlsx",sheetName="by year")
 # xlsx::write.xlsx(pct_4_5_year,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Question 1 Satisfaction.xlsx",sheetName="by year")
 
-openxlsx::write.xlsx(pct_4_5_overall,"/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Question 1 Satisfaction.xlsx",sheetName="overall",append=T)
-# xlsx::write.xlsx(pct_4_5_overall,"/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Question 1 Satisfaction.xlsx",sheetName="overall",append=T)
+openxlsx::write.xlsx(pct_4_5_overall,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Question 1 Satisfaction.xlsx",sheetName="overall",append=T)
+# xlsx::write.xlsx(pct_4_5_overall,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Question 1 Satisfaction.xlsx",sheetName="overall",append=T)
 
 ```
 
@@ -540,83 +410,10 @@ Use the `pairs_primary_long` data frame to compute scores. The following had a p
 #| warning: false
 #| message: false
 #| include: false
-library(readr)
-library(tidyverse)
-library(readxl)
-library(zoo)
-library(janitor)
 
-# dealing with crazy header rows
-noms_child_raw <- read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/NOMS-child.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE) 
-h1 <- unlist(noms_child_raw[1, ], use.names = FALSE)           # question text row
-h2 <- unlist(noms_child_raw[2, ], use.names = FALSE)           # subheaders
-h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
-h1_ff <- str_squish(h1_ff)
-new_names <- ifelse(
-  is.na(h1_ff) | h1_ff == "",
-  h2,                                  # keep subheader only
-  paste(h1_ff, h2, sep = " - ")        # combine when applicable
-)
-new_names <- janitor::make_clean_names(new_names)
-noms_child <- noms_child_raw[-c(1, 2), ]
-names(noms_child) <- new_names
-noms_child <- noms_child %>%
-  select(where(~ !all(is.na(.))))
-
-#make sure columns are numeric
-#add a total score column
-#add a column for if there was any missing data, in case we want to exclude those rows later
-#make sure it's date formatted and get rid of the weird dates before 2024 for now
-noms_child <- noms_child %>% 
-  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
-  rowwise() %>% 
-  mutate(any_missing_q1x = any(is.na(c_across(matches("^(q1|x).*_score$")))),
-         total_score = sum(c_across(matches("^(q1|x).*_score$")), na.rm = TRUE)) %>% 
-  ungroup %>% 
-  mutate(
-    date_completed = as.Date(date_completed),
-    row_id = row_number()                # stable row id for disambiguation
-  ) %>% 
-  filter(date_completed <= Sys.Date(),     #date of running the code
-         date_completed >= "2024-01-01")  %>% #date to filter out random issue dates   
-  filter(date_completed <= "2025-12-31")
-
-#pivot long to get individual question scores too
-noms_child_long <- noms_child %>% 
-  pivot_longer(
-    cols = matches("^(q1|x).*_score$"),
-    names_to = "question",
-    values_to = "score"
-  ) %>% 
-  mutate(score = as.numeric(score))
-
-#pair by system_id and question (because the data is in a long format)
-paired_outcomes_child <- noms_child_long %>% 
-  group_by(system_id, question) %>% 
-  arrange(date_completed, .by_group = TRUE) %>% 
-  mutate(
-    days_since_initial = as.integer(date_completed - first(date_completed)),
-    initial_date = first(date_completed),
-    initial_score = first(score)
-  ) %>% 
-  # flagging follow-ups
-  mutate(
-    is_within3 = days_since_initial <= 3 & days_since_initial >= 0,
-    is_after3 = days_since_initial >3
-  )
-
-# paired data
-pairs_primary_long <- paired_outcomes_child %>% 
-  filter(is_after3 == TRUE) %>% #filter to data that's after 3 days from initial
-  slice_tail(n = 1) %>%  #pairing to the LAST follow-up
-  transmute(
-    system_id, question,
-    initial_date,
-    initial_score,
-    follow_up_date = date_completed,
-    follow_up_score = score,
-    days_since_initial
-  )
+# Produced by data cleaning/noms_data_cleaning.qmd
+assess_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+pairs_primary_long <- read_csv(file.path(assess_dir, "noms_child_pairs_clean.csv"), show_col_types = FALSE)
 ```
 
 ```{r}
@@ -847,76 +644,9 @@ Use the `pairs_primary_long_self` data frame to compute scores. The following ha
 #| warning: false
 #| message: false
 #| include: false
-noms_self_raw <- read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/NOMS-self_report.xlsx", na = c("-", "", "NA", "N/A"), col_names = FALSE)
-h1 <- unlist(noms_self_raw[1, ], use.names = FALSE)           # question text row
-h2 <- unlist(noms_self_raw[2, ], use.names = FALSE)           # subheaders
-h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
-h1_ff <- str_squish(h1_ff)
-new_names <- ifelse(
-  is.na(h1_ff) | h1_ff == "",
-  h2,                                  # keep subheader only
-  paste(h1_ff, h2, sep = " - ")        # combine when applicable
-)
-new_names <- janitor::make_clean_names(new_names)
-noms_self <- noms_self_raw[-c(1, 2), ]
-names(noms_self) <- new_names
-noms_self <- noms_self %>%
-  select(where(~ !all(is.na(.))))
 
-#make sure columns are numeric
-#add a total score column
-#add a column for if there was any missing data, in case we want to exclude those rows later
-#make sure it's date formatted and get rid of the weird dates before 2024 for now
-noms_self <- noms_self %>% 
-  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
-  rowwise() %>% 
-  mutate(any_missing_q1x = any(is.na(c_across(matches("^(q1|x).*_score$")))),
-         total_score = sum(c_across(matches("^(q1|x).*_score$")), na.rm = TRUE)) %>% 
-  ungroup %>% 
-  mutate(
-    date_completed = as.Date(date_completed),
-    row_id = row_number()                # stable row id for disambiguation
-  ) %>% 
-  filter(date_completed <= Sys.Date(),     #date of running the code
-         date_completed >= "2024-01-01") %>% #date to filter out random issue dates   
-  filter(date_completed <= "2025-12-31")
-
-#pivot long to get individual question scores too
-noms_self_long <- noms_self %>% 
-  pivot_longer(
-    cols = matches("^(q1|x).*_score$"),
-    names_to = "question",
-    values_to = "score"
-  ) %>% 
-  mutate(score = as.numeric(score))
-
-#pair per question
-paired_outcomes_self <- noms_self_long %>% 
-  group_by(client_system_id, question) %>% 
-  arrange(date_completed, .by_group = TRUE) %>% 
-  mutate(
-    days_since_initial = as.integer(date_completed - first(date_completed)),
-    initial_date = first(date_completed),
-    initial_score = first(score)
-  ) %>% 
-  # flagging follow-ups
-  mutate(
-    is_within3 = days_since_initial <= 3 & days_since_initial >= 0,
-    is_after3 = days_since_initial >3
-  )
-
-# paired data
-pairs_primary_long_self <- paired_outcomes_self %>% 
-  filter(is_after3 == TRUE) %>% #filtered for assessments >3 days from initial
-  slice_tail(n = 1) %>%  #paired on LAST assessment
-  transmute(
-    client_system_id, question,
-    initial_date,
-    initial_score,
-    follow_up_date = date_completed,
-    follow_up_score = score,
-    days_since_initial
-  )
+# Produced by data cleaning/noms_data_cleaning.qmd
+pairs_primary_long_self <- read_csv(file.path(assess_dir, "noms_self_pairs_clean.csv"), show_col_types = FALSE)
 ```
 
 ```{r}
@@ -2451,71 +2181,10 @@ dot_and_arrow_plot_4_5_q4
 #| echo: false
 #| warning: false
 #| message: false
-# raw_pss <- read.csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/PSS.csv", na = c("-", "", "NA", "N/A", "0"), header = FALSE) 
-raw_pss <- read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/PSS.xlsx", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE) 
-h1 <- unlist(raw_pss[1, ], use.names = FALSE)           # question text row
-h2 <- unlist(raw_pss[2, ], use.names = FALSE)           # subheaders
-h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
-h1_ff <- str_squish(h1_ff)
-new_names <- ifelse(
-  is.na(h1_ff) | h1_ff == "",
-  h2,                                  # keep subheader only
-  paste(h1_ff, h2, sep = " - ")        # combine when applicable
-)
-new_names <- janitor::make_clean_names(new_names)
-pss <- raw_pss[-c(1, 2), ]
-names(pss) <- new_names
-pss <- pss %>%
-  select(where(~ !all(is.na(.)))) %>% 
-  filter(date_completed <= "2025-12-31")
 
-#reverse scored q's
-rev_idx <- c(1, 2, 5, 6, 7, 8, 17, 18)
+# Produced by data cleaning/pss_data_cleaning.qmd
+pss_paired <- read_csv(file.path(assess_dir, "pss_paired_clean.csv"), show_col_types = FALSE)
 
-#score cols
-score_cols <- names(pss)[endsWith(names(pss), "_score")]
-
-#make sure columns are numeric
-#add a total score column, which = NA if 2+ items are missing and reverse scoring correct items
-#make sure it's date formatted
-pss_scores <- pss %>% 
-  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
-  rowwise() %>% 
-  mutate(
-    missing_count = sum(is.na(c_across(all_of(score_cols)))),
-    total_score = {
-      vals <- c_across(all_of(score_cols))
-      vals[rev_idx] <- 6 - vals[rev_idx]
-      sum(vals, na.rm = TRUE)
-      }) %>% 
-  ungroup %>% 
-  mutate(
-    total_score = ifelse(missing_count >= 2, NA_real_, total_score),
-    date_completed = as.Date(date_completed),
-    row_id = row_number()                # stable row id for disambiguation
-  ) %>% 
-  select(client_system_id, collection, date_completed, total_score)
-  
-pss_paired <- pss_scores %>%
-  group_by(client_system_id) %>%
-  arrange(date_completed, .by_group = TRUE) %>%
-  summarise(
-    n_assessments = n(),
-    initial_date  = first(date_completed),
-    initial_score = first(total_score),
-    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
-    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
-  ) %>%
-  ungroup() %>% 
-  filter(
-    !is.na(follow_up_date)
-  ) %>% 
-  mutate(
-    positive_outcome = ifelse(follow_up_score < initial_score, 1, 0), 
-    score_change = follow_up_score - initial_score,
-    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
-    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
-    
 # summary stats
 tab <- pss_paired %>% 
   filter(!is.na(positive_outcome)) %>% 
@@ -2668,45 +2337,10 @@ The YOQ total score reflects total distress in a client's life, with a high scor
 #| echo: false
 #| warning: false
 #| message: false
-raw_yoq_caregiver <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/YOQ-caregiver.csv", na = c("-", "", "NA", "N/A")) %>% janitor::clean_names()
 
-#make sure columns are numeric
-#add a column for if there was any missing data, in case we want to exclude those rows later
-#add a total score column, which = NA if 3+ items are missing
-#make sure it's date formatted
-yoq_caregiver <- raw_yoq_caregiver %>% 
-  mutate(across(matches("^x"), ~ as.numeric(.))) %>% 
-  rowwise() %>% 
-  mutate(
-    missing_count = sum(is.na(c_across(starts_with("x")))),
-    total_score = ifelse(missing_count >= 3, NA_real_, sum(c_across(starts_with("x")), na.rm = TRUE))) %>% 
-  ungroup %>% 
-  mutate(
-    date_completed = as.Date(date_completed),
-    row_id = row_number()                # stable row id for disambiguation
-  ) %>% 
-  select(client_system_id, collection, date_completed, total_score)
+# Produced by data cleaning/yoq_data_cleaning.qmd
+yoq_caregiver_paired <- read_csv(file.path(assess_dir, "yoq_caregiver_paired_clean.csv"), show_col_types = FALSE)
 
-yoq_caregiver_paired <- yoq_caregiver %>%
-  group_by(client_system_id) %>%
-  arrange(date_completed, .by_group = TRUE) %>%
-  summarise(
-    n_assessments = n(),
-    initial_date  = first(date_completed),
-    initial_score = first(total_score),
-    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
-    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
-  ) %>%
-  ungroup() %>% 
-  filter(
-    !is.na(follow_up_date)
-  ) %>% 
-  mutate(
-    rci = initial_score - follow_up_score, 
-    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
-            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)),
-    reliably_better = rci >= 10)
-    
 # summary stats
 tab <- yoq_caregiver_paired %>% 
   filter(!is.na(reliably_better),
@@ -2757,45 +2391,10 @@ yoq_caregiver_paired %>%
 #| echo: false
 #| warning: false
 #| message: false
-raw_yoq_self <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/YOQ-self_report.csv", na = c("-", "", "NA", "N/A")) %>% janitor::clean_names()
 
-#make sure columns are numeric
-#add a column for if there was any missing data, in case we want to exclude those rows later
-#add a total score column, which = NA if 3+ items are missing
-#make sure it's date formatted
-yoq_self <- raw_yoq_self %>% 
-  mutate(across(matches("^x"), ~ as.numeric(.))) %>% 
-  rowwise() %>% 
-  mutate(
-    missing_count = sum(is.na(c_across(starts_with("x")))),
-    total_score = ifelse(missing_count >= 3, NA_real_, sum(c_across(starts_with("x")), na.rm = TRUE))) %>% 
-  ungroup %>% 
-  mutate(
-    date_completed = as.Date(date_completed),
-    row_id = row_number()                # stable row id for disambiguation
-  ) %>% 
-  select(client_system_id, collection, date_completed, total_score)
+# Produced by data cleaning/yoq_data_cleaning.qmd
+yoq_self_paired <- read_csv(file.path(assess_dir, "yoq_self_paired_clean.csv"), show_col_types = FALSE)
 
-yoq_self_paired <- yoq_self %>%
-  group_by(client_system_id) %>%
-  arrange(date_completed, .by_group = TRUE) %>%
-  summarise(
-    n_assessments = n(),
-    initial_date  = first(date_completed),
-    initial_score = first(total_score),
-    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
-    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
-  ) %>%
-  ungroup() %>% 
-  filter(
-    !is.na(follow_up_date)
-  ) %>% 
-  mutate(
-    rci = initial_score - follow_up_score, 
-    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
-            follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)),
-    reliably_better = rci >= 10)
-    
 # summary stats
 tab <- yoq_self_paired %>% 
   filter(!is.na(reliably_better),
@@ -2860,68 +2459,10 @@ There are no specified clinical cutoffs for the BASIS-24. Subjective interpretat
 #| echo: false
 #| warning: false
 #| message: false
-raw_basis24 <- read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/Basis-24.xlsx", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE)
-h1 <- unlist(raw_basis24[1, ], use.names = FALSE)           # question text row
-h2 <- unlist(raw_basis24[2, ], use.names = FALSE)           # subheaders
-h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
-h1_ff <- str_squish(h1_ff)
-new_names <- ifelse(
-  is.na(h1_ff) | h1_ff == "",
-  h2,                                  # keep subheader only
-  paste(h1_ff, h2, sep = " - ")        # combine when applicable
-)
-new_names <- janitor::make_clean_names(new_names)
-basis24 <- raw_basis24[-c(1, 2), ]
-names(basis24) <- new_names
-basis24 <- basis24 %>%
-  select(where(~ !all(is.na(.))))
 
-#reverse scored q's
-rev_idx <- c(4, 5, 6, 7, 8, 9)
+# Produced by data cleaning/basis24_data_cleaning.qmd
+basis24_paired <- read_csv(file.path(assess_dir, "basis24_paired_clean.csv"), show_col_types = FALSE)
 
-#score cols
-score_cols <- names(basis24)[endsWith(names(basis24), "_score")]
-
-#make sure columns are numeric
-#add a total score column, which = NA if 2+ items are missing and reverse scoring correct items
-#make sure it's date formatted
-basis24_scores <- basis24 %>% 
-  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
-  rowwise() %>% 
-  mutate(
-    missing_count = sum(is.na(c_across(all_of(score_cols)))),
-    total_score = {
-      vals <- c_across(all_of(score_cols))
-      vals[rev_idx] <- 6 - vals[rev_idx]
-      sum(vals, na.rm = TRUE)
-      }) %>% 
-  ungroup %>% 
-  mutate(
-    date_completed = as.Date(date_completed),
-    row_id = row_number()                # stable row id for disambiguation
-  ) %>% 
-  select(client_system_id, collection, date_completed, total_score)
-  
-basis24_paired <- basis24_scores %>%
-  group_by(client_system_id) %>%
-  arrange(date_completed, .by_group = TRUE) %>%
-  summarise(
-    n_assessments = n(),
-    initial_date  = first(date_completed),
-    initial_score = first(total_score),
-    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
-    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
-  ) %>%
-  ungroup() %>% 
-  filter(
-    !is.na(follow_up_date)
-  ) %>% 
-  mutate(
-    positive_outcome = ifelse(follow_up_score < initial_score, 1, 0), 
-    score_change = follow_up_score - initial_score,
-    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
-    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
-    
 # summary stats
 tab <- basis24_paired %>% 
   filter(!is.na(positive_outcome)) %>% 
@@ -3072,65 +2613,10 @@ The CPSS-5-I is a 27-item semi-structured interview that assesses PTSD DSM-5 dia
 #| echo: false
 #| warning: false
 #| message: false
-cpss_i_raw <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/CPSS-5-Interviewer.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE)
-h1 <- unlist(cpss_i_raw[1, ], use.names = FALSE)           # question text row
-h2 <- unlist(cpss_i_raw[2, ], use.names = FALSE)           # subheaders
-h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
-h1_ff <- str_squish(h1_ff)
-new_names <- ifelse(
-  is.na(h1_ff) | h1_ff == "",
-  h2,                                  # keep subheader only
-  paste(h1_ff, h2, sep = " - ")        # combine when applicable
-)
-new_names <- janitor::make_clean_names(new_names)
-cpss_i <- cpss_i_raw[-c(1, 2), ]
-names(cpss_i) <- new_names
-cpss_i <- cpss_i %>%
-  select(where(~ !all(is.na(.)))) %>% 
-  filter(date_completed <= "2025-12-31")
 
-#score cols
-score_cols <- names(cpss_i)[endsWith(names(cpss_i), "_score")]
-clinical_cutoff_i <- 31
+# Produced by data cleaning/cpss5_data_cleaning.qmd
+cpss_i_paired <- read_csv(file.path(assess_dir, "cpss_i_paired_clean.csv"), show_col_types = FALSE)
 
-#make sure columns are numeric
-#add a total score column
-#make sure it's date formatted
-cpss_i_scores <- cpss_i %>% 
-  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
-  rowwise() %>% 
-  mutate(
-    missing_count = sum(is.na(c_across(all_of(score_cols)))),
-    total_score = rowSums(across(all_of(score_cols)), na.rm = TRUE),
-    clinically_relevant = if_else(
-        !is.na(total_score) & total_score >= clinical_cutoff_i, TRUE, FALSE)) %>% 
-  ungroup %>% 
-  mutate(
-    date_completed = as.Date(date_completed),
-    row_id = row_number()                # stable row id for disambiguation
-  ) %>% 
-  select(client_system_id, collection, date_completed, total_score)
-  
-cpss_i_paired <- cpss_i_scores %>%
-  group_by(client_system_id) %>%
-  arrange(date_completed, .by_group = TRUE) %>%
-  summarise(
-    n_assessments = n(),
-    initial_date  = first(date_completed),
-    initial_score = first(total_score),
-    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
-    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
-  ) %>%
-  ungroup() %>% 
-  filter(
-    !is.na(follow_up_date)
-  ) %>% 
-  mutate(
-    positive_outcome = ifelse(follow_up_score < initial_score, 1, 0), 
-    score_change = follow_up_score - initial_score,
-    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
-    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
-    
 # summary stats
 tab <- cpss_i_paired %>% 
   filter(!is.na(positive_outcome)) %>% 
@@ -3268,65 +2754,10 @@ cpss_i_ridge_plot
 #| echo: false
 #| warning: false
 #| message: false
-cpss_s_raw <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/CPSS-5-self.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE)
-h1 <- unlist(cpss_s_raw[1, ], use.names = FALSE)           # question text row
-h2 <- unlist(cpss_s_raw[2, ], use.names = FALSE)           # subheaders
-h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
-h1_ff <- str_squish(h1_ff)
-new_names <- ifelse(
-  is.na(h1_ff) | h1_ff == "",
-  h2,                                  # keep subheader only
-  paste(h1_ff, h2, sep = " - ")        # combine when applicable
-)
-new_names <- janitor::make_clean_names(new_names)
-cpss_s <- cpss_s_raw[-c(1, 2), ]
-names(cpss_s) <- new_names
-cpss_s <- cpss_s %>%
-  select(where(~ !all(is.na(.)))) %>% 
-  filter(date_completed <= "2025-12-31")
 
-#score cols
-score_cols <- names(cpss_s)[endsWith(names(cpss_s), "_score")]
-clinical_cutoff_s <- 31
+# Produced by data cleaning/cpss5_data_cleaning.qmd
+cpss_s_paired <- read_csv(file.path(assess_dir, "cpss_s_paired_clean.csv"), show_col_types = FALSE)
 
-#make sure columns are numeric
-#add a total score column
-#make sure it's date formatted
-cpss_s_scores <- cpss_s %>% 
-  mutate(across(ends_with("_score"), ~ as.numeric(.))) %>% 
-  rowwise() %>% 
-  mutate(
-    missing_count = sum(is.na(c_across(all_of(score_cols)))),
-    total_score = rowSums(across(all_of(score_cols)), na.rm = TRUE),
-    clinically_relevant = if_else(
-        !is.na(total_score) & total_score >= clinical_cutoff_s, TRUE, FALSE)) %>% 
-  ungroup %>% 
-  mutate(
-    date_completed = as.Date(date_completed),
-    row_id = row_number()                # stable row id for disambiguation
-  ) %>% 
-  select(client_system_id, collection, date_completed, total_score)
-  
-cpss_s_paired <- cpss_s_scores %>%
-  group_by(client_system_id) %>%
-  arrange(date_completed, .by_group = TRUE) %>%
-  summarise(
-    n_assessments = n(),
-    initial_date  = first(date_completed),
-    initial_score = first(total_score),
-    follow_up_date  = if_else(n_assessments >= 2, last(date_completed), as.Date(NA)),
-    follow_up_score = if_else(n_assessments >= 2, last(total_score), NA_real_)
-  ) %>%
-  ungroup() %>% 
-  filter(
-    !is.na(follow_up_date)
-  ) %>% 
-  mutate(
-    positive_outcome = ifelse(follow_up_score < initial_score, 1, 0), 
-    score_change = follow_up_score - initial_score,
-    initial_quarter = paste0("Q", quarter(initial_date), " ", year(initial_date)),
-    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)))
-    
 # summary stats
 tab <- cpss_s_paired %>% 
   filter(!is.na(positive_outcome)) %>% 

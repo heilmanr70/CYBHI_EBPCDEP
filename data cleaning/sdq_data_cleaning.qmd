@@ -1,0 +1,437 @@
+---
+title: "SDQ Assessment Data Cleaning"
+author: "Cristin Young"
+date: "2026-03-17"
+format:
+  html:
+    df-print: paged
+    toc: true
+    toc-float: true
+---
+
+## Project Overview
+
+This notebook prepares **CYBHI EBP/CDEP** Strengths and Difficulties Questionnaire (SDQ) assessment data for analysis and reporting. It ingests four raw eInsight CSV exports (three parent/caregiver versions and one self-report version), processes the two-row hierarchical headers, applies SDQ scoring (including reverse-coding and cut-off banding), pairs each client's initial assessment with their last follow-up, and writes clean paired outputs.
+
+**Data sources (eInsight Individual Assessments exports):**
+
+-   **SDQ P2-4.csv** — Parent/caregiver-completed SDQ for ages 2–4.
+-   **SDQ P4-10.csv** — Parent/caregiver-completed SDQ for ages 4–10.
+-   **SDQ P11-17.csv** — Parent/caregiver-completed SDQ for ages 11–17.
+-   **SDQ S11-17.csv** — Self-report SDQ for ages 11–17.
+
+Each file has a two-row header: row 1 contains question text, row 2 contains subheader labels (e.g., "Score", "Comments").
+
+**Scoring:** An **increase** in score indicates a negative outcome.
+
+-   Items are rated 0–2. Total difficulties score = sum of 20 items (items 1, 4, 9, 17, 20 are excluded; items 7, 11, 14, 21, 25 are reverse-coded).
+-   Total score range: 0–40. Set to `NA` if ≥3 items are missing.
+-   Externalizing score = sum of conduct (5, 7, 12, 18, 22) + hyperactivity (2, 10, 15, 21, 25) items. Range: 0–20.
+-   Cut-off bands (close to average / slightly raised / high / very high) are version-specific.
+
+**Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 exist) is the follow-up. Clients with only one assessment are excluded.
+
+**Outputs:**
+
+| File | Contents |
+|----|----|
+| `sdq_p24_pairs_clean.csv` | One row per client: initial/follow-up total and externalizing scores, Parent SDQ 2–4 |
+| `sdq_p410_pairs_clean.csv` | Same, Parent SDQ 4–10 |
+| `sdq_p1117_pairs_clean.csv` | Same, Parent SDQ 11–17 |
+| `sdq_s1117_pairs_clean.csv` | Same, Self SDQ 11–17 |
+
+------------------------------------------------------------------------
+
+## Open Issues / Action Items
+
+-   [ ] Date filter lower bound: P2-4, P4-10, and P11-17 are filtered to `<= "2025-12-31"` in the original analysis file but have no lower bound. S11-17 filters to `2024-01-01`–`2025-12-31`. Confirm consistent reporting window for all four versions.
+-   [ ] Pairing uses the last available assessment as the follow-up (no minimum gap enforced). Confirm whether a minimum gap (e.g., \>3 days, as used in NOMS) should be applied here.
+-   [ ] Impact supplement items are present in the raw files but have all-NA score columns. Confirm whether these should be retained, removed, or flagged.
+
+------------------------------------------------------------------------
+
+# Setup
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(janitor)
+library(zoo)
+```
+
+------------------------------------------------------------------------
+
+# Helper Functions
+
+## Read eInsight CSV with Two-Row Header
+
+```{r header-helper}
+# Reads an eInsight assessment CSV export with two-row headers.
+# Returns a cleaned data frame with combined column names and empty columns removed.
+read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A")) {
+  raw <- read_csv(path, na = na_vals, col_names = FALSE, show_col_types = FALSE)
+
+  h1    <- unlist(raw[1, ], use.names = FALSE)
+  h2    <- unlist(raw[2, ], use.names = FALSE)
+  h1_ff <- na.locf(h1, na.rm = FALSE) |> str_squish()
+
+  new_names <- ifelse(
+    is.na(h1_ff) | h1_ff == "",
+    h2,
+    paste(h1_ff, h2, sep = " - ")
+  )
+  new_names <- janitor::make_clean_names(new_names)
+
+  df <- raw[-c(1, 2), ]
+  names(df) <- new_names
+
+  df |> select(where(~ !all(is.na(.))))
+}
+```
+
+## Score SDQ
+
+```{r score-helper}
+# Applies SDQ scoring to a cleaned data frame using a question lookup table.
+# Produces total_score, externalizing_score, and cut-off band columns.
+score_sdq <- function(df, lookup, cutoffs_total, cutoffs_externalizing,
+                      rev_items, exclude_items, externalizing_items) {
+
+  lookup <- lookup |>
+    mutate(new_name = paste0("q", item, "_", column_name))
+
+  meta_cols <- setdiff(names(df), lookup$column_name)
+
+  df <- df |>
+    select(all_of(meta_cols), all_of(lookup$column_name)) |>
+    rename_with(~ lookup$new_name, all_of(lookup$column_name)) |>
+    mutate(across(all_of(lookup$new_name), as.numeric))
+
+  included  <- lookup |> filter(item %in% 1:25, !item %in% exclude_items)
+  rev_cols  <- included$new_name[included$item %in% rev_items]
+
+  df <- df |>
+    mutate(across(
+      all_of(rev_cols),
+      ~ ifelse(is.na(.x), NA, 2 - .x),
+      .names = "{.col}_rev"
+    ))
+
+  effective_cols <- ifelse(
+    included$new_name %in% rev_cols,
+    paste0(included$new_name, "_rev"),
+    included$new_name
+  )
+
+  # Total score
+  df <- df |>
+    mutate(
+      missing_count_total = rowSums(is.na(across(all_of(included$new_name)))),
+      total_score = rowSums(across(all_of(effective_cols)), na.rm = TRUE),
+      total_score = ifelse(missing_count_total >= 3, NA_real_, total_score),
+      cut_off_band = case_when(
+        total_score >= cutoffs_total$close_min  & total_score <= cutoffs_total$close_max  ~ "close to average",
+        total_score >= cutoffs_total$slight_min & total_score <= cutoffs_total$slight_max ~ "slightly raised/lowered",
+        total_score >= cutoffs_total$high_min   & total_score <= cutoffs_total$high_max   ~ "high/low",
+        total_score >= cutoffs_total$very_min   & total_score <= cutoffs_total$very_max   ~ "very high/low",
+        .default = NA_character_
+      )
+    )
+
+  # Externalizing score
+  ext_lookup        <- lookup |> filter(item %in% externalizing_items)
+  ext_effective_cols <- ifelse(
+    ext_lookup$new_name %in% rev_cols,
+    paste0(ext_lookup$new_name, "_rev"),
+    ext_lookup$new_name
+  )
+
+  df <- df |>
+    mutate(
+      missing_count_externalizing = rowSums(is.na(across(all_of(ext_lookup$new_name)))),
+      externalizing_score = rowSums(across(all_of(ext_effective_cols)), na.rm = TRUE),
+      externalizing_score = ifelse(missing_count_externalizing >= 3, NA_real_, externalizing_score),
+      externalizing_band = case_when(
+        externalizing_score >= cutoffs_externalizing$close_min  & externalizing_score <= cutoffs_externalizing$close_max  ~ "close to average",
+        externalizing_score >= cutoffs_externalizing$slight_min & externalizing_score <= cutoffs_externalizing$slight_max ~ "slightly raised/lowered",
+        externalizing_score >= cutoffs_externalizing$high_min   & externalizing_score <= cutoffs_externalizing$high_max   ~ "high/low",
+        externalizing_score >= cutoffs_externalizing$very_min   & externalizing_score <= cutoffs_externalizing$very_max   ~ "very high/low",
+        .default = NA_character_
+      )
+    )
+
+  df
+}
+```
+
+## Pair Initial and Follow-up
+
+```{r pair-helper}
+# Groups a scored SDQ data frame by client and returns one row per client:
+# initial assessment + last follow-up (requires >= 2 assessments).
+pair_sdq <- function(df) {
+  df |>
+    mutate(date_completed = as.Date(date_completed)) |>
+    select(client_system_id, collection, date_completed,
+           total_score, externalizing_score, cut_off_band, externalizing_band) |>
+    group_by(client_system_id) |>
+    arrange(date_completed, .by_group = TRUE) |>
+    summarise(
+      n_assessments       = n(),
+      initial_date        = first(date_completed),
+      follow_up_date      = if_else(n_assessments >= 2, last(date_completed),  as.Date(NA)),
+      initial_total       = first(total_score),
+      follow_up_total     = if_else(n_assessments >= 2, last(total_score),      NA_real_),
+      initial_ext         = first(externalizing_score),
+      follow_up_ext       = if_else(n_assessments >= 2, last(externalizing_score), NA_real_),
+      initial_total_band  = first(cut_off_band),
+      follow_up_total_band = if_else(n_assessments >= 2, last(cut_off_band),   NA_character_),
+      .groups = "drop"
+    ) |>
+    filter(!is.na(follow_up_date)) |>
+    mutate(
+      days_since_initial      = as.integer(follow_up_date - initial_date),
+      positive_outcome_total  = if_else(follow_up_total  < initial_total,  1L, 0L),
+      positive_outcome_ext    = if_else(follow_up_ext    < initial_ext,    1L, 0L),
+      initial_quarter         = paste0("Q", lubridate::quarter(initial_date),    " ", lubridate::year(initial_date)),
+      follow_up_quarter       = paste0("Q", lubridate::quarter(follow_up_date),  " ", lubridate::year(follow_up_date))
+    )
+}
+```
+
+------------------------------------------------------------------------
+
+# Scoring Parameters
+
+```{r scoring-params}
+# Lookup tables
+sdq_24_questions   <- read_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/sdq-24-scoring.csv",
+  show_col_types = FALSE
+)
+sdq_410_questions  <- read_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/sdq-410-scoring.csv",
+  show_col_types = FALSE
+)
+sdq_1117_questions <- read_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/sdq-1117-scoring.csv",
+  show_col_types = FALSE
+)
+sdq_1117_self_questions <- read_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/sdq-1117-self-scoring.csv",
+  show_col_types = FALSE
+)
+
+# Reverse-coded items (same across all versions)
+rev_items          <- c(7, 11, 14, 21, 25)
+# Items excluded from total score (prosocial scale)
+exclude_items      <- c(1, 4, 9, 17, 20)
+# Externalizing items (conduct + hyperactivity)
+externalizing_items <- c(2, 5, 7, 10, 12, 15, 18, 21, 22, 25)
+
+# Cut-off bands — Parent 2–4
+cutoffs_total_P24 <- list(
+  close_min = 0,  close_max = 12,
+  slight_min = 13, slight_max = 15,
+  high_min = 16,  high_max = 18,
+  very_min = 19,  very_max = 40
+)
+cutoffs_ext_P24 <- list(
+  close_min = 0,  close_max = 8,
+  slight_min = 9,  slight_max = 11,
+  high_min = 12,  high_max = 13,
+  very_min = 14,  very_max = 20
+)
+
+# Cut-off bands — Parent 4–10
+cutoffs_total_P410 <- list(
+  close_min = 0,  close_max = 13,
+  slight_min = 14, slight_max = 16,
+  high_min = 17,  high_max = 19,
+  very_min = 20,  very_max = 40
+)
+cutoffs_ext_P410 <- list(
+  close_min = 0,  close_max = 8,
+  slight_min = 9,  slight_max = 10,
+  high_min = 11,  high_max = 12,
+  very_min = 13,  very_max = 20
+)
+
+# Cut-off bands — Parent 11–17
+cutoffs_total_P1117 <- list(
+  close_min = 0,  close_max = 13,
+  slight_min = 14, slight_max = 16,
+  high_min = 17,  high_max = 19,
+  very_min = 20,  very_max = 40
+)
+cutoffs_ext_P1117 <- list(
+  close_min = 0,  close_max = 8,
+  slight_min = 9,  slight_max = 10,
+  high_min = 11,  high_max = 12,
+  very_min = 13,  very_max = 20
+)
+
+# Cut-off bands — Self 11–17
+cutoffs_total_S1117 <- list(
+  close_min = 0,  close_max = 14,
+  slight_min = 15, slight_max = 17,
+  high_min = 18,  high_max = 19,
+  very_min = 20,  very_max = 40
+)
+cutoffs_ext_S1117 <- list(
+  close_min = 0,  close_max = 8,
+  slight_min = 9,  slight_max = 10,
+  high_min = 11,  high_max = 12,
+  very_min = 13,  very_max = 20
+)
+```
+
+------------------------------------------------------------------------
+
+# 1. SDQ Parent 2–4
+
+## 1.1 Read and Score
+
+```{r sdq-p24-read}
+sdq_P24 <- read_assessment_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ P2-4.csv"
+) |>
+  filter(date_completed >= "2024-01-01", date_completed <= Sys.Date()) |>
+  score_sdq(
+    lookup                = sdq_24_questions,
+    cutoffs_total         = cutoffs_total_P24,
+    cutoffs_externalizing = cutoffs_ext_P24,
+    rev_items             = rev_items,
+    exclude_items         = exclude_items,
+    externalizing_items   = externalizing_items
+  )
+
+cat("SDQ P2-4 rows after scoring:  ", nrow(sdq_P24), "\n")
+cat("Unique clients:               ", n_distinct(sdq_P24$client_system_id), "\n")
+cat("Missing total_score:          ", sum(is.na(sdq_P24$total_score)), "\n")
+```
+
+## 1.2 Pair Initial and Follow-up
+
+```{r sdq-p24-pair}
+sdq_P24_pairs <- pair_sdq(sdq_P24)
+
+cat("SDQ P2-4 paired rows:         ", nrow(sdq_P24_pairs), "\n")
+cat("Unique clients paired:        ", n_distinct(sdq_P24_pairs$client_system_id), "\n")
+```
+
+------------------------------------------------------------------------
+
+# 2. SDQ Parent 4–10
+
+## 2.1 Read and Score
+
+```{r sdq-p410-read}
+sdq_P410 <- read_assessment_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ P4-10.csv"
+) |>
+  filter(date_completed >= "2024-01-01", date_completed <= Sys.Date()) |>
+  score_sdq(
+    lookup                = sdq_410_questions,
+    cutoffs_total         = cutoffs_total_P410,
+    cutoffs_externalizing = cutoffs_ext_P410,
+    rev_items             = rev_items,
+    exclude_items         = exclude_items,
+    externalizing_items   = externalizing_items
+  )
+
+cat("SDQ P4-10 rows after scoring: ", nrow(sdq_P410), "\n")
+cat("Unique clients:               ", n_distinct(sdq_P410$client_system_id), "\n")
+cat("Missing total_score:          ", sum(is.na(sdq_P410$total_score)), "\n")
+```
+
+## 2.2 Pair Initial and Follow-up
+
+```{r sdq-p410-pair}
+sdq_P410_pairs <- pair_sdq(sdq_P410)
+
+cat("SDQ P4-10 paired rows:        ", nrow(sdq_P410_pairs), "\n")
+cat("Unique clients paired:        ", n_distinct(sdq_P410_pairs$client_system_id), "\n")
+```
+
+------------------------------------------------------------------------
+
+# 3. SDQ Parent 11–17
+
+## 3.1 Read and Score
+
+```{r sdq-p1117-read}
+sdq_P1117 <- read_assessment_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ P11-17.csv"
+) |>
+  filter(date_completed >= "2024-01-01", date_completed <= Sys.Date()) |>
+  score_sdq(
+    lookup                = sdq_1117_questions,
+    cutoffs_total         = cutoffs_total_P1117,
+    cutoffs_externalizing = cutoffs_ext_P1117,
+    rev_items             = rev_items,
+    exclude_items         = exclude_items,
+    externalizing_items   = externalizing_items
+  )
+
+cat("SDQ P11-17 rows after scoring:", nrow(sdq_P1117), "\n")
+cat("Unique clients:               ", n_distinct(sdq_P1117$client_system_id), "\n")
+cat("Missing total_score:          ", sum(is.na(sdq_P1117$total_score)), "\n")
+```
+
+## 3.2 Pair Initial and Follow-up
+
+```{r sdq-p1117-pair}
+sdq_P1117_pairs <- pair_sdq(sdq_P1117)
+
+cat("SDQ P11-17 paired rows:       ", nrow(sdq_P1117_pairs), "\n")
+cat("Unique clients paired:        ", n_distinct(sdq_P1117_pairs$client_system_id), "\n")
+```
+
+------------------------------------------------------------------------
+
+# 4. SDQ Self 11–17
+
+## 4.1 Read and Score
+
+```{r sdq-s1117-read}
+sdq_S1117 <- read_assessment_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ S11-17.csv"
+) |>
+  filter(date_completed >= "2024-01-01", date_completed <= Sys.Date()) |>
+  score_sdq(
+    lookup                = sdq_1117_self_questions,
+    cutoffs_total         = cutoffs_total_S1117,
+    cutoffs_externalizing = cutoffs_ext_S1117,
+    rev_items             = rev_items,
+    exclude_items         = exclude_items,
+    externalizing_items   = externalizing_items
+  )
+
+cat("SDQ S11-17 rows after scoring:", nrow(sdq_S1117), "\n")
+cat("Unique clients:               ", n_distinct(sdq_S1117$client_system_id), "\n")
+cat("Missing total_score:          ", sum(is.na(sdq_S1117$total_score)), "\n")
+```
+
+## 4.2 Pair Initial and Follow-up
+
+```{r sdq-s1117-pair}
+sdq_S1117_pairs <- pair_sdq(sdq_S1117)
+
+cat("SDQ S11-17 paired rows:       ", nrow(sdq_S1117_pairs), "\n")
+cat("Unique clients paired:        ", n_distinct(sdq_S1117_pairs$client_system_id), "\n")
+```
+
+------------------------------------------------------------------------
+
+# 5. Write Clean CSVs
+
+```{r write-csvs}
+out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+write_csv(sdq_P24_pairs,   file.path(out_dir, "sdq_p24_pairs_clean.csv"))
+write_csv(sdq_P410_pairs,  file.path(out_dir, "sdq_p410_pairs_clean.csv"))
+write_csv(sdq_P1117_pairs, file.path(out_dir, "sdq_p1117_pairs_clean.csv"))
+write_csv(sdq_S1117_pairs, file.path(out_dir, "sdq_s1117_pairs_clean.csv"))
+
+cat("CSVs written successfully.\n")
+```

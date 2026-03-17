@@ -1,0 +1,1154 @@
+---
+title: "Annual Report Results-12-08-2025"
+author: "Cristin Young"
+format: 
+  docx:
+    page-width: 7.5
+editor: visual
+---
+
+## Period
+
+2024-01-01 - 2025-12-31
+
+## Client_sat
+
+**Definition:** Clients from the primary evaluation who indicate high satisfaction with services divided by the total number of clients served by the grantees who completed a satisfaction survey after an intervention during the designated timeframe.
+
+**Calculation:** This KPI represents ***the percent*** of clients that report high satisfaction with services out of the total that completed the satisfaction survey by period(s). Clients must have a record in the eInsight platform with an intervention type and start date, have discharged from services (with an intervention end date), and have completed a satisfaction survey to be included in this count. Calculation assumes dates before 2024 or after 2025 are correct and any rows with these dates have not been revised.
+
+```{r, client_sat}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+
+# Produced by data cleaning/satisfaction_data_cleaning.qmd
+# Contains all four survey types; date-cleaned; filtered to reporting period;
+# includes year and quarter_label columns.
+sat_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+combined_all <- read_csv(
+  file.path(sat_dir, "combined_satisfaction_clean.csv"),
+  show_col_types = FALSE
+) %>%
+  mutate(quarter_label = fct_inorder(quarter_label))
+```
+
+Satisfaction is defined two ways below. The first is the percent of individuals who answered question 1 as "Agree" or "Strongly Agree" on the satisfaction survey. The second definition is the percent of individuals who selected "Agree" or "Strongly Agree" on 80% or more of the questions completed.
+
+**Nitty gritty:** There are four satisfaction surveys: Caregiver (n=`{r} sum(combined_all$source == "caregiver")`), Child (13-17) (n=`{r} sum(combined_all$source == "child")`), Adult (18-59) (n=`{r} sum(combined_all$source == "adult")`), and Adult (60+) (n=`{r} sum(combined_all$source == "senior")`). A separate data frame was made for question 1, and high satisfaction was defined as the percent of individuals who answered a 4 or 5 for question 1.
+
+**Assumptions:** I cleaned dates with "002X" and "292X" and replaced them with "202X." I also filtered dates in the future (\<= "2025-12-31").
+
+#### Question 1 Satisfaction
+
+The following table shows high survey satisfaction by year.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Question 1 satisfaction by year
+pct_4_5_year <- combined_all %>% 
+  filter(!is.na(year),!is.na(q2)) %>% 
+  group_by(year) %>% 
+  summarise(
+    pct_4_5 = round((100 * sum(q2 %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q2))), 1),
+    x_4_5 = sum(q2 %in% c(4, 5), na.rm = TRUE),
+    n_4_5 = length(q2)
+  )
+
+pct_4_5_year
+
+# Question 1 satisfaction overall
+pct_4_5_overall <- combined_all %>% 
+  filter(!is.na(year),!is.na(q2)) %>% 
+  summarise(
+    pct_4_5 = round((100 * sum(q2 %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q2))), 1),
+    x_4_5 = sum(q2 %in% c(4, 5), na.rm = TRUE),
+    n_4_5 = length(q2)
+  )
+
+pct_4_5_overall 
+```
+
+#### Combined Survey Satisfaction
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+
+summary_agree <- combined_all %>%
+  # keep only question columns
+  select(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) %>%
+  mutate(across(everything(), ~ as.numeric(.))) 
+
+df2 <- summary_agree %>% 
+  mutate(across(everything(), ~ na_if(., 0))) %>% 
+  # calculate per-person proportion of "Agree"/"Strongly Agree"
+  rowwise() %>%
+  summarise(
+    n_answered = sum(!is.na(c_across(everything()))),
+    n_agree = sum(c_across(everything()) %in% c(4,5), na.rm = TRUE),
+    pct_agree = n_agree / n_answered
+  ) %>%
+  ungroup() %>% 
+  summarise(
+    n_total = n(),
+    n_meeting_80pct = sum(pct_agree >= 0.8, na.rm = TRUE),
+    pct_meeting_80pct = round((100 * n_meeting_80pct / n_total), 1)
+  )
+
+df2
+
+# CONFIRMED THIS WORKS THE SAME AS ABOVE
+df3 <- summary_agree %>%   
+  mutate(across(everything(), ~ na_if(., 0))) %>% 
+  rowwise() %>% 
+  mutate(count_4 = sum(c(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) == "4", na.rm = TRUE), 
+         count_5 = sum(c(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) == "5", na.rm = TRUE),
+         n_4_5 = sum(c(count_4, count_5), na.rm = TRUE),
+         n_total = sum(!is.na(c_across(starts_with("q")))),
+         perc_4_5 = n_4_5 / n_total
+         ) %>% 
+  ungroup() 
+
+df4 <- df3 %>% 
+  summarise(
+    n_total = n(),
+    n_meeting_80pct = sum(perc_4_5 >= 0.8, na.rm = TRUE),
+    pct_meeting_80pct = round((100 * n_meeting_80pct / n_total), 1)
+  )
+
+df4
+```
+
+The following table shows high survey satisfaction results by quarter, for data where both `client_id` and `quarter_label` were available.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+summary_agree_quarter <- combined_all %>%
+  filter(!is.na(quarter_label)) %>% 
+  group_by(quarter_label) %>% 
+  # keep only question columns
+  select(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) %>%
+  mutate(across(everything(), ~ as.numeric(.))) %>% 
+  # calculate per-person proportion of "Agree"/"Strongly Agree"
+  rowwise() %>%
+  summarise(
+    n_answered = sum(!is.na(c_across(everything()))),
+    n_agree = sum(c_across(everything()) %in% c(4, 5)),
+    pct_agree = n_agree / n_answered
+  ) %>%
+  summarise(
+    n_total = n(),
+    n_meeting_80pct = sum(pct_agree >= 0.8, na.rm = TRUE),
+    pct_meeting_80pct = round((100 * n_meeting_80pct / n_total), 1)
+  )
+
+summary_agree_quarter
+```
+
+## Client_end
+
+**Definition:** Clients from the primary evaluation whose discharge reason is "mutually agreed cessation of treatment" for clients who discharged from an intervention during the designated time frame, divided by the total number of clients from the primary evaluation served and who have a discharge reason recorded.
+
+**Calculation:** This KPI represents ***the percent*** of clients who have a disenrollment/discharge response as "mutually agreed cessation of treatment" out of the total number of clients with a discharge reason by period(s).
+
+**Assumptions:** This is discharge data from EInsight, so can have clients in here multiple times (they can have multiple interventions, or the same intervention on multiple dates). I removed NA's from reason_for_discharge, but did not clean dates at all. I filtered by intervention_start date \>= "2024-01-1" and \<= "12-31-2025."
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+
+# number of rows with a reason for discharge
+count_rows <- nrow(discharge_data_filtered %>% filter(!is.na(reason_for_discharge)))
+count_rows
+
+# number of rows with successful discharge
+# table of positive outcomes 
+tab3 <- discharge_data_filtered %>%
+  filter(intervention_start >= "2024-01-01",
+         intervention_start <= "2025-12-31") %>% 
+  tabyl(reason_for_discharge) %>%               
+  adorn_pct_formatting(digits = 2)
+
+# count of successful discharge
+yes_count <- tab3 %>%
+  filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)") %>%
+  pull(n)
+
+# percent of successful discharge
+yes_pct3 <- tab3 %>%
+  filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)") %>%
+  pull(valid_percent)
+
+tab3
+```
+
+The results below show % of successful discharges by `intervention_end_quarter`, once NA's are removed from the data.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# total table of successful discharges by quarter of intervention END
+tab4q <- discharge_data_filtered %>% 
+  filter(!is.na(reason_for_discharge),
+         intervention_end >= "2024-01-01",
+         intervention_end <= "2025-12-31") %>% 
+  tabyl(reason_for_discharge) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+
+tab4q %>% filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)")
+
+discharge_data_filtered$intervention_end_year <- year(discharge_data_filtered$intervention_end)
+
+tab4y <- discharge_data_filtered %>% 
+  filter(!is.na(reason_for_discharge),
+         intervention_end >= "2024-01-01",
+         intervention_end <= "2025-12-31") %>% 
+  tabyl(reason_for_discharge, intervention_end_year) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab4y %>% filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)")
+
+tab4 <- discharge_data_filtered %>% 
+  filter(!is.na(reason_for_discharge),
+         !is.na(intervention_name),
+         !is.na(pre_measure_s),
+         !is.na(post_measure_s),
+         !is.na(location),
+         intervention_start >= "2024-01-01",
+         intervention_start <= "2025-12-31",
+         positive_outcomes == "Yes") %>% 
+  tabyl(reason_for_discharge) %>% 
+  adorn_totals("row") %>%
+  adorn_pct_formatting(digits = 1)
+
+tab4
+
+
+tab4 %>% filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)")
+```
+
+## Client_lang
+
+**Definition:** Clients from the primary evaluation who indicate services received in their preferred language on the satisfaction survey divided by the total number of clients served by the grantees who completed a satisfaction survey after an intervention during the designated time frame.
+
+**Calculation:** This KPI represents ***the percent*** of clients that report services received in their preferred language on the satisfaction survey out of the total that completed the satisfaction survey by period(s).
+
+**Assumptions:** I cleaned dates with "002X" and "292X" and replaced them with "202X." I also filtered dates in the future (\<= "2025-12-31"). I filtered out NAs for both the quarter label and the question first before calculating %.
+
+The following table shows the percent of clients who received services in their preferred language on the satisfaction survey by quarter:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# combining all satisfaction survey data
+client_lang_all <- bind_rows(
+  caregiver %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+    mutate(source = "caregiver"),
+  child %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+    mutate(source = "child"),
+  adult %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+    mutate(source = "adult"),
+  senior %>% 
+    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+           date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+    mutate(source = "senior"))
+
+# first clean date column
+client_lang_all <- client_lang_all %>% 
+  mutate(
+    date_clean = str_replace(date_completed, "^00", "20"), # replace 00xx with 20xx
+    date_clean = str_replace(date_clean, "^29", "20"), # replace 29xx with 20xx
+    date_clean = as.Date(date_clean)
+  )
+
+# add in a quarter column 
+client_lang_all <- client_lang_all %>% 
+  filter(!is.na(date_clean),
+         date_clean <= "2025-12-31") %>% 
+  mutate(quarter_label = paste0("Q", quarter(date_clean), " ", year(date_clean)),
+       quarter_label = factor(quarter_label, levels = unique(quarter_label)) #to sort chronologically
+  )
+
+# add in a year column 
+client_lang_all$year <- year(client_lang_all$date_clean)
+  
+tab_q <- client_lang_all %>% 
+  filter(!is.na(quarter_label),
+         !is.na(were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response)) %>% 
+  tabyl(quarter_label, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab_q 
+
+tab_y <- client_lang_all %>% 
+  filter(!is.na(quarter_label),
+         !is.na(were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response)) %>% 
+  tabyl(year, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab_y 
+
+tab <- client_lang_all %>% 
+  #filter(!is.na(were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response)) %>% 
+  tabyl(were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+  adorn_pct_formatting(digits = 1) 
+
+tab
+```
+
+## 3.12 PSS Reductions in parent-related stress
+
+**Definition:** PSS item(s) measuring reduction in parent/caregiver-related stress after the intervention. Assessments showing improvement from pre- to post-time point for clients who discharged from an intervention during the designated time frame.
+
+**Calculation:** Sum of Q1--Q18 (reverse Q4, Q5, Q7, Q8); this KPI represents the percent of assessments that show clients who have improvement from pre-post time points out of the total number of assessments from clients who discharge from the intervention and complete pre-post measures by period(s).
+
+**Scoring:** To calculate a total PSS score, items 1, 2, 5, 6, 7, 8, 17, and 18 should be reverse scored as follows: (1=5) (2=4) (3=3) (4=2) (5=1). The PSS score is then obtained by summing across all items. Higher scores indicate higher levels of perceived stress. If follow-up is LOWER than initial, that indicates a positive outcome.
+
+-   1 = Strongly disagree
+
+-   2 = Disagree
+
+-   3 = Undecided
+
+-   4 = Agree
+
+-   5 = Strongly Agree
+
+**Assumptions:** Total score = NA if 2+ items are missing; used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
+
+**Range:** 18 - 90
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Produced by data cleaning/pss_data_cleaning.qmd
+pss_paired <- read_csv(file.path(assess_dir, "pss_paired_clean.csv"), show_col_types = FALSE)
+
+# summary stats
+tab <- pss_paired %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(positive_outcome) %>% 
+  adorn_pct_formatting(digits = 0) 
+
+tab 
+```
+
+Plot it.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+pss_paired_long <- pss_paired %>%
+  ungroup() %>% 
+  select(client_system_id, initial_score, follow_up_score) %>% 
+  filter(!is.na(client_system_id), 
+         !is.na(initial_score), 
+         !is.na(follow_up_score)) %>% 
+  pivot_longer(
+    cols = c(initial_score, follow_up_score),
+    names_to = "score_type",
+    values_to = "score_value"
+  ) %>%
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score" = "Initial",
+                        "follow_up_score" = "Follow-up"),
+    score_type = factor(score_type,
+                        levels = c("Initial", "Follow-up"))
+  )
+
+# Plot
+library(ggridges)
+pss_plot <- ggplot(pss_paired_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    #binwidth = 1, 
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width = 0.8,
+    alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Score", 
+       y = "Count",
+       title = "Distribution of Initial and Follow-up Scores, PSS") +
+  theme_minimal()+
+  theme(
+     axis.title = element_text(size = 9),
+     axis.text = element_text(size = 9),
+     panel.grid.major = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+     legend.position = "inside",
+     legend.justification = c("left", "top"),
+     legend.title = element_blank(),
+     legend.text = element_text(size = 8),
+     plot.margin = margin(5, 5, 5, 5)) 
+  
+pss_plot
+```
+
+Ridgeline plot
+
+```{r}
+# summary stats by score type
+summary_stats_pss <- pss_paired_long %>% 
+  group_by(score_type) %>% 
+  filter(!is.na(score_value)) %>% 
+  summarise(
+    mean_score = mean(score_value, na.rm = TRUE), 
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score = sd(score_value, na.rm = TRUE), 
+    n = sum(!is.na(score_value))
+  ) %>% 
+  mutate(y_text = if_else(score_type == "Follow-up", 1.08, 1.085))
+
+summary_stats_pss
+clipr::write_clip(summary_stats_pss)
+
+# Ridgeline plot
+pss_ridge_plot <- ggplot(pss_paired_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  #scale_x_continuous(limits = c(0,6), breaks = c(1, 2, 3, 4, 5)) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "PSS Score", 
+       y = NULL,
+       title = "Distribution of Initial and Follow-up Scores, PSS (lower is better)") +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x = element_text(size = 9, hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 9),
+    panel.grid = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 5),
+    plot.title = element_text(size = 11)
+  ) + 
+  geom_segment(data = summary_stats_pss, 
+               aes(x = median_score, y = 1,
+                   xend = median_score, yend = 1.07,
+                   color = "grey30"), linetype = "dotted") + 
+  geom_text(data = summary_stats_pss,
+            aes(x = median_score, y = y_text, 
+                label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+                vjust = 2, hjust = 0.5, size = 2)
+
+pss_ridge_plot
+```
+
+## 3.13 YOQ Reductions in overall distress
+
+**Definition:** This KPI represents the percent of assessments that show clients who have improvement from pre-post time points out of the total number of assessments from clients who discharge from the intervention and complete pre-post measures by period(s).
+
+The YOQ total score reflects total distress in a client's life, with a high score reflecting increased distress related to experiencing a high number of symptoms, interpersonal difficulties, and decreased satisfaction and quality of life.
+
+**Range:** 0 - 120
+
+**Calculation:** Sum of 30 items (0-4 scale); invalid if 3+ items missing; total score only calculated if 28+ items completed; including those doing reliably better / total who took YOQ by quarter RCI = baseline score - follow-up score - RCI ≤ -10 doing reliably worse - RCI ≥ 10 doing reliably better
+
+**Assumptions:** A positive outcome was if a client was doing reliably better as defined by the YOQ RCI. I used follow-up quarter as the date. I used the LAST follow-up date if there were \>1 assessments. I filtered out NA's from "reliably better"
+
+### Caregiver
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Produced by data cleaning/yoq_data_cleaning.qmd
+yoq_caregiver_paired <- read_csv(file.path(assess_dir, "yoq_caregiver_paired_clean.csv"), show_col_types = FALSE)
+
+# summary stats
+tab <- yoq_caregiver_paired %>% 
+  filter(!is.na(reliably_better),
+         rci != 0) %>% 
+  tabyl(reliably_better) %>% # true = doing reliably better
+  adorn_pct_formatting(digits = 0) 
+
+tab 
+
+#reliably changed
+reliable_change <- yoq_caregiver_paired %>% 
+  filter(rci >= 10 | rci <= -10)
+
+#no reliable change
+no_reliable_change <- yoq_caregiver_paired %>%
+  filter(rci > -10, rci < 10,
+         rci != 0)  # strictly between -10 and 10
+
+#these people did reliably better
+pos_rci <- reliable_change %>% 
+  filter(rci >= 10)
+
+#these people did reliably worse
+neg_rci <- reliable_change %>% 
+  filter(rci <= -10)
+
+#conditional color formatting
+yoq_caregiver_paired$rci_col <- as.factor((yoq_caregiver_paired[,7] > 10 | yoq_caregiver_paired[,7] <= -10)*1)
+
+yoq_caregiver_paired %>% 
+  filter(rci != 0) %>% 
+  ggplot(aes(rci)) + 
+  geom_histogram(aes(fill = rci_col), color = "white", binwidth = 1) +
+  theme_classic() +
+  scale_x_continuous(breaks = seq(-25, 50, 5), expand = c(0,0)) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Reliable Change Index",
+       y = "",
+       title = "Distribution of reliable change scores for YOQ Caregiver") +
+  scale_fill_manual("Reliable Change Index",
+                    labels = c("no meaningful change (n=77)", "meaningful change (n=114)"), 
+                    values = c("#ABDDDE", "#046C9A"))
+```
+
+### Self
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Produced by data cleaning/yoq_data_cleaning.qmd
+yoq_self_paired <- read_csv(file.path(assess_dir, "yoq_self_paired_clean.csv"), show_col_types = FALSE)
+
+# summary stats
+tab <- yoq_self_paired %>% 
+  filter(!is.na(reliably_better),
+         rci != 0) %>% #grantees are copying initial scores, maybe?
+  tabyl(reliably_better) %>% 
+  adorn_pct_formatting(digits = 0)
+
+tab
+
+#reliably changed
+reliable_change <- yoq_self_paired %>% 
+  filter(rci >= 10 | rci <= -10)
+
+#no reliable change
+no_reliable_change <- yoq_self_paired %>%
+  filter(rci > -10, rci < 10,
+         rci != 0)  # strictly between -10 and 10
+
+#these people did reliably better
+pos_rci <- reliable_change %>% 
+  filter(rci >= 10)
+
+#these people did reliably worse
+neg_rci <- reliable_change %>% 
+  filter(rci <= -10)
+
+#conditional color formatting
+yoq_self_paired$rci_col <- as.factor((yoq_self_paired[,7] > 10 | yoq_self_paired[,7] <= -10)*1)
+
+yoq_self_paired %>% 
+  filter(rci != 0) %>% 
+  ggplot(aes(rci)) + 
+  geom_histogram(aes(fill = rci_col), color = "white", binwidth = 1) +
+  theme_classic() +
+  scale_x_continuous(breaks = seq(-25, 50, 5), expand = c(0,0)) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Reliable Change Index",
+       y = "",
+       title = "Distribution of reliable change scores for YOQ Self") +
+  scale_fill_manual("Reliable Change Index",
+                    labels = c("no meaningful change (n=199)", "meaningful change (n=206)"), 
+                    values = c("#ABDDDE", "#046C9A"))
+```
+
+## 3.14 Basis-24 Reductions in adult problematic symptoms
+
+**Definition:** Basis-24 item(s) measuring reduction in parent/caregiver-related problematic symptoms after the intervention. Assessments showing improvement from pre- to post-time point for clients who discharged from an intervention during the designated time frame.
+
+**Calculation:** Sum of Q1-Q24 (reverse Q4-Q9); this KPI represents the percent of assessments that show clients who have improvement from pre-post time points out of the total number of assessments from clients who discharge from the intervention and complete pre-post measures by period(s).
+
+**Scoring:** Each item is rated on a five-point scale from 0, indicating the lowest severity of symptoms, to 4, indicating greatest severity of symptoms. It is important to note that the **rating values for items 4 through 9 are reversed**. Subscale and overall mean scores also range from 0 to 4. The overall range for this 24-item questionnaire is 0-96, with **higher global scores indicating greater functional impairment (lower is better)**.
+
+The six distinct subscales are calculated by summing up and then dividing by the number of non-missing items for that subscale. An overall mean score is also calculated. For example, the Depression/Functioning subscale consists of six items. If the respondent answers all items in this subscale, then the subscale score is the mean of all six items. If one item is omitted, then the subscale score is the sum rating of the items answered, divided by five.
+
+There are no specified clinical cutoffs for the BASIS-24. Subjective interpretation of scores is made by the provider based on patient history and further investigation of reported symptoms.
+
+**Assumptions:** used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
+
+**Range:** 0-96
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Produced by data cleaning/basis24_data_cleaning.qmd
+basis24_paired <- read_csv(file.path(assess_dir, "basis24_paired_clean.csv"), show_col_types = FALSE)
+
+# summary stats
+tab <- basis24_paired %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(positive_outcome) %>% 
+  adorn_pct_formatting(digits = 0) 
+
+tab 
+```
+
+Plot it.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+basis24_paired_long <- basis24_paired %>%
+  ungroup() %>% 
+  filter(!is.na(client_system_id), 
+         !is.na(initial_score), 
+         !is.na(follow_up_score)) %>% 
+  select(client_system_id, initial_score, follow_up_score) %>% 
+  pivot_longer(
+    cols = c(initial_score, follow_up_score),
+    names_to = "score_type",
+    values_to = "score_value"
+  ) %>%
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score" = "Initial",
+                        "follow_up_score" = "Follow-up"),
+    score_type = factor(score_type,
+                        levels = c("Initial", "Follow-up"))
+  )
+
+# Plot
+basis24_plot <- ggplot(basis24_paired_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    #binwidth = 1, 
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width = 0.8,
+    alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Score", 
+       y = "Count",
+       title = "Distribution of Initial and Follow-up Scores, Basis-24") +
+  theme_minimal()+
+  theme(
+     axis.title = element_text(size = 9),
+     axis.text = element_text(size = 9),
+     panel.grid.major = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+     legend.position = "inside",
+     legend.justification = c("left", "top"),
+     legend.title = element_blank(),
+     legend.text = element_text(size = 8),
+     plot.margin = margin(5, 5, 5, 5)) 
+  
+basis24_plot
+```
+
+Ridgeline plot
+
+```{r}
+# summary stats by score type
+summary_stats_basis24 <- basis24_paired_long %>% 
+  group_by(score_type) %>% 
+  summarise(
+    mean_score = mean(score_value, na.rm = TRUE), 
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score = sd(score_value, na.rm = TRUE), 
+    n = sum(!is.na(score_value))
+  ) %>% 
+  mutate(y_text = if_else(score_type == "Follow-up", 1.0375, 1.04))
+
+summary_stats_basis24
+#clipr::write_clip(summary_stats_basis24)
+
+# Ridgeline plot
+basis24_ridge_plot <- ggplot(basis24_paired_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  #scale_x_continuous(limits = c(0,6), breaks = c(1, 2, 3, 4, 5)) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Basis-24 Total Score", 
+       y = NULL,
+       title = "Distribution of Initial and Follow-up Scores, Basis-24 (lower is better)") +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x = element_text(size = 9, hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 9),
+    panel.grid = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 5),
+    plot.title = element_text(size = 11)
+  ) + 
+  geom_segment(data = summary_stats_basis24, 
+               aes(x = median_score, y = 1,
+                   xend = median_score, yend = 1.035,
+                   color = "grey30"), linetype = "dotted") + 
+  geom_text(data = summary_stats_basis24,
+            aes(x = median_score, y = y_text, 
+                label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+                vjust = 2, hjust = 0.5, size = 2)
+
+basis24_ridge_plot
+```
+
+## 3.15 CPSS-5 Reductions in PTSD symptoms (youth)
+
+**Definition:** CPSS-5 item(s) measuring reduction in child/youth report of reductions in PTSD symptoms/severity after the intervention. Assessments showing improvement from pre- to post-time point for clients who discharged from an intervention during the designated time frame.
+
+The CPSS-5-I is a 27-item semi-structured interview that assesses PTSD DSM-5 diagnosis and symptom severity in the past month based on interviewer ratings. The CPSS-5-I assesses history of Criterion A traumatic experiences to identify an index trauma. Next, the 20 items assessing DSM-5 PTSD symptoms are presented. The interviewer rates each item from 0 (not at all) to 4 (6 or more times a week/almost always) based on the frequency and severity of the reported symptom experienced in the past month related to the index trauma. Finally, seven items assess impairment of endorsed symptoms on daily functioning pertinent to youth (e.g., fun things you want to do, doing your chores, relationships with your friends).
+
+**Calculation:** Sum of Q1-Q20; this KPI represents the percent of assessments that show clients who have improvement from pre-post time points out of the total number of assessments from clients who discharge from the intervention and complete pre-post measures by period(s).
+
+**Scoring:** The total severity score ranges from 0 to 80 and is calculated by summing the ratings of the first 20 items. **Higher scores indicate greater severity of symptoms (lower scores are better).** A cut off score of 31 can be used for identifying a probable PTSD diagnosis in children.
+
+**Assumptions:** used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
+
+**Range:** 0-80 \### Interviewer version
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Produced by data cleaning/cpss5_data_cleaning.qmd
+cpss_i_paired <- read_csv(file.path(assess_dir, "cpss_i_paired_clean.csv"), show_col_types = FALSE)
+
+# summary stats
+tab <- cpss_i_paired %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(positive_outcome) %>% 
+  adorn_pct_formatting(digits = 0) 
+
+tab 
+```
+
+Plot it.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+cpss_i_paired_long <- cpss_i_paired %>%
+  ungroup() %>% 
+    filter(!is.na(client_system_id), 
+         !is.na(initial_score), 
+         !is.na(follow_up_score)) %>% 
+  select(client_system_id, initial_score, follow_up_score) %>% 
+  pivot_longer(
+    cols = c(initial_score, follow_up_score),
+    names_to = "score_type",
+    values_to = "score_value"
+  ) %>%
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score" = "Initial",
+                        "follow_up_score" = "Follow-up"),
+    score_type = factor(score_type,
+                        levels = c("Initial", "Follow-up"))
+  )
+
+# Plot
+cpss_i_plot <- ggplot(cpss_i_paired_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    #binwidth = 1, 
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width = 0.8,
+    alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Score", 
+       y = "Count",
+       title = "Distribution of Initial and Follow-up Scores, CPSS-5 Interviewer Version") +
+  theme_minimal()+
+  theme(
+     axis.title = element_text(size = 9),
+     axis.text = element_text(size = 9),
+     panel.grid.major = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+     legend.position = "inside",
+     legend.justification = c("left", "top"),
+     legend.title = element_blank(),
+     legend.text = element_text(size = 8),
+     plot.margin = margin(5, 5, 5, 5)) 
+  
+cpss_i_plot
+```
+
+Ridgeline plot
+
+```{r}
+# summary stats by score type
+summary_stats_cpss_i <- cpss_i_paired_long %>% 
+  group_by(score_type) %>% 
+  summarise(
+    mean_score = mean(score_value, na.rm = TRUE), 
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score = sd(score_value, na.rm = TRUE), 
+    n = sum(!is.na(score_value))
+  ) 
+
+summary_stats_cpss_i
+#clipr::write_clip(summary_stats_cpss_i)
+
+# Ridgeline plot
+cpss_i_ridge_plot <- ggplot(cpss_i_paired_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  #scale_x_continuous(limits = c(0,6), breaks = c(1, 2, 3, 4, 5)) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "CPSS Interviewer Total Score", 
+       y = NULL,
+       title = "Distribution of Initial and Follow-up Scores, CPSS Interviewer (lower is better)") +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x = element_text(size = 9, hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 9),
+    panel.grid = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 5),
+    plot.title = element_text(size = 11)
+  ) + 
+  geom_segment(data = summary_stats_cpss_i, 
+               aes(x = median_score, y = 1,
+                   xend = median_score, yend = 1.03,
+                   color = "grey30"), linetype = "dotted") + 
+  geom_text(data = summary_stats_cpss_i,
+            aes(x = median_score, y = 1.035, 
+                label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+                vjust = 2, hjust = 0.5, size = 2)
+
+cpss_i_ridge_plot
+```
+
+### Self version
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Produced by data cleaning/cpss5_data_cleaning.qmd
+cpss_s_paired <- read_csv(file.path(assess_dir, "cpss_s_paired_clean.csv"), show_col_types = FALSE)
+
+# summary stats
+tab <- cpss_s_paired %>% 
+  filter(!is.na(positive_outcome)) %>% 
+  tabyl(positive_outcome) %>% 
+  adorn_pct_formatting(digits = 0) 
+
+tab 
+```
+
+Plot it.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+cpss_s_paired_long <- cpss_s_paired %>%
+  ungroup() %>% 
+     filter(!is.na(client_system_id), 
+         !is.na(initial_score), 
+         !is.na(follow_up_score)) %>% 
+  select(client_system_id, initial_score, follow_up_score) %>% 
+  pivot_longer(
+    cols = c(initial_score, follow_up_score),
+    names_to = "score_type",
+    values_to = "score_value"
+  ) %>%
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score" = "Initial",
+                        "follow_up_score" = "Follow-up"),
+    score_type = factor(score_type,
+                        levels = c("Initial", "Follow-up"))
+  )
+
+# Plot
+cpss_s_plot <- ggplot(cpss_s_paired_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    #binwidth = 1, 
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width = 0.8,
+    alpha = 0.8) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Score", 
+       y = "Count",
+       title = "Distribution of Initial and Follow-up Scores, CPSS-5 Self Version") +
+  theme_minimal()+
+  theme(
+     axis.title = element_text(size = 9),
+     axis.text = element_text(size = 9),
+     panel.grid.major = element_blank(),
+     panel.grid.minor.x = element_blank(),
+     axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+     legend.position = "inside",
+     legend.justification = c("left", "top"),
+     legend.title = element_blank(),
+     legend.text = element_text(size = 8),
+     plot.margin = margin(5, 5, 5, 5)) 
+  
+cpss_s_plot
+```
+
+Ridgeline plot
+
+```{r}
+# summary stats by score type
+summary_stats_cpss_s <- cpss_s_paired_long %>% 
+  group_by(score_type) %>% 
+  summarise(
+    mean_score = mean(score_value, na.rm = TRUE), 
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score = sd(score_value, na.rm = TRUE), 
+    n = sum(!is.na(score_value))
+  ) 
+
+summary_stats_cpss_s
+#clipr::write_clip(summary_stats_cpss_s)
+
+wilcox.test(cpss_s_paired$follow_up_score, cpss_s_paired$initial_score, paired = TRUE)
+
+# Ridgeline plot
+cpss_s_ridge_plot <- ggplot(cpss_s_paired_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha = 0.7,
+    scale = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "CPSS Self Total Score", 
+       y = NULL,
+       title = "Distribution of Initial and Follow-up Scores, CPSS Self (lower is better)") +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x = element_text(size = 9, hjust = 0.5),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 9),
+    panel.grid = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position = "inside",
+    legend.justification = c("left", "top"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 5),
+    plot.title = element_text(size = 11)
+  ) + 
+  geom_segment(data = summary_stats_cpss_s, 
+               aes(x = median_score, y = 1,
+                   xend = median_score, yend = 1.03,
+                   color = "grey30"), linetype = "dotted") + 
+  geom_text(data = summary_stats_cpss_s,
+            aes(x = median_score, y = 1.035, 
+                label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+                vjust = 2, hjust = 0.5, size = 2)
+
+cpss_s_ridge_plot
+```
+
+## Rikke's SPSS master file
+
+**Access to services**
+
+Among these clients/participants, the largest share (\[XX%\]) received services through a Round 2 program implementing \[EBP\], which \[brief context about the intervention—e.g., target population and core focus\].
+
+Service reach was also concentrated among \[ENTITY TYPE: CBO\] (\[XX%\]) and in Region 8 (Los Angeles County; \[XX%\]).
+
+At the same time, the Workstream served a diverse set of children, youth, and caregivers across provider types. For example, \[XX%\] of clients/participants received services through non-traditional behavioral health providers (e.g., hospitals/hospital systems; \[XX%\]) and tribal entities (\[XX%\]).
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+library(haven)
+
+# load in spss data
+master_grantee_file <- haven::read_spss("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Quant Team File/MasterGranteeSpreadsheet_forBHESQuantTeam_1-20-26_NEW!.sav") %>% 
+  zap_missing() %>%
+  mutate(across(where(is.labelled), as.character)) %>%
+  mutate(across(where(is.character), ~ na_if(str_trim(.x), ""))) %>% 
+  rename_with(~ gsub("^@", "", .x)) %>% 
+  janitor::clean_names() %>% 
+  rename_with(~ gsub("^x", "", .x))
+
+#join to all data
+all_data_spss <- left_join(all_data, master_grantee_file, by = c("provider" = "1a_grantee_provider_name", "intervention_name" = "9a_ebpcde"))
+
+#get #'s for report 
+all_data_spss %>%
+  filter(`4funding_round` == "Round 4") %>% 
+  distinct(client_system_id, provider) %>%   # one row per client per round
+  tabyl(provider) %>%
+  adorn_totals("row") %>%
+  adorn_rounding(digits = 2)
+
+#join to just demographic data - need to add provider name and intervention first to help with join
+key <- c("client_system_id", "provider_system_id", "provider_id")
+
+discharge_small <- discharge_data_filtered %>%
+  select(all_of(key), provider, intervention_name)
+
+discharge_small %>%
+  count(across(all_of(key)), name = "n") %>%
+  filter(n > 1)
+
+discharge_unique <- discharge_small %>%
+  distinct(across(all_of(key)), .keep_all = TRUE)
+
+demo_discharge <- left_join(demographic_data_filtered, discharge_unique, by = key)
+
+demo_spss <- left_join(demo_discharge, master_grantee_file, by = c("provider_id" = "2grantee_provider_id"))
+
+#get #'s on master spss file
+demo_spss %>% 
+  tabyl(`12a_grantee_entity_type_for_report`, `8c_regions`) %>% 
+  adorn_totals("row") %>% 
+  adorn_rounding(digits = 2)
+
+demo_spss %>% 
+  filter(`7a_grant_track` == "Expansion") %>% 
+  tabyl(`12a_grantee_entity_type_for_report`, `8c_regions`) %>% 
+  adorn_totals("row") %>% 
+  adorn_rounding(digits = 2)
+
+master_grantee_file %>% 
+  #filter(`7a_grant_track` == "Expansion") %>% 
+  tabyl(`1a_grantee_provider_name`, `8c_regions`) %>% 
+  adorn_totals("row") %>% 
+  adorn_rounding(digits = 2)
+
+demo_spss %>% 
+  tabyl(`12a_grantee_entity_type`) %>% 
+  adorn_totals("row") %>% 
+  adorn_rounding(digits = 2)
+
+demo_spss %>% 
+  tabyl(`8c_regions`) %>% 
+  adorn_totals("row") %>% 
+  adorn_rounding(digits = 2)
+
+test <- demo_spss %>% 
+  filter(is.na(`8c_regions`))
+
+table(test$provider_id)
+
+master_grantee_file %>%
+  count(`2grantee_provider_id`) %>%
+  filter(n > 1)
+```

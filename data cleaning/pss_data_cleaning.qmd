@@ -1,0 +1,167 @@
+---
+title: "PSS Assessment Data Cleaning"
+author: "Cristin Young"
+date: "2026-03-09"
+format:
+  html:
+    df-print: paged
+    toc: true
+    toc-float: true
+---
+
+## Project Overview
+
+This notebook prepares **CYBHI EBP/CDEP** Parenting Stress Scale (PSS) assessment data for analysis and reporting. It ingests the raw eInsight export, processes the two-row hierarchical headers, applies reverse scoring, computes total scores, and pairs each client's initial assessment with their last follow-up.
+
+**Data source:** `PSS.xlsx` — eInsight Individual Assessments export.
+
+**Scoring:**
+
+- 18 items, each rated 1–5 (Strongly Disagree to Strongly Agree).
+- Items 1, 2, 5, 6, 7, 8, 17, and 18 are **reverse scored** using the formula `6 − raw_score`.
+- Total score range: 18–90. Higher scores indicate greater perceived stress.
+- **A lower follow-up score indicates a positive outcome.**
+- Total score is set to `NA` if 2 or more items are missing.
+
+**Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 assessments exist) is the follow-up. Clients with only one assessment are excluded.
+
+**Output:**
+
+| File | Contents |
+|------|----------|
+| `pss_paired_clean.csv` | One row per client: initial/follow-up scores, `positive_outcome`, `score_change`, quarter labels |
+
+---
+
+## Open Issues / Action Items
+
+- [ ] No date filter lower bound is applied (the raw code only filters `date_completed <= "2025-12-31"`). Confirm whether a `>= "2024-01-01"` filter should be added for consistency with other measures.
+- [ ] The `missing_count` threshold of 2 for treating total score as `NA` — confirm this is the correct PSS rule.
+
+---
+
+# Setup
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(janitor)
+library(readxl)
+library(zoo)
+```
+
+---
+
+# Helper Function
+
+```{r header-helper}
+read_assessment_excel <- function(path, na_vals = c("-", "", "NA", "N/A", "0")) {
+  raw <- read_xlsx(path, na = na_vals, col_names = FALSE)
+
+  h1    <- unlist(raw[1, ], use.names = FALSE)
+  h2    <- unlist(raw[2, ], use.names = FALSE)
+  h1_ff <- na.locf(h1, na.rm = FALSE) |> str_squish()
+
+  new_names <- ifelse(
+    is.na(h1_ff) | h1_ff == "",
+    h2,
+    paste(h1_ff, h2, sep = " - ")
+  )
+  new_names <- janitor::make_clean_names(new_names)
+
+  df <- raw[-c(1, 2), ]
+  names(df) <- new_names
+
+  df |> select(where(~ !all(is.na(.))))
+}
+```
+
+---
+
+# 1. Read and Score
+
+```{r pss-read}
+pss_raw <- read_assessment_excel(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/PSS.xlsx")
+# ) |>
+#   filter(date_completed <= "2025-12-31")
+
+# Reverse-scored item positions (1-indexed within score columns)
+rev_idx   <- c(1, 2, 5, 6, 7, 8, 17, 18)
+score_cols <- names(pss_raw)[endsWith(names(pss_raw), "_score")]
+
+pss_scores <- pss_raw |>
+  mutate(across(all_of(score_cols), as.numeric)) |>
+  rowwise() |>
+  mutate(
+    missing_count = sum(is.na(c_across(all_of(score_cols)))),
+    total_score = {
+      vals         <- c_across(all_of(score_cols))
+      vals[rev_idx] <- 6 - vals[rev_idx]
+      sum(vals, na.rm = TRUE)
+    }
+  ) |>
+  ungroup() |>
+  mutate(
+    total_score    = if_else(missing_count >= 2, NA_real_, total_score),
+    date_completed = as.Date(date_completed),
+    row_id         = row_number()
+  ) |>
+  select(client_system_id, collection, date_completed, total_score)
+
+cat("PSS rows after scoring:", nrow(pss_scores), "\n")
+cat("Unique clients:        ", n_distinct(pss_scores$client_system_id), "\n")
+```
+
+---
+
+# 2. Pair Initial and Follow-up
+
+```{r pss-pair}
+pss_paired <- pss_scores |>
+  group_by(client_system_id) |>
+  arrange(date_completed, .by_group = TRUE) |>
+  summarise(
+    n_assessments   = n(),
+    initial_date    = first(date_completed),
+    initial_score   = first(total_score),
+    follow_up_date  = if_else(n_assessments >= 2, last(date_completed),  as.Date(NA)),
+    follow_up_score = if_else(n_assessments >= 2, last(total_score),     NA_real_)
+  ) |>
+  ungroup() |>
+  filter(!is.na(follow_up_date)) |>
+  mutate(
+    # Lower follow-up score = positive outcome (lower stress is better)
+    positive_outcome = if_else(follow_up_score < initial_score, 1L, 0L),
+    score_change     = follow_up_score - initial_score,
+    initial_quarter  = paste0("Q", quarter(initial_date),    " ", year(initial_date)),
+    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))
+  )
+
+cat("PSS paired clients:", nrow(pss_paired), "\n")
+```
+
+---
+
+# 3. Quick Check
+
+```{r pss-check}
+pss_paired |>
+  summarise(
+    n_paired          = n(),
+    n_positive        = sum(positive_outcome == 1, na.rm = TRUE),
+    pct_positive      = round(100 * n_positive / n_paired, 1),
+    n_missing_outcome = sum(is.na(positive_outcome))
+  )
+```
+
+---
+
+# 4. Write Clean CSV
+
+```{r write-csv}
+out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+write_csv(pss_paired, file.path(out_dir, "pss_paired_clean.csv"))
+
+cat("CSV written successfully.\n")
+```
