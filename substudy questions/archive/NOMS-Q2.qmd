@@ -7,6 +7,8 @@ editor: visual
 
 # NOMS scoring
 
+**NOTE: This is deprecated as of 03-12-2026.**
+
 The NOMS score and subscales seek to measure to what extent caregivers/parents or youths report improved mental health, daily life functioning, well-being, or social connectedness after receiving an intevention. An **increase** in score indicates a positive outcome. There are no benchmarks or clinical cutoffs established for NOMS scoring - if the follow-up assessment score is higher than the initial score, a positive outcome is indicated.
 
 ```{r, reading_in_data}

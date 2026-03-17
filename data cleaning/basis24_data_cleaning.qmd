@@ -1,0 +1,165 @@
+---
+title: "BASIS-24 Assessment Data Cleaning"
+author: "Cristin Young"
+date: "2026-03-09"
+format:
+  html:
+    df-print: paged
+    toc: true
+    toc-float: true
+---
+
+## Project Overview
+
+This notebook prepares **CYBHI EBP/CDEP** BASIS-24 assessment data for analysis and reporting. It ingests the raw eInsight export, processes the two-row hierarchical headers, applies reverse scoring to items 4–9, computes total scores, and pairs each client's initial assessment with their last follow-up.
+
+**Data source:** `Basis-24.xlsx` — eInsight Individual Assessments export.
+
+**Scoring:**
+
+-   24 items, each rated 0–4.
+-   Items **4 through 9 are reverse scored** using the formula `6 − raw_score`.
+-   Total score range: 0–96. Higher scores indicate greater functional impairment.
+-   **A lower follow-up score indicates a positive outcome.**
+-   Note: The existing code does not apply a missing-item threshold for `total_score` (unlike PSS/YOQ). The sum is computed with `na.rm = TRUE` regardless of how many items are missing.
+
+**Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 exist) is the follow-up. Clients with only one assessment are excluded.
+
+**Output:**
+
+| File | Contents |
+|----|----|
+| `basis24_paired_clean.csv` | One row per client: initial/follow-up scores, `positive_outcome`, `score_change`, quarter labels |
+
+------------------------------------------------------------------------
+
+## Open Issues / Action Items
+
+-   [ ] No missing-item threshold is applied for BASIS-24 (unlike PSS which uses `NA` if 2+ missing). Confirm whether a threshold should be added.
+-   [ ] No date range filter is applied (unlike NOMS). Confirm whether a period filter is needed.
+
+------------------------------------------------------------------------
+
+# Setup
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(janitor)
+library(readxl)
+library(zoo)
+```
+
+------------------------------------------------------------------------
+
+# Helper Function
+
+```{r header-helper}
+read_assessment_excel <- function(path, na_vals = c("-", "", "NA", "N/A", "0")) {
+  raw <- read_xlsx(path, na = na_vals, col_names = FALSE)
+
+  h1    <- unlist(raw[1, ], use.names = FALSE)
+  h2    <- unlist(raw[2, ], use.names = FALSE)
+  h1_ff <- na.locf(h1, na.rm = FALSE) |> str_squish()
+
+  new_names <- ifelse(
+    is.na(h1_ff) | h1_ff == "",
+    h2,
+    paste(h1_ff, h2, sep = " - ")
+  )
+  new_names <- janitor::make_clean_names(new_names)
+
+  df <- raw[-c(1, 2), ]
+  names(df) <- new_names
+
+  df |> select(where(~ !all(is.na(.))))
+}
+```
+
+------------------------------------------------------------------------
+
+# 1. Read and Score
+
+```{r basis24-read}
+basis24_raw <- read_assessment_excel(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/Basis-24.xlsx"
+)
+
+# Reverse-scored item positions (1-indexed within score columns)
+rev_idx    <- c(4, 5, 6, 7, 8, 9)
+score_cols <- names(basis24_raw)[endsWith(names(basis24_raw), "_score")]
+
+basis24_scores <- basis24_raw |>
+  mutate(across(all_of(score_cols), as.numeric)) |>
+  rowwise() |>
+  mutate(
+    missing_count = sum(is.na(c_across(all_of(score_cols)))),
+    total_score = {
+      vals          <- c_across(all_of(score_cols))
+      vals[rev_idx] <- 6 - vals[rev_idx]
+      sum(vals, na.rm = TRUE)
+    }
+  ) |>
+  ungroup() |>
+  mutate(
+    date_completed = as.Date(date_completed),
+    row_id         = row_number()
+  ) |>
+  select(client_system_id, collection, date_completed, total_score)
+
+cat("BASIS-24 rows after scoring:", nrow(basis24_scores), "\n")
+cat("Unique clients:             ", n_distinct(basis24_scores$client_system_id), "\n")
+```
+
+------------------------------------------------------------------------
+
+# 2. Pair Initial and Follow-up
+
+```{r basis24-pair}
+basis24_paired <- basis24_scores |>
+  group_by(client_system_id) |>
+  arrange(date_completed, .by_group = TRUE) |>
+  summarise(
+    n_assessments   = n(),
+    initial_date    = first(date_completed),
+    initial_score   = first(total_score),
+    follow_up_date  = if_else(n_assessments >= 2, last(date_completed),  as.Date(NA)),
+    follow_up_score = if_else(n_assessments >= 2, last(total_score),     NA_real_)
+  ) |>
+  ungroup() |>
+  filter(!is.na(follow_up_date)) |>
+  mutate(
+    # Lower follow-up = positive outcome (lower impairment is better)
+    positive_outcome  = if_else(follow_up_score < initial_score, 1L, 0L),
+    score_change      = follow_up_score - initial_score,
+    initial_quarter   = paste0("Q", quarter(initial_date),    " ", year(initial_date)),
+    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))
+  )
+
+cat("BASIS-24 paired clients:", nrow(basis24_paired), "\n")
+```
+
+------------------------------------------------------------------------
+
+# 3. Quick Check
+
+```{r basis24-check}
+basis24_paired |>
+  summarise(
+    n_paired          = n(),
+    n_positive        = sum(positive_outcome == 1, na.rm = TRUE),
+    pct_positive      = round(100 * n_positive / n_paired, 1),
+    n_missing_outcome = sum(is.na(positive_outcome))
+  )
+```
+
+------------------------------------------------------------------------
+
+# 4. Write Clean CSV
+
+```{r write-csv}
+out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+write_csv(basis24_paired, file.path(out_dir, "basis24_paired_clean.csv"))
+
+cat("CSV written successfully.\n")
+```

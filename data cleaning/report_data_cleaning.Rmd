@@ -1,369 +1,477 @@
 ---
 title: "Report Data Cleaning"
 author: "Cristin Young"
-date: "2025-09-17"
+date: "2026-03-09"
 output:
   html_document:
     df_print: paged
+    toc: true
+    toc_float: true
   pdf_document: default
   html_notebook: default
 ---
 
-This notebook cleans up demographic and discharge data, and provides clean csv's from which to do the analyses for reports.
+## Project Overview
 
-ACTION ITEMS
-[ ] make sure we filter to last follow-up time point (filter to post_time_point == ??)
+This notebook prepares **CYBHI EBP/CDEP** program data for analysis and reporting. It ingests two raw exports from the eInsight clinical management platform, cleans and recodes each, joins them together, and writes three clean CSVs used by downstream analysis scripts.
 
-[ ] nrow(dup_clients_diff_time) + nrow(dup_clients_same_time) should equal nrow(dup_clients). It doesn't -- why??
+**Data sources (eInsight exports):**
 
-[ ] NEED to filter by client_system_id + assessment_date (see client_system_id == 3664 for example issue)
-  - need to verify, is this linking assessment + intervention because they intervention was done in that time frame? 
+- **Discharge Report** — One row per client assessment pair (pre/post). Contains intervention dates, pre/post measure names, and funding round.
+- **Client Demographics** — One row per client (ideally). Contains race, ethnicity, language, age, provider, and other client characteristics.
 
-# Read in data
-```{r}
+**Outputs:**
+
+| File | Contents |
+|------|----------|
+| `demographic_data_clean.csv` | Deduplicated, recoded demographic data |
+| `discharge_data_clean.csv` | Cleaned discharge/assessment data |
+| `demographic_discharge_clean.csv` | Joined dataset for outcome analyses |
+
+---
+
+## Open Issues / Action Items
+
+- [ ] Confirm we are filtering to the **last follow-up time point** (filter `post_time_point == ??`). Which follow-up number should be treated as "final" for a given client?
+- [ ] `nrow(dup_clients_diff_time) + nrow(dup_clients_same_time)` should equal `nrow(dup_clients)` but does not — investigate why some duplicate clients fall into neither category.
+- [ ] Clients with the same `client_system_id` but different `assessment_date` values need special handling (see `client_system_id == 3664` as an example). Clarify whether mismatched dates reflect linked assessment + intervention records, or data entry errors.
+
+---
+
+# Setup
+
+```{r setup, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(janitor)
 library(gt)
 library(readxl)
 library(openxlsx)
+```
 
-discharge_data <- read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Discharge Report Export/2026-02-10-discharge_report.xlsx", na = c("-", "", "NA", "N/A")) %>% 
-  janitor::clean_names() 
-discharge_data$pre_completion_date <- janitor::convert_to_date(discharge_data$pre_completion_date)
-discharge_data$post_completion_date <- janitor::convert_to_date(discharge_data$post_completion_date)
+---
 
-demographic_data <- readxl::read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Admin Report Exports/2026-02-10-client_demographics.xlsx", na = c("-", "", "NA", "N/A")) %>% 
+# 1. Read in Raw Data
+
+Both files are pulled from the eInsight export folder in the shared Dropbox. The `na` argument ensures that common "missing" strings are treated as `NA` from the start. Column names are cleaned to snake_case via `janitor::clean_names()`. Date columns in the discharge data are stored as numeric by Excel and need explicit conversion.
+
+```{r read-data}
+discharge_data <- read_xlsx(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Discharge Report Export/2026-02-10-discharge_report.xlsx",
+  na = c("-", "", "NA", "N/A")
+) |>
   janitor::clean_names()
 
-demographic_data_new <- readxl::read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Admin Report Exports/2026-01-16-client_demographics.xlsx", na = c("-", "", "NA", "N/A")) %>%
-janitor::clean_names()
+# These date columns come in as Excel serial numbers and must be converted
+discharge_data$pre_completion_date  <- janitor::convert_to_date(discharge_data$pre_completion_date)
+discharge_data$post_completion_date <- janitor::convert_to_date(discharge_data$post_completion_date)
 
+demographic_data <- readxl::read_xlsx(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Admin Report Exports/2026-02-10-client_demographics.xlsx",
+  na = c("-", "", "NA", "N/A")
+) |>
+  janitor::clean_names()
 
-# discharge_data <- readxl::read_xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Dishcharge_Report.xlsx", na = c("-", "", "NA"))
-# demographic_data <- readxl::read_xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Client_Demographics.xlsx", na = c("-", "", "NA"))
-
-length(discharge_data$client_system_id)
-length(demographic_data$client_system_id)
-length(unique(demographic_data$client_system_id))
+# Quick row/ID counts
+cat("Discharge rows:          ", nrow(discharge_data), "\n")
+cat("Demographic rows:        ", nrow(demographic_data), "\n")
+cat("Unique demographic IDs:  ", n_distinct(demographic_data$client_system_id), "\n")
 ```
 
-# DEMOGRAPHIC DATA - Cleaning
-```{r}
-# get rid of demo data
-demographic_data_filtered <- demographic_data %>%
+---
+
+# 2. Clean Demographic Data
+
+## 2.1 Remove Demo/Test Accounts
+
+eInsight includes test provider and client accounts with "DEMO" in their IDs. These are not real clients and must be excluded before any analysis.
+
+```{r demo-filter-demographics}
+demographic_data_filtered <- demographic_data |>
   filter(!if_any(c(provider_id, client_system_id), ~ str_detect(as.character(.x), "DEMO")))
+```
 
-demographic_data_new <- demographic_data_new %>%
-filter(!if_any(c(provider_id, client_system_id), ~ str_detect(as.character(.x), "DEMO")))
+## 2.2 Identify and Handle Duplicate Client IDs
 
-# are there unique client IDs? 
-length(unique(demographic_data_filtered$client_system_id)) == nrow(demographic_data_filtered)
-length(unique(demographic_data_new$client_system_id)) == nrow(demographic_data_new)
+The demographics export should have one row per client, but some clients appear more than once (e.g., due to selecting multiple languages or data entry errors). We identify duplicates, export them for review, then drop them from the analysis dataset for now.
 
-# which IDs have been repeated and how many times? 
-#duplicates <- demographic_data_filtered %>% 
-duplicates <- demographic_data %>%   
-  group_by(client_system_id) %>% 
-   filter(n() > 1) %>%
-  tally() 
+```{r demo-duplicates}
+# Identify which client IDs appear more than once
+duplicates <- demographic_data_filtered |>
+  group_by(client_system_id) |>
+  filter(n() > 1) |>
+  tally()
 
-# how many rows are duplicated?
-duplicates %>% 
-  summarise(total_duplicated = sum(n))
+cat("Client IDs with duplicates:", nrow(duplicates), "\n")
+cat("Total duplicated rows:     ", sum(duplicates$n), "\n")
 
-# what data is repeating for each client?
-# appears to just be language selected? 
-demographic_data_filtered %>%
-  group_by(client_system_id) %>%
-  filter(n() > 1) %>%
-  summarise(across(everything(), ~ {
-    u <- unique(.x)
-    if(length(u) > 1) paste(u, collapse = ", ") else NA_character_
-  }), .groups = "drop") %>%
+# Inspect which columns differ across duplicate rows for the same client
+demographic_data_filtered |>
+  group_by(client_system_id) |>
+  filter(n() > 1) |>
+  summarise(
+    across(everything(), ~ {
+      u <- unique(.x)
+      if (length(u) > 1) paste(u, collapse = ", ") else NA_character_
+    }),
+    .groups = "drop"
+  ) |>
   select(client_system_id, where(~ any(!is.na(.))))
+```
 
-duplicate_list <- demographic_data_filtered %>% 
+```{r demo-save-duplicates}
+# Export the full duplicate records for manual review
+duplicate_list <- demographic_data_filtered |>
   filter(client_system_id %in% duplicates$client_system_id)
 
-write_csv(duplicate_list, "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_duplicate_list.csv")
+write_csv(
+  duplicate_list,
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_duplicate_list.csv"
+)
+```
 
-#for now, drop the 53 clients (186 rows)
-#demographic_data_filtered <- demographic_data_filtered %>% 
-demographic_data_filtered <- demographic_data %>%   
+```{r demo-drop-duplicates}
+# Drop all rows for clients with any duplicate — conservative approach until
+# a resolution strategy is decided for these records
+demographic_data_filtered <- demographic_data_filtered |>
   filter(!(client_system_id %in% duplicates$client_system_id))
 
-#check again for duplicate ids, just in case
-#length(unique(demographic_data_filtered$client_system_id)) == nrow(demographic_data_filtered)
+# Confirm: should now be TRUE (unique IDs)
 length(unique(demographic_data_filtered$client_system_id)) == nrow(demographic_data_filtered)
 ```
 
-## DEMOGRAPHIC DATA - Recoding race
-1. Remove “don’t know”, “prefer not to answer”, and “not applicable” from the comma-separated responses.
-2. Then recode the remaining responses:
-- 0 if nothing is left after removal (or NA)
-- 1 if exactly one valid response remains
-- 2 if 2+ valid responses remain
-3. do an analysis to look within race: so duplicated --> single race dummy variable
-```{r}
-# Define coding for single responses
-codebook <- c("Asian" = 1, 
-              "Black or African American" = 2, 
-              "Hispanic or Latino" = 3,
-              "Middle Eastern or North African" = 4,
-              "Native American/American Indian or Alaska Native" = 5,
-              "Native Hawaiian or Pacific Islander" = 6,
-              "White" = 7
-              )
+## 2.3 Recode Race
 
-demographic_data_filtered <- demographic_data_filtered %>% 
+Race is stored as a free-text, comma-separated field. We clean it in two passes:
+
+1. Strip non-informative responses ("Don't Know", "Prefer Not To Answer", "Not Applicable").
+2. Recode to a numeric summary:
+   - `NA` — no valid response after stripping
+   - `1` — exactly one valid race reported
+   - `2` — two or more valid races reported (multiracial)
+   - `code_num` assigns each single-race response a numeric code, or `88` for multiracial.
+
+```{r recode-race}
+codebook_race <- c(
+  "Asian"                                                = 1,
+  "Black or African American"                            = 2,
+  "Hispanic or Latino"                                   = 3,
+  "Middle Eastern or North African"                      = 4,
+  "Native American/American Indian or Alaska Native"     = 5,
+  "Native Hawaiian or Pacific Islander"                  = 6,
+  "White"                                                = 7
+)
+
+demographic_data_filtered <- demographic_data_filtered |>
   mutate(
-    # Remove "don't know", "prefer not to answer", "not applicable"
     cleaned_race = str_remove_all(
       race,
       "\\b(Don't Know|Prefer Not To Answer|Not Applicable)\\b"
-    ) %>%
-      str_replace_all(",+", ",") %>%        # collapse extra commas
-      str_replace_all("^,|,$", "") %>%      # trim leading/trailing commas
-      na_if("")                             # convert empty string to NA
-  ) %>%
+    ) |>
+      str_replace_all(",+", ",") |>       # collapse extra commas left by removal
+      str_replace_all("^,|,$", "") |>     # trim any leading/trailing commas
+      na_if("")                            # empty string → NA
+  ) |>
   mutate(
     recoded_race = case_when(
-      is.na(cleaned_race) ~ NA,             # no valid response
-      str_detect(cleaned_race, ",") ~ 2L,   # multiple responses
-      TRUE ~ 1L                             # single response
+      is.na(cleaned_race)              ~ NA,   # no valid response
+      str_detect(cleaned_race, ",")    ~ 2L,   # multiracial
+      TRUE                             ~ 1L    # single race
     ),
-    # assign numeric code to single values, 99 if 2+ values
     code_num = case_when(
-      is.na(cleaned_race) ~ NA,
-      str_detect(cleaned_race, ",") ~ 88L,
-      TRUE ~ unname(codebook[cleaned_race])  # lookup from codebook
+      is.na(cleaned_race)              ~ NA,
+      str_detect(cleaned_race, ",")    ~ 88L,  # multiracial code
+      TRUE ~ unname(codebook_race[cleaned_race])
     )
   )
 ```
 
-## DEMOGRAPHIC DATA - Recoding ethnicity
-1. Remove “don’t know”, “prefer not to answer”, and “not applicable” from the comma-separated responses.
-2. Then recode the remaining responses:
-- 0 if nothing is left after removal (or NA)
-- 1 if exactly one valid response remains
-- 2 if 2+ valid responses remain
-3. do an analysis to look within ethnicity: so duplicated --> single ethnicity dummy variable
-```{r}
-# Define coding for single responses
-codebook_eth <- c("Chinese" = 1, "Asian Indian" = 2, "Filipino" = 3, "Vietnamese" = 4, "Korean" = 5,"Japanese" = 6, "African American" = 7,"Jamaican" = 8, "Haitian" = 9, "Nigerian" = 10, "Somali" = 11, "Mexican" = 12, "Puerto Rican" = 13, "Salvadoran" = 14, "Cuban" = 15, "Dominican" = 16, "Guatemalan" = 17, "Native Hawaiian" = 18, "Samoan" = 19, "Chamorro" = 20, "English" = 21, "German" = 22, "Irish" = 23, "Italian" = 24, "Polish" = 25, "Scottish" = 26, "2+ ethnicities selected" = 88)
+## 2.4 Recode Ethnicity
 
-demographic_data_filtered <- demographic_data_filtered %>% 
+Same two-pass approach as race. Ethnicity is also stored as a comma-separated string. Non-informative values are removed and responses are recoded to numeric codes; `88` = 2+ ethnicities selected.
+
+```{r recode-ethnicity}
+codebook_eth <- c(
+  "Chinese" = 1, "Asian Indian" = 2, "Filipino" = 3, "Vietnamese" = 4,
+  "Korean" = 5, "Japanese" = 6, "African American" = 7, "Jamaican" = 8,
+  "Haitian" = 9, "Nigerian" = 10, "Somali" = 11, "Mexican" = 12,
+  "Puerto Rican" = 13, "Salvadoran" = 14, "Cuban" = 15, "Dominican" = 16,
+  "Guatemalan" = 17, "Native Hawaiian" = 18, "Samoan" = 19, "Chamorro" = 20,
+  "English" = 21, "German" = 22, "Irish" = 23, "Italian" = 24, "Polish" = 25,
+  "Scottish" = 26, "2+ ethnicities selected" = 88
+)
+
+demographic_data_filtered <- demographic_data_filtered |>
   mutate(
-    # Remove "don't know", "prefer not to answer", "not applicable"
     cleaned_ethn = str_remove_all(
       ethnicity,
       "\\b(Don't Know|Prefer Not To Answer|Not Applicable)\\b"
-    ) %>%
-      str_replace_all(",+", ",") %>%        # collapse extra commas
-      str_replace_all("^,|,$", "") %>%      # trim leading/trailing commas
-      na_if("")                             # convert empty string to NA
-  ) %>%
+    ) |>
+      str_replace_all(",+", ",") |>
+      str_replace_all("^,|,$", "") |>
+      na_if("")
+  ) |>
   mutate(
     recoded_ethn = case_when(
-      is.na(cleaned_ethn) ~ NA,             # no valid response
-      str_detect(cleaned_ethn, ",") ~ 2L,   # multiple responses
-      TRUE ~ 1L                             # single response
+      is.na(cleaned_ethn)              ~ NA,
+      str_detect(cleaned_ethn, ",")    ~ 2L,
+      TRUE                             ~ 1L
     ),
-    # assign numeric code to single values, 99 if 2+ values
     ethn_num = case_when(
-      is.na(cleaned_ethn) ~ NA,
-      str_detect(cleaned_ethn, ",") ~ 88L,
-      TRUE ~ unname(codebook_eth[cleaned_ethn])  # lookup from codebook
+      is.na(cleaned_ethn)              ~ NA,
+      str_detect(cleaned_ethn, ",")    ~ 88L,
+      TRUE ~ unname(codebook_eth[cleaned_ethn])
     )
   )
 ```
 
-# DISCHARGE DATA - Cleaning
-```{r}
-#get rid of demo data
-discharge_data_filtered <- discharge_data %>%
-  filter(!if_any(c(provider_id, client_system_id), ~ str_detect(as.character(.x), "DEMO"))) %>% 
+---
+
+# 3. Clean Discharge Data
+
+## 3.1 Remove Demo/Test Accounts
+
+Same as demographics — filter out any rows where the provider or client ID contains "DEMO".
+
+```{r demo-filter-discharge}
+discharge_data_filtered <- discharge_data |>
+  filter(!if_any(c(provider_id, client_system_id), ~ str_detect(as.character(.x), "DEMO"))) |>
   janitor::clean_names()
 
-#are there unique client IDs? 
+# Should be FALSE — one client can have multiple assessment rows
 length(unique(discharge_data_filtered$client_system_id)) == nrow(discharge_data_filtered)
+```
 
-#which IDs have been repeated and how many times? 
-discharge_data_filtered %>% 
-  group_by(client_system_id) %>% 
-  summarise(n=n()) %>% 
-  filter(n>1)
+## 3.2 Inspect Duplicate Client Records
 
-#what data is repeating for each client?
-discharge_data_filtered %>%
-  group_by(client_system_id) %>%
-  filter(n() > 1) %>%
-  summarise(across(everything(), ~ {
-    u <- unique(.x)
-    if(length(u) > 1) paste(u, collapse = ", ") else NA_character_
-  }), .groups = "drop") %>%
+Unlike demographics, it is expected for a client to appear more than once in the discharge report (e.g., multiple interventions or follow-ups). This chunk documents which columns vary across rows for the same client.
+
+```{r discharge-duplicates}
+discharge_data_filtered |>
+  group_by(client_system_id) |>
+  summarise(n = n()) |>
+  filter(n > 1)
+
+# Which fields differ across rows for the same client?
+discharge_data_filtered |>
+  group_by(client_system_id) |>
+  filter(n() > 1) |>
+  summarise(
+    across(everything(), ~ {
+      u <- unique(.x)
+      if (length(u) > 1) paste(u, collapse = ", ") else NA_character_
+    }),
+    .groups = "drop"
+  ) |>
   select(client_system_id, where(~ any(!is.na(.))))
+```
 
+## 3.3 Parse Pre/Post Measure Names
+
+The `pre_measure_s` and `post_measure_s` fields combine the time point (e.g., "Initial", "Follow Up 1") and assessment name (e.g., "SDQ") into one string. We split these into separate columns so they can be matched and filtered independently.
+
+A secondary trimmed name (first word only) is created because some providers abbreviate assessment names differently in the pre vs. post fields.
+
+```{r parse-measure-names}
+# Check raw values before parsing
 unique(discharge_data_filtered$pre_measure_s)
 unique(discharge_data_filtered$post_measure_s)
+```
 
-#clean up pre/post-measure names
-discharge_data_filtered <- discharge_data_filtered %>%
+```{r clean-measure-names}
+discharge_data_filtered <- discharge_data_filtered |>
   mutate(
-    pre_time_point = str_extract(
-      pre_measure_s, "(Initial|(?i)follow up \\d+)"),
-    pre_assessment_name = str_remove(
-      pre_measure_s, "(Initial|(?i)follow up \\d+)") %>% 
+    pre_time_point      = str_extract(pre_measure_s, "(Initial|(?i)follow up \\d+)"),
+    pre_assessment_name = str_remove(pre_measure_s, "(Initial|(?i)follow up \\d+)") |>
       str_trim()
-  ) %>% 
+  ) |>
   mutate(
-    post_time_point = str_extract(
-      post_measure_s, "(Initial|(?i)follow up \\d+)"),
-    post_assessment_name = str_remove(
-      post_measure_s, "(Initial|(?i)follow up \\d+)") %>% 
+    post_time_point      = str_extract(post_measure_s, "(Initial|(?i)follow up \\d+)"),
+    post_assessment_name = str_remove(post_measure_s, "(Initial|(?i)follow up \\d+)") |>
       str_trim()
+  ) |>
+  mutate(
+    # Exact match check
+    MatchDistinct = pre_assessment_name == post_assessment_name,
+    # First-word match — handles cases where "SDQ" appears as "SDQ Strengths & Difficulties..."
+    trimmed_pre_assessment_name  = word(pre_assessment_name, 1),
+    trimmed_post_assessment_name = word(post_assessment_name, 1),
+    trimmed_match = trimmed_pre_assessment_name == trimmed_post_assessment_name
   )
 
-#see if pre/post assessment names match yet
-discharge_data_filtered <- discharge_data_filtered %>% 
-mutate(MatchDistinct = pre_assessment_name == post_assessment_name)
-
-#not everyone uses the correct name for pre vs post assessment, so clean further
-discharge_data_filtered <- discharge_data_filtered %>% 
-  mutate(
-    trimmed_pre_assessment_name = word(pre_assessment_name, 1),
-    trimmed_post_assessment_name = word(post_assessment_name, 1)
-  )
-
-#are they all the same now? 
-discharge_data_filtered <- discharge_data_filtered %>% 
-mutate(trimmed_match = trimmed_pre_assessment_name == trimmed_post_assessment_name)
-
-#this is the same thing - they just wrote out SDQ for post
-discharge_data_filtered %>% 
+# Rows where even the trimmed names don't match — review these manually
+discharge_data_filtered |>
   filter(trimmed_match == FALSE)
+```
 
-#cleaning funding rounds for specific providers
-# monterey health dept = round 2
-# children of the rainbow = round 2
-# youth for change = round 1
-# homeless children's network = round 2
-# placer county office of education = round 1 
-discharge_data_filtered_clean <- discharge_data_filtered %>%
+## 3.4 Fix Missing Funding Rounds
+
+Some providers did not select a funding round in eInsight ("No Funding Round Selected"). Based on program records, we manually assign the correct round for known providers.
+
+| Provider ID | Organization                   | Correct Round |
+|-------------|--------------------------------|---------------|
+| 604         | Monterey Health Dept           | 2             |
+| 508         | Children of the Rainbow        | 2             |
+| 607         | Youth for Change               | 1             |
+| 573         | Homeless Children's Network    | 2             |
+| 709         | Placer County Office of Education | 1          |
+
+```{r fix-funding-rounds}
+discharge_data_filtered_clean <- discharge_data_filtered |>
   mutate(
     funding_round = case_when(
       provider_id == "604" & funding_round == "No Funding Round Selected" ~ "2",
-      provider_id == "604" & funding_round == "No Funding Round Selected" ~ "2",
       provider_id == "508" & funding_round == "No Funding Round Selected" ~ "2",
       provider_id == "607" & funding_round == "No Funding Round Selected" ~ "1",
-      provider_id == "573" ~ "2",
+      provider_id == "573"                                                 ~ "2",
       provider_id == "709" & funding_round == "No Funding Round Selected" ~ "1",
       TRUE ~ funding_round
     )
   )
 ```
 
-# DISCHARGE DATA EDA - Look at clients with >1 intervention
-```{r}
-# filter to those who have a pre AND post measure
-dup_client_system_id <- discharge_data_filtered %>%
-  filter(!is.na(pre_measure_s) & !is.na(post_measure_s)) 
+---
 
-# create df where it shows you what was duplicated for each client ID
-dup_client_system_id <- dup_client_system_id %>% 
-  group_by(client_system_id) %>%
-  filter(n() > 1) %>%
-  summarise(across(everything(), ~ {
-    u <- unique(.x)
-    if(length(u) > 1) paste(u, collapse = ", ") else NA_character_
-  }), .groups = "drop") %>%
+# 4. EDA — Clients with Multiple Interventions
+
+Some clients appear in the discharge data more than once because they participated in more than one intervention (or had multiple follow-up time points). Understanding this structure is important before analysis, because rows are not independent.
+
+## 4.1 Identify Clients with >1 Complete Intervention
+
+"Complete" here means the row has both a pre AND a post measure (i.e., the client has a pre–post pair, not just a baseline or a lone follow-up).
+
+```{r dup-complete-interventions}
+# Summarize what varies across rows for each client with >1 complete pair
+dup_client_system_id <- discharge_data_filtered |>
+  filter(!is.na(pre_measure_s) & !is.na(post_measure_s)) |>
+  group_by(client_system_id) |>
+  filter(n() > 1) |>
+  summarise(
+    across(everything(), ~ {
+      u <- unique(.x)
+      if (length(u) > 1) paste(u, collapse = ", ") else NA_character_
+    }),
+    .groups = "drop"
+  ) |>
   select(client_system_id, where(~ any(!is.na(.))))
 
-#filter discharge data to only clients with duplicate rows AND ones that hove both pre and post data
-dup_clients <- discharge_data_filtered %>% 
-  filter(client_system_id %in% dup_client_system_id$client_system_id,
-        !is.na(pre_measure_s) & !is.na(post_measure_s))
+# Pull all rows for those clients
+dup_clients <- discharge_data_filtered |>
+  filter(
+    client_system_id %in% dup_client_system_id$client_system_id,
+    !is.na(pre_measure_s) & !is.na(post_measure_s)
+  )
 
-length(unique(dup_clients$client_system_id)) #358 clients with more than one complete intervention 
+cat("Clients with >1 complete pre-post pair:", n_distinct(dup_clients$client_system_id), "\n")
 ```
 
-## Find clients that had >1 interventions AT THE SAME TIME
-- versus clients that had more than one of the same intervention
-- this does not include people who had multiple follow-ups of the same intervention; this is filtered by pre-measure name (not trimmed)
-```{r}
-dup_clients_same_time <- dup_clients %>% 
-  group_by(client_system_id, pre_completion_date) %>% 
-  summarise(across(pre_measure_s, ~ {
-    u <- unique(.x)
-    if(length(u) > 1) paste(u, collapse = ", ") else NA_character_
-  }), .groups = "drop") %>% 
+## 4.2 Concurrent Interventions (Same Pre-Completion Date)
+
+Clients who had two or more different assessments completed on the same date — indicating they were enrolled in multiple interventions simultaneously.
+
+```{r dup-same-time}
+dup_clients_same_time <- dup_clients |>
+  group_by(client_system_id, pre_completion_date) |>
+  summarise(
+    across(pre_measure_s, ~ {
+      u <- unique(.x)
+      if (length(u) > 1) paste(u, collapse = ", ") else NA_character_
+    }),
+    .groups = "drop"
+  ) |>
   filter(!is.na(pre_measure_s))
 
-#this is the data for the clients that had >1 intervention at the SAME time
-dup_clients_same_time_data <- discharge_data_filtered %>% 
+# Full rows for those clients
+dup_clients_same_time_data <- discharge_data_filtered |>
   filter(client_system_id %in% dup_clients_same_time$client_system_id)
+
+cat("Clients with concurrent interventions:", nrow(dup_clients_same_time), "\n")
 ```
 
-## find clients that had an intervention AT DIFFERENT TIMES
-- right now this is filtering only on pre-assessment name (not trimmed)
-```{r}
-dup_clients_diff_time <- dup_clients %>%
-  group_by(client_system_id) %>%
-  filter(n_distinct(intervention_start, na.rm = TRUE) > 1) %>%
+## 4.3 Sequential Interventions (Different Start Dates)
+
+Clients who completed interventions at genuinely different time points — i.e., they started a new intervention after finishing a prior one.
+
+```{r dup-diff-time}
+dup_clients_diff_time <- dup_clients |>
+  group_by(client_system_id) |>
+  filter(n_distinct(intervention_start, na.rm = TRUE) > 1) |>
   summarise(
-    n_intervention_start = n_distinct(intervention_start, na.rm = TRUE),
+    n_intervention_start    = n_distinct(intervention_start, na.rm = TRUE),
     intervention_start_dates = paste(sort(unique(intervention_start)), collapse = ", "),
     pre_measure_s_values = {
       vals <- unique(na.omit(pre_measure_s))
-      if (length(vals) == 0) NA_character_
-      else paste(vals, collapse = ", ")
+      if (length(vals) == 0) NA_character_ else paste(vals, collapse = ", ")
     },
     .groups = "drop"
   )
 
-#this is the data for the clients that had an intervention at different times
-dup_clients_diff_time_data <- discharge_data_filtered %>% 
+dup_clients_diff_time_data <- discharge_data_filtered |>
   filter(client_system_id %in% dup_clients_diff_time$client_system_id)
 
-nrow(dup_clients_diff_time) + nrow(dup_clients_same_time)
+cat("Clients with sequential interventions:", nrow(dup_clients_diff_time), "\n")
+
+# Note: same-time + diff-time should sum to dup_clients; if not, some clients
+# fall into neither category — this is an open issue to resolve.
+cat("Same-time + diff-time total:", nrow(dup_clients_diff_time) + nrow(dup_clients_same_time), "\n")
+cat("Total dup_clients:          ", n_distinct(dup_clients$client_system_id), "\n")
 ```
 
+---
 
-# JOINING DATA 
-Now join demographic and discharge data by client ID
-```{r}
-#assessment-level data
-demographic_data_filtered <- demographic_data_filtered %>% 
-  mutate(provider_system_id = as.character(provider_system_id),
-         client_system_id = as.character(client_system_id))
-discharge_data_filtered_clean <- discharge_data_filtered_clean %>% 
-  mutate(provider_system_id = as.character(provider_system_id),
-         client_system_id = as.character(client_system_id))
+# 5. Join Demographic and Discharge Data
 
-all_data <- left_join(discharge_data_filtered_clean, demographic_data_filtered, by = c("client_system_id", "provider_id", "provider_system_id"))
+Left join from discharge data onto demographics so we retain all assessment rows. Clients without a demographics record will have `NA` in demographic columns but remain in the dataset.
+
+ID columns need to be the same type (character) before joining; they can come in as numeric from Excel.
+
+```{r join-data}
+demographic_data_filtered <- demographic_data_filtered |>
+  mutate(
+    provider_system_id = as.character(provider_system_id),
+    client_system_id   = as.character(client_system_id)
+  )
+
+discharge_data_filtered_clean <- discharge_data_filtered_clean |>
+  mutate(
+    provider_system_id = as.character(provider_system_id),
+    client_system_id   = as.character(client_system_id)
+  )
+
+all_data <- left_join(
+  discharge_data_filtered_clean,
+  demographic_data_filtered,
+  by = c("client_system_id", "provider_id", "provider_system_id")
+)
 ```
 
-#how many unique clients were served?
-```{r}
-n_distinct(demographic_data_filtered$client_system_id)
+---
+
+# 6. Quick Counts
+
+```{r counts}
+cat("Unique clients in demographics (served):      ", n_distinct(demographic_data_filtered$client_system_id), "\n")
+cat("Unique clients in joined dataset (outcomes):  ", n_distinct(all_data$client_system_id), "\n")
 ```
 
-#how many clients had outcomes data? 
-```{r}
-n_distinct(all_data$client_system_id)
-```
+---
 
-#write csvs
-```{r}
-#all data 
-# write_csv(all_data, "/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
-write_csv(all_data, "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
+# 7. Write Clean CSVs
 
-#clean demo data
-# write_csv(demographic_data_filtered, "/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
-write_csv(demographic_data_filtered, "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
+```{r write-csvs}
+write_csv(
+  all_data,
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv"
+)
 
-#clean dishcarge data
-# write_csv(discharge_data_filtered, "/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
-write_csv(discharge_data_filtered_clean, "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
+write_csv(
+  demographic_data_filtered,
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv"
+)
+
+write_csv(
+  discharge_data_filtered_clean,
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv"
+)
+
+cat("CSVs written successfully.\n")
 ```
