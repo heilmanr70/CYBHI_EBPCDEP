@@ -1,0 +1,156 @@
+---
+title: "YOQ Assessment Data Cleaning"
+author: "Cristin Young"
+date: "2026-03-17"
+format:
+  html:
+    df-print: paged
+    toc: true
+    toc-float: true
+---
+
+## Project Overview
+
+This notebook prepares **CYBHI EBP/CDEP** Youth Outcome Questionnaire (YOQ) assessment data for analysis and reporting. It ingests two raw eInsight exports (caregiver and self-report versions), converts item scores to numeric, computes total scores, pairs initial and follow-up assessments, and computes the Reliable Change Index (RCI).
+
+**Data sources:** `YOQ-caregiver.csv` and `YOQ-self_report.csv` — eInsight Individual Assessments exports. These files use standard single-row headers (`janitor::clean_names()` is sufficient; no two-row header processing needed).
+
+**Scoring:**
+
+- 30 items, each rated 0–4.
+- Total score range: 0–120. Higher scores indicate greater distress.
+- Total score is set to `NA` if 3 or more items are missing.
+- **RCI = initial score − follow-up score.** RCI ≥ 10 = "doing reliably better."
+
+**Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 exist) is the follow-up. Clients with only one assessment are excluded.
+
+**Outputs:**
+
+| File | Contents |
+|------|----------|
+| `yoq_caregiver_paired_clean.csv` | One row per client: initial/follow-up scores, `rci`, `reliably_better`, quarter labels |
+| `yoq_self_paired_clean.csv` | Same, self-report version |
+
+---
+
+## Open Issues / Action Items
+
+- [ ] The `rci_col` variable in the main analysis uses `yoq_caregiver_paired[,7]` (column 7 by position) to identify reliable changers. This is fragile — consider whether to add an explicit named column here for robustness.
+
+---
+
+# Setup
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(janitor)
+```
+
+---
+
+# Helper Function
+
+Both YOQ files share identical scoring and pairing logic. We define a single helper to avoid duplication.
+
+```{r yoq-helper}
+# Reads a YOQ CSV, scores items, filters to the reporting period,
+# and returns a wide paired data frame.
+clean_yoq <- function(path) {
+  raw <- read_csv(path, na = c("-", "", "NA", "N/A"), show_col_types = FALSE,
+                  col_types = cols(.default = "c")) |>
+    janitor::clean_names()
+
+  scored <- raw |>
+    mutate(across(matches("^x"), as.numeric)) |>
+    rowwise() |>
+    mutate(
+      missing_count = sum(is.na(c_across(starts_with("x")))),
+      total_score   = if_else(
+        missing_count >= 3,
+        NA_real_,
+        sum(c_across(starts_with("x")), na.rm = TRUE)
+      )
+    ) |>
+    ungroup() |>
+    mutate(date_completed = as.Date(date_completed)) |>
+    filter(
+      date_completed >= "2024-01-01",
+      date_completed <= Sys.Date()
+    ) |>
+    select(client_system_id, collection, date_completed, total_score)
+
+  scored |>
+    group_by(client_system_id) |>
+    arrange(date_completed, .by_group = TRUE) |>
+    summarise(
+      n_assessments    = n(),
+      initial_date     = first(date_completed),
+      initial_score    = first(total_score),
+      follow_up_date   = if_else(n_assessments >= 2, last(date_completed),  as.Date(NA)),
+      follow_up_score  = if_else(n_assessments >= 2, last(total_score),     NA_real_)
+    ) |>
+    ungroup() |>
+    filter(!is.na(follow_up_date)) |>
+    mutate(
+      # RCI = baseline − follow-up; positive = doing better (lower distress)
+      rci               = initial_score - follow_up_score,
+      reliably_better   = rci >= 10,
+      initial_quarter   = paste0("Q", quarter(initial_date),    " ", year(initial_date)),
+      follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))
+    )
+}
+```
+
+---
+
+# 1. YOQ Caregiver
+
+```{r yoq-caregiver}
+yoq_caregiver_paired <- clean_yoq(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/YOQ-caregiver.csv"
+)
+
+cat("YOQ Caregiver paired clients:", nrow(yoq_caregiver_paired), "\n")
+
+yoq_caregiver_paired |>
+  filter(!is.na(reliably_better), rci != 0) |>
+  summarise(
+    n          = n(),
+    n_better   = sum(reliably_better),
+    pct_better = round(100 * n_better / n, 1)
+  )
+```
+
+---
+
+# 2. YOQ Self-Report
+
+```{r yoq-self}
+yoq_self_paired <- clean_yoq(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/YOQ-self_report.csv"
+)
+
+cat("YOQ Self paired clients:", nrow(yoq_self_paired), "\n")
+
+yoq_self_paired |>
+  filter(!is.na(reliably_better), rci != 0) |>
+  summarise(
+    n          = n(),
+    n_better   = sum(reliably_better),
+    pct_better = round(100 * n_better / n, 1)
+  )
+```
+
+---
+
+# 3. Write Clean CSVs
+
+```{r write-csvs}
+out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+write_csv(yoq_caregiver_paired, file.path(out_dir, "yoq_caregiver_paired_clean.csv"))
+write_csv(yoq_self_paired,      file.path(out_dir, "yoq_self_paired_clean.csv"))
+
+cat("CSVs written successfully.\n")
+```
+

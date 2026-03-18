@@ -1,0 +1,222 @@
+---
+title: "CPSS-5 Assessment Data Cleaning"
+author: "Cristin Young"
+date: "2026-03-09"
+format:
+  html:
+    df-print: paged
+    toc: true
+    toc-float: true
+---
+
+## Project Overview
+
+This notebook prepares **CYBHI EBP/CDEP** Child PTSD Symptom Scale, 5th Edition (CPSS-5) assessment data for analysis and reporting. It ingests two raw eInsight exports (interviewer and self-report versions), processes the two-row hierarchical headers, computes total scores, and pairs each client's initial assessment with their last follow-up.
+
+**Data sources:** `CPSS-5-Interviewer.csv` and `CPSS-5-self.csv` — eInsight Individual Assessments exports. Both are CSV files with two-row hierarchical headers.
+
+**Scoring:**
+
+-   Sum of items Q1–Q20 only (the first 20 score columns).
+-   Total score range: 0–80. Higher scores indicate greater PTSD symptom severity.
+-   A clinical cutoff score of ≥31 can be used to identify a probable PTSD diagnosis.
+-   **A lower follow-up score indicates a positive outcome.**
+-   No missing-item threshold is applied (total computed with `na.rm = TRUE`).
+
+| Symptom Severity | Score Range |
+|------------------|-------------|
+| Minimal          | 0–10        |
+| Mild             | 11–20       |
+| Moderate         | 21–40       |
+| Severe           | 41–60       |
+| Very Severe      | 61–80       |
+
+**Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 exist) is the follow-up. Clients with only one assessment are excluded.
+
+**Outputs:**
+
+| File | Contents |
+|----|----|
+| `cpss_i_paired_clean.csv` | One row per client: initial/follow-up scores, `positive_outcome`, `score_change`, quarter labels — interviewer version |
+| `cpss_s_paired_clean.csv` | Same, self-report version |
+
+------------------------------------------------------------------------
+
+## Open Issues / Action Items
+
+-   [ ] Not sure how to handle NAs
+
+------------------------------------------------------------------------
+
+# Setup
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(janitor)
+library(zoo)
+```
+
+------------------------------------------------------------------------
+
+# Helper Function
+
+Both CPSS-5 files are CSVs with two-row headers. We use a `read_csv`-based helper (unlike NOMS/PSS/BASIS-24 which use Excel files).
+
+```{r header-helper}
+# Reads a CPSS-5 CSV with two-row hierarchical headers.
+# Returns a cleaned data frame with combined column names and empty columns removed.
+read_assessment_csv_headers <- function(path,
+                                        na_vals = c("-", "", "NA", "N/A", "0")) {
+  raw <- read_csv(path, na = na_vals, col_names = FALSE, show_col_types = FALSE)
+
+  h1    <- unlist(raw[1, ], use.names = FALSE)
+  h2    <- unlist(raw[2, ], use.names = FALSE)
+  h1_ff <- na.locf(h1, na.rm = FALSE) |> str_squish()
+
+  new_names <- ifelse(
+    is.na(h1_ff) | h1_ff == "",
+    h2,
+    paste(h1_ff, h2, sep = " - ")
+  )
+  new_names <- janitor::make_clean_names(new_names)
+
+  df <- raw[-c(1, 2), ]
+  names(df) <- new_names
+
+  df |> select(where(~ !all(is.na(.))))
+}
+```
+
+------------------------------------------------------------------------
+
+# Helper: Score and Pair
+
+Both versions share identical scoring and pairing logic after header processing.
+
+```{r pair-helper}
+score_and_pair_cpss <- function(df, clinical_cutoff = 31) {
+  score_cols <- names(df)[endsWith(names(df), "_score")]
+
+  scored <- df |>
+    #filter(date_completed <= "2025-12-31") |>
+    mutate(across(all_of(score_cols), as.numeric)) |>
+    rowwise() |>
+    mutate(
+      missing_count       = sum(is.na(c_across(all_of(score_cols)))),
+      total_score         = rowSums(across(all_of(score_cols)), na.rm = TRUE),
+      clinically_relevant = if_else(
+        !is.na(total_score) & total_score >= clinical_cutoff, TRUE, FALSE
+      )
+    ) |>
+    ungroup() |>
+    mutate(
+      date_completed = as.Date(date_completed),
+      row_id         = row_number()
+    ) |>
+    select(client_system_id, collection, date_completed, total_score) |>
+    filter(
+      date_completed >= "2024-01-01",
+      date_completed <= Sys.Date()
+    )
+
+  scored |>
+    group_by(client_system_id) |>
+    arrange(date_completed, .by_group = TRUE) |>
+    summarise(
+      n_assessments   = n(),
+      initial_date    = first(date_completed),
+      initial_score   = first(total_score),
+      follow_up_date  = if_else(n_assessments >= 2, last(date_completed),  as.Date(NA)),
+      follow_up_score = if_else(n_assessments >= 2, last(total_score),     NA_real_)
+    ) |>
+    ungroup() |>
+    filter(!is.na(follow_up_date)) |>
+    mutate(
+      # Lower follow-up = positive outcome (lower symptom severity is better)
+      # 1 = improved, 0 = no change, -1 = worsened
+      positive_outcome = case_when(
+        follow_up_score <  initial_score ~ 1L,
+        follow_up_score == initial_score ~ 0L,
+        follow_up_score >  initial_score ~ -1L
+      ),
+      score_change      = follow_up_score - initial_score,
+      initial_quarter   = paste0("Q", quarter(initial_date),    " ", year(initial_date)),
+      follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)),
+      initial_severity  = case_when(
+        initial_score <= 10 ~ "Minimal",
+        initial_score <= 20 ~ "Mild",
+        initial_score <= 40 ~ "Moderate",
+        initial_score <= 60 ~ "Severe",
+        initial_score <= 80 ~ "Very Severe"
+      ) |> factor(levels = c("Minimal", "Mild", "Moderate", "Severe", "Very Severe")),
+      follow_up_severity = case_when(
+        follow_up_score <= 10 ~ "Minimal",
+        follow_up_score <= 20 ~ "Mild",
+        follow_up_score <= 40 ~ "Moderate",
+        follow_up_score <= 60 ~ "Severe",
+        follow_up_score <= 80 ~ "Very Severe"
+      ) |> factor(levels = c("Minimal", "Mild", "Moderate", "Severe", "Very Severe"))
+    )
+}
+```
+
+------------------------------------------------------------------------
+
+# 1. CPSS-5 Interviewer Version
+
+```{r cpss-i}
+cpss_i_raw <- read_assessment_csv_headers(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/CPSS-5-Interviewer.csv"
+)
+
+cpss_i_paired <- score_and_pair_cpss(cpss_i_raw)
+
+cat("CPSS-5 Interviewer paired clients:", nrow(cpss_i_paired), "\n")
+
+cpss_i_paired |>
+  summarise(
+    n_paired          = n(),
+    n_improved        = sum(positive_outcome ==  1, na.rm = TRUE),
+    n_no_change       = sum(positive_outcome ==  0, na.rm = TRUE),
+    n_worsened        = sum(positive_outcome == -1, na.rm = TRUE),
+    pct_improved      = round(100 * n_improved / n_paired, 1),
+    n_missing_outcome = sum(is.na(positive_outcome))
+  )
+```
+
+------------------------------------------------------------------------
+
+# 2. CPSS-5 Self-Report Version
+
+```{r cpss-s}
+cpss_s_raw <- read_assessment_csv_headers(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/CPSS-5-self.csv"
+)
+
+cpss_s_paired <- score_and_pair_cpss(cpss_s_raw)
+
+cat("CPSS-5 Self paired clients:", nrow(cpss_s_paired), "\n")
+
+cpss_s_paired |>
+  summarise(
+    n_paired          = n(),
+    n_improved        = sum(positive_outcome ==  1, na.rm = TRUE),
+    n_no_change       = sum(positive_outcome ==  0, na.rm = TRUE),
+    n_worsened        = sum(positive_outcome == -1, na.rm = TRUE),
+    pct_improved      = round(100 * n_improved / n_paired, 1),
+    n_missing_outcome = sum(is.na(positive_outcome))
+  )
+```
+
+------------------------------------------------------------------------
+
+# 3. Write Clean CSVs
+
+```{r write-csvs}
+out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+write_csv(cpss_i_paired, file.path(out_dir, "cpss_i_paired_clean.csv"))
+write_csv(cpss_s_paired, file.path(out_dir, "cpss_s_paired_clean.csv"))
+
+cat("CSVs written successfully.\n")
+```

@@ -1,341 +1,246 @@
 ---
 title: "Annual Report Data Analysis - Question 3.01"
 author: "Tristan Burgess and Cristin Young"
-date: '2025-12-15'
+date: "`r Sys.Date()`"
 output:
   html_notebook: default
   word_document: default
   html_document: default
   pdf_document: default
-editor_options: 
+editor_options:
   chunk_output_type: inline
-  markdown: 
+  markdown:
     wrap: 72
 ---
+# 3. Did EBP/CDEP services impact clinical and functional outcomes for clients who participated?
 
-This notebook answers Question 3.01: Are there factors such as race, ethnicity, age, gender identity, sexual orientation, language barriers, etc. that are associated with differences in clinical and functional outcomes after the intervention?
+## 3.01: Are there factors such as race, ethnicity, age, gender identity, sexual orientation, language barriers, etc. that are associated with differences in clinical and functional outcomes after the intervention?
 
+**Inclusion criteria:** 1. must have initial time point data (i.e., be enrolled in an intervention), 2. must have a valid assessment collected at both intake and discharge time points, and 3. must have reported information in the demographic variables of interest.
 
-#Read in data
-
-```{r}
+```{r setup}
+#| echo: false
+#| warning: false
+#| message: false
 library(tidyverse)
 library(janitor)
 library(gt)
-library(clipr)
 library(gtsummary)
-library(zoo)
-
-all_data <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
+library(openxlsx)
 ```
 
-# Question 3.01: Are there factors such as race, ethnicity, age, gender identity, sexual orientation, language barriers, etc. that are associated with differences in clinical and functional outcomes after the intervention?
+```{r load_data}
+#| echo: false
+#| warning: false
+#| message: false
+all_data <- read_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv",
+  show_col_types = FALSE
+)
 
-THREE inclusion criteria: 1. must have initial time point data (i.e., be
-enrolled in an intervention), 2. must have a valid assessment collected at both intake and discharge time points and 3. must have reported information in the demographic variables of interest.
-
-##Make a table of participation and completion rates by location
-
-```{r}
-data301 <- all_data %>% 
-  filter(!is.na(location) & 
-           !is.na(pre_score) & 
-           !is.na(post_score))
-
-data301$positive_outcomes <- factor(data301$positive_outcomes, levels = c("No", "Yes"))
+sat_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+combined_all <- read_csv(
+  file.path(sat_dir, "combined_satisfaction_clean.csv"),
+  show_col_types = FALSE
+) |>
+  mutate(quarter_label = fct_inorder(quarter_label))
 ```
 
+```{r prep_data301}
+#| echo: false
+#| warning: false
+#| message: false
 
-##Race model
+# Base dataset: requires location and pre/post scores
+data301 <- all_data |>
+  filter(
+    !is.na(location),
+    !is.na(pre_score),
+    !is.na(post_score)
+  ) |>
+  mutate(
+    positive_outcomes = factor(positive_outcomes, levels = c("No", "Yes")),
 
-```{r}
-library(gtsummary)
-detailed_race <- data301 %>% 
-  group_by(code_num) %>% 
-  summarise(
-    total = n(),
-    successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
-    perc_success = round(100* successful / total, 1)
+    # Race: collapse to key groups; everything else is "Other"
+    simple_race = case_when(
+      is.na(cleaned_race) ~ NA_character_,
+      cleaned_race %in% c(
+        "Asian", "White", "Hispanic or Latino",
+        "Black or African American",
+        "Native American/American Indian or Alaska Native"
+      ) ~ cleaned_race,
+      TRUE ~ "Other"
+    ),
+    simple_race = relevel(factor(simple_race), ref = "White"),
+
+    # Age/client type: treat "No Client Type Selected" as missing
+    client_type_clean = if_else(
+      client_type == "No Client Type Selected", NA_character_, client_type
+    ),
+
+    # Sexual orientation: consolidate non-responses and merge Lesbian/Gay/SGL
+    sexual_orientation_clean = case_when(
+      is.na(sexual_orientation) ~ "No Response",
+      sexual_orientation %in% c(
+        "Not Applicable", "Prefer Not To Answer",
+        "Don't Know", "No Sexual Orientation Selected"
+      ) ~ "No Response",
+      sexual_orientation %in% c("Same Gender Loving", "Lesbian/Gay") ~ "Lesbian/Gay/SGL",
+      TRUE ~ sexual_orientation
+    ),
+    sexual_orientation_clean = relevel(factor(sexual_orientation_clean), ref = "Straight"),
+
+    # Gender identity: consolidate non-responses
+    gender_identity_clean = case_when(
+      is.na(gender_identity) ~ "No Response",
+      gender_identity %in% c(
+        "Not Applicable", "Prefer Not To Answer",
+        "Don't Know", "No Gender Identify Selected"
+      ) ~ "No Response",
+      TRUE ~ gender_identity
+    ),
+    gender_identity_clean = relevel(factor(gender_identity_clean), ref = "Woman/girl")
   )
 
-#detailed_race %>% 
- #  knitr::kable() %>% 
-  # clipr::write_clip(allow_non_interactive = TRUE)
+# For clients with multiple survey responses, keep only the most recent
+combined_lang <- combined_all |>
+  group_by(client_system_id) |>
+  slice_max(date_completed, n = 1, with_ties = FALSE) |>
+  ungroup()
 
-chisq.test(data301$positive_outcomes, data301$code_num)
-
-data301$simple_race <- "Other"
-data301$simple_race[is.na(data301$cleaned_race)] <- NA
-data301$simple_race[data301$cleaned_race=='Asian'] <- "Asian"
-data301$simple_race[data301$cleaned_race=='White'] <- "White"
-data301$simple_race[data301$cleaned_race=='Native American/American Indian or Alaska Native'] <- "Native American/American Indian or Alaska Native"
-data301$simple_race[data301$cleaned_race=='Hispanic or Latino'] <- "Hispanic or Latino"
-data301$simple_race[data301$cleaned_race=='Black or African American'] <- "Black or African American"
-data301$simple_race <- relevel(as.factor(data301$simple_race),ref="White")
-
-chisq.test(data301$positive_outcomes, data301$simple_race)
-
-model <- glm(positive_outcomes ~ simple_race, data = data301, family = "binomial")
-summary(model)
-
-tab <- table(data301$simple_race,data301$positive_outcomes)
-tab <- addmargins(tab)
-tab <- as.data.frame.matrix(tab)
-
-modtab <- tbl_regression(model, exponentiate = TRUE)
-
-modtab %>%
-  as_tibble() %>%
-  openxlsx::write.xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple race model.xlsx",sheetName = "model")
-
-xlsx::write.xlsx(tab,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple race model.xlsx",sheetName = "table",append=T)
+data301 <- data301 |>
+  left_join(select(combined_lang, client_system_id, lang), by = "client_system_id") |>
+  mutate(lang = relevel(factor(lang), ref = "Yes"))
 ```
 
-## Ethnicity Model
+## Race model
 
-```{r}
+```{r race_model}
+#| echo: false
+detailed_race <- data301 |>
+  group_by(code_num) |>
+  summarise(
+    total      = n(),
+    successful = sum(
+      reason_for_discharge %in% c(
+        "Mutually agreed cessation of treatment (Successful Completion)",
+        "Clinically referred out"
+      ),
+      na.rm = TRUE
+    ),
+    perc_success = round(100 * successful / total, 1)
+  )
 
-ethnicity_xwalk <- data.frame(table(as.factor(data301$ethnicity)))
-ethnicity_xwalk$Freq <- as.numeric(ethnicity_xwalk$Freq)
-colnames(ethnicity_xwalk)[1] <- 'old'
-ethnicity_xwalk$new <- 'Other'
-ethnicity_xwalk$new[is.na(ethnicity_xwalk$old)]<-NA
-for(i in 1:length(ethnicity_xwalk$old)){
-  if(ethnicity_xwalk$Freq[i]>60){
-    ethnicity_xwalk$new[i] <- ethnicity_xwalk$old[i]
-  }
-}
-ethnicity_xwalk$new[ethnicity_xwalk$Freq > 60] <- as.character(ethnicity_xwalk$old[ethnicity_xwalk$Freq > 60])
+chisq.test(data301$positive_outcomes, data301$code_num)
+chisq.test(data301$positive_outcomes, data301$simple_race)
 
-ethnicity_xwalk$new[which(grepl("unknow",ethnicity_xwalk$old,ignore.case=TRUE))]<-NA
-ethnicity_xwalk$new[which(grepl("2019",ethnicity_xwalk$old,ignore.case=TRUE))]<-NA
-ethnicity_xwalk$new[which(grepl("dont",ethnicity_xwalk$old,ignore.case=TRUE))]<-NA
-ethnicity_xwalk$new[which(grepl("don't",ethnicity_xwalk$old,ignore.case=TRUE))]<-NA
-ethnicity_xwalk$new[which(grepl("report",ethnicity_xwalk$old,ignore.case=TRUE))]<-NA
-ethnicity_xwalk$new[which(grepl("prefer",ethnicity_xwalk$old,ignore.case=TRUE))]<-NA
-ethnicity_xwalk$new[which(grepl("2_text",ethnicity_xwalk$old,ignore.case=TRUE))]<-NA
-ethnicity_xwalk$new[which(grepl("refuse",ethnicity_xwalk$old,ignore.case=TRUE))]<-NA
-ethnicity_xwalk$new[which(grepl("specify",ethnicity_xwalk$old,ignore.case=TRUE))]<-NA
-ethnicity_xwalk$new[which(ethnicity_xwalk$old=="na")]<-NA
+model_race <- glm(positive_outcomes ~ simple_race, data = data301, family = "binomial")
+summary(model_race)
 
-data301$simple_ethnicity <- NA
-data301$simple_ethnicity <- ethnicity_xwalk$new[match(data301$ethnicity, ethnicity_xwalk$old)]  
+tab_race <- table(data301$simple_race, data301$positive_outcomes) |>
+  addmargins() |>
+  as.data.frame.matrix()
+
+modtab_race <- tbl_regression(model_race, exponentiate = TRUE)
+```
+
+## Ethnicity model
+
+```{r ethnicity_model}
+#| echo: false
+
+# Build a crosswalk: groups with n > 60 keep their label; all others become "Other";
+# non-responses and administrative values are set to NA
+ethnicity_xwalk <- data.frame(table(as.factor(data301$ethnicity))) |>
+  rename(old = Var1) |>
+  mutate(
+    old = as.character(old),
+    new = if_else(Freq > 60, old, "Other"),
+    new = if_else(
+      grepl("unknow|2019|dont|don't|report|prefer|2_text|refuse|specify",
+            old, ignore.case = TRUE) | old == "na",
+      NA_character_,
+      new
+    )
+  )
+
+data301 <- data301 |>
+  mutate(
+    simple_ethnicity = ethnicity_xwalk$new[match(ethnicity, ethnicity_xwalk$old)],
+    simple_ethnicity  = relevel(as.factor(simple_ethnicity), ref = "Mexican")
+  )
 
 chisq.test(data301$positive_outcomes, data301$simple_ethnicity)
 
-# Set largest group as reference level
-data301$simple_ethnicity <- relevel(as.factor(data301$simple_ethnicity),ref="Mexican")
+model_ethnicity <- glm(positive_outcomes ~ simple_ethnicity, data = data301, family = "binomial")
+summary(model_ethnicity)
 
-# Basic model predicting positive outcomes by ethnicity
-model <- glm(positive_outcomes ~ simple_ethnicity, data = data301, family = "binomial")
-summary(model)
+tab_ethnicity <- table(data301$simple_ethnicity, data301$positive_outcomes) |>
+  addmargins() |>
+  as.data.frame.matrix()
 
-tab <- table(data301$simple_ethnicity,data301$positive_outcomes)
-tab <- addmargins(tab)
-tab <- as.data.frame.matrix(tab)
-
-modtab <- tbl_regression(model, exponentiate = TRUE)
-modtab %>%
-  as_tibble() %>%
-  xlsx::write.xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple ethnicity model.xlsx",sheetName = "model")
-
-xlsx::write.xlsx(tab,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple ethnicity model.xlsx",sheetName = "table",append=T)
+modtab_ethnicity <- tbl_regression(model_ethnicity, exponentiate = TRUE)
 ```
 
+## Age model
 
-## Age Model
+```{r age_model}
+#| echo: false
+model_age <- glm(positive_outcomes ~ client_type_clean, data = data301, family = "binomial")
+summary(model_age)
 
-```{r}
-data301$client_type_clean <- data301$client_type
-data301$client_type_clean[data301$client_type=="No Client Type Selected"] <-NA
+tab_age <- table(data301$client_type_clean, data301$positive_outcomes) |>
+  addmargins() |>
+  as.data.frame.matrix()
 
-# Basic model predicting positive outcomes by ethnicity
-model <- glm(positive_outcomes ~ client_type_clean, data = data301, family = "binomial")
-summary(model)
-
-tab <- table(data301$client_type_clean,data301$positive_outcomes)
-tab <- addmargins(tab)
-tab <- as.data.frame.matrix(tab)
-
-modtab <- tbl_regression(model, exponentiate = TRUE)
-modtab %>%
-  as_tibble() %>%
-  xlsx::write.xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple client type model.xlsx",sheetName = "model")
-
-xlsx::write.xlsx(tab,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple client type model.xlsx",sheetName = "table",append=T)
+modtab_age <- tbl_regression(model_age, exponentiate = TRUE)
 ```
 
-## Sexual Orientation Model
+## Sexual orientation model
 
-```{r}
+```{r sexual_orientation_model}
+#| echo: false
+chisq.test(data301$positive_outcomes, data301$sexual_orientation_clean)
 
-data301$sexual_orientation_clean <- data301$sexual_orientation
-data301$sexual_orientation_clean[which(data301$sexual_orientation == "Not Applicable")] <- "No Response"
-data301$sexual_orientation_clean[which(data301$sexual_orientation == "Prefer Not To Answer")] <- "No Response"
-data301$sexual_orientation_clean[which(data301$sexual_orientation == "Don't Know")] <- "No Response"
-data301$sexual_orientation_clean[which(data301$sexual_orientation == "No Sexual Orientation Selected")] <- "No Response"
-data301$sexual_orientation_clean[which(data301$sexual_orientation == "Same Gender Loving")] <- "Lesbian/Gay/SGL"
-data301$sexual_orientation_clean[which(data301$sexual_orientation == "Lesbian/Gay")] <- "Lesbian/Gay/SGL"
-data301$sexual_orientation_clean[which(is.na(data301$sexual_orientation))] <- "No Response"
+model_sexori <- glm(positive_outcomes ~ sexual_orientation_clean, data = data301, family = "binomial")
+summary(model_sexori)
 
-data301$sexual_orientation_clean <- relevel(factor(data301$sexual_orientation_clean),ref="Straight")
+tab_sexori <- table(data301$sexual_orientation_clean, data301$positive_outcomes) |>
+  addmargins() |>
+  as.data.frame.matrix()
 
-
-# Basic univariate model predicting positive outcomes by sexual orientation
-model <- glm(positive_outcomes ~ sexual_orientation_clean, data = data301, family = "binomial")
-summary(model)
-
-tab <- table(data301$sexual_orientation_clean,data301$positive_outcomes)
-tab <- addmargins(tab)
-tab <- as.data.frame.matrix(tab)
-
-modtab <- tbl_regression(model, exponentiate = TRUE)
-modtab %>%
-  as_tibble() %>%
-  xlsx::write.xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple sexual orientation model.xlsx",sheetName = "model")
-
-xlsx::write.xlsx(tab,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple sexual orientation model.xlsx",sheetName = "table",append=T)
-
-
+modtab_sexori <- tbl_regression(model_sexori, exponentiate = TRUE)
 ```
-## Gender Identity Model
 
-```{r}
-data301$gender_identity_clean <- data301$gender_identity
-data301$gender_identity_clean[which(data301$gender_identity == "Not Applicable")] <- "No Response"
-data301$gender_identity_clean[which(data301$gender_identity == "Prefer Not To Answer")] <- "No Response"
-data301$gender_identity_clean[which(data301$gender_identity == "Don't Know")] <- "No Response"
-data301$gender_identity_clean[which(data301$gender_identity == "No Gender Identify Selected")] <- "No Response"
-data301$gender_identity_clean[which(is.na(data301$gender_identity))] <- "No Response"
+## Gender identity model
 
-data301$gender_identity_clean <- relevel(factor(data301$gender_identity_clean),ref="Woman/girl")
+```{r gender_identity_model}
+#| echo: false
+chisq.test(data301$gender_identity_clean, data301$positive_outcomes)
 
+model_gender <- glm(positive_outcomes ~ gender_identity_clean, data = data301, family = "binomial")
+summary(model_gender)
 
-# Basic univariate model predicting positive outcomes by sexual orientation
-model <- glm(positive_outcomes ~ gender_identity_clean, data = data301, family = "binomial")
-summary(model)
+tab_gender <- table(data301$gender_identity_clean, data301$positive_outcomes) |>
+  addmargins() |>
+  as.data.frame.matrix()
 
-tab <- table(data301$gender_identity_clean,data301$positive_outcomes)
-tab <- addmargins(tab)
-tab <- as.data.frame.matrix(tab)
-
-modtab <- tbl_regression(model, exponentiate = TRUE)
-modtab %>%
-  as_tibble() %>%
-  xlsx::write.xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple gender identity model.xlsx",sheetName = "model")
-
-xlsx::write.xlsx(tab,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple gender identity model.xlsx",sheetName = "table",append=T)
+modtab_gender <- tbl_regression(model_gender, exponentiate = TRUE)
 ```
-## Preferred Language Model - LOAD Client Sat Data
 
-```{r}
-# caregiver
-caregiver_raw <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-caregiver.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE) 
-h1 <- unlist(caregiver_raw[1, ], use.names = FALSE)           # question text row
-h2 <- unlist(caregiver_raw[2, ], use.names = FALSE)           # subheaders
-h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
-h1_ff <- str_squish(h1_ff)
-new_names <- ifelse(
-  is.na(h1_ff) | h1_ff == "",
-  h2,                                  # keep subheader only
-  paste(h1_ff, h2, sep = " - ")        # combine when applicable
-)
-new_names <- janitor::make_clean_names(new_names)
-caregiver <- caregiver_raw[-c(1, 2), ]
-names(caregiver) <- new_names
-caregiver <- caregiver %>%
-  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+## Preferred language model
 
-# child
-child_raw <- read.csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-child_13-17.csv", na = c("-", "", "NA", "N/A", "0"), header = FALSE) 
-h1 <- unlist(child_raw[1, ], use.names = FALSE)           # question text row
-h2 <- unlist(child_raw[2, ], use.names = FALSE)           # subheaders
-h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
-h1_ff <- str_squish(h1_ff)
-new_names <- ifelse(
-  is.na(h1_ff) | h1_ff == "",
-  h2,                                  # keep subheader only
-  paste(h1_ff, h2, sep = " - ")        # combine when applicable
-)
-new_names <- janitor::make_clean_names(new_names)
-child <- child_raw[-c(1, 2), ]
-names(child) <- new_names
-child <- child %>%
-  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
-
-# adult
-adult_raw <- read.csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-adult_18-59.csv", na.strings = c("-", "", "NA", "N/A", "0"), skip = 0, header = FALSE)
-h1 <- unlist(adult_raw[1, ], use.names = FALSE)           # question text row
-h2 <- unlist(adult_raw[2, ], use.names = FALSE)           # subheaders
-h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
-h1_ff <- str_squish(h1_ff)
-new_names <- ifelse(
-  is.na(h1_ff) | h1_ff == "",
-  h2,                                  # keep subheader only
-  paste(h1_ff, h2, sep = " - ")        # combine when applicable
-)
-new_names <- janitor::make_clean_names(new_names)
-adult <- adult_raw[-c(1, 2), ]
-names(adult) <- new_names
-adult <- adult %>%
-  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
-
-# senior
-senior_raw <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-adult_60_plus.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE) 
-h1 <- unlist(senior_raw[1, ], use.names = FALSE)           # question text row
-h2 <- unlist(senior_raw[2, ], use.names = FALSE)           # subheaders
-h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
-h1_ff <- str_squish(h1_ff)
-new_names <- ifelse(
-  is.na(h1_ff) | h1_ff == "",
-  h2,                                  # keep subheader only
-  paste(h1_ff, h2, sep = " - ")        # combine when applicable
-)
-new_names <- janitor::make_clean_names(new_names)
-senior <- senior_raw[-c(1, 2), ]
-names(senior) <- new_names
-senior <- senior %>%
-  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
-
+```{r lang_model}
+#| echo: false
 summary(factor(data301$preferred_language))
-data301$in_preferred_language <- NA
+summary(factor(data301$lang))
 
-ethnicity_xwalk$new[which(grepl("unknow",ethnicity_xwalk$old,ignore.case=TRUE))]<-NA
+model_lang <- glm(positive_outcomes ~ lang, data = data301, family = "binomial")
+summary(model_lang)
 
-# Combine all surveys of all types (relevant columns only)
-caregiver.lang <- data.frame("client_system_id"=caregiver$client_system_id,"lang"=caregiver$were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response,"date"=caregiver$date_completed)
-child.lang <- data.frame("client_system_id"=child$client_system_id,"lang"=child$were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response,"date"=child$date_completed)
-senior.lang <- data.frame("client_system_id"=senior$client_system_id,"lang"=senior$were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response,"date"=senior$date_completed)
-adult.lang <- data.frame("client_system_id"=adult$client_system_id,"lang"=adult$were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response,"date"=adult$date_completed)
+tab_lang <- table(data301$lang, data301$positive_outcomes) |>
+  addmargins() |>
+  as.data.frame.matrix()
 
-combined.lang <- rbind(caregiver.lang,child.lang,senior.lang, adult.lang)
-combined.lang$date <- as.Date(combined.lang$date, '%Y-%m-%d')
-combined.lang$client_system_id <- as.numeric(combined.lang$client_system_id)
-
-# For each case where there are multiple surveys for a client system ID, take the most recent
-
-combined.lang.unique <- combined.lang %>% 
-  group_by(client_system_id) %>%
-  slice(which.max(as.Date(date, '%Y/%m/%d')))
-
-# Use this as the data to merge into the combined discharge and demographic data
-
-data301 <- left_join(data301, combined.lang.unique[,1:2], by="client_system_id")
-data301$lang <- relevel(factor(data301$lang),ref="Yes")
-
-# Basic univariate model predicting positive outcomes by whether services received in preferred language
-model <- glm(positive_outcomes ~ lang, data = data301, family = "binomial")
-summary(model)
-
-tab <- table(data301$lang,data301$positive_outcomes)
-tab <- addmargins(tab)
-tab <- as.data.frame.matrix(tab)
-
-modtab <- tbl_regression(model, exponentiate = TRUE)
-modtab %>%
-  as_tibble() %>%
-  xlsx::write.xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple language accessibility model.xlsx",sheetName = "model")
-
-xlsx::write.xlsx(tab,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q3.01/simple language accessibility model.xlsx",sheetName = "table",append=T)
-
+modtab_lang <- tbl_regression(model_lang, exponentiate = TRUE)
 ```
