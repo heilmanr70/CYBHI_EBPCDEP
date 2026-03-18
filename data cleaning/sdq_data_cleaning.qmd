@@ -68,7 +68,8 @@ library(zoo)
 # Reads an eInsight assessment CSV export with two-row headers.
 # Returns a cleaned data frame with combined column names and empty columns removed.
 read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A")) {
-  raw <- read_csv(path, na = na_vals, col_names = FALSE, show_col_types = FALSE)
+  raw <- read_csv(path, na = na_vals, col_names = FALSE, show_col_types = FALSE,
+                  col_types = cols(.default = "c"))
 
   h1    <- unlist(raw[1, ], use.names = FALSE)
   h2    <- unlist(raw[2, ], use.names = FALSE)

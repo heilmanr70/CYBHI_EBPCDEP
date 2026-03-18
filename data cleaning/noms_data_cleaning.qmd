@@ -15,8 +15,8 @@ This notebook prepares **CYBHI EBP/CDEP** NOMS (National Outcome Measures) asses
 
 **Data sources (eInsight Individual Assessments exports):**
 
-- **NOMS-child.xlsx** — Caregiver-completed NOMS for child clients.
-- **NOMS-self_report.xlsx** — Client self-report NOMS.
+- **NOMS-child.csv** — Caregiver-completed NOMS for child clients.
+- **NOMS-self_report.csv** — Client self-report NOMS.
 
 Each file has a two-row header: row 1 contains question text, row 2 contains subheader labels (e.g., "Score", "Comments").
 
@@ -50,7 +50,6 @@ Each file has a two-row header: row 1 contains question text, row 2 contains sub
 ```{r setup, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(janitor)
-library(readxl)
 library(zoo)
 ```
 
@@ -59,10 +58,11 @@ library(zoo)
 # Helper Function
 
 ```{r header-helper}
-# Reads an eInsight assessment Excel export with two-row headers.
+# Reads an eInsight assessment CSV export with two-row headers.
 # Returns a cleaned data frame with combined column names and empty columns removed.
-read_assessment_excel <- function(path, na_vals = c("-", "", "NA", "N/A")) {
-  raw <- read_xlsx(path, na = na_vals, col_names = FALSE)
+read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A")) {
+  raw <- read_csv(path, na = na_vals, col_names = FALSE, show_col_types = FALSE,
+                  col_types = cols(.default = "c"))
 
   h1    <- unlist(raw[1, ], use.names = FALSE)
   h2    <- unlist(raw[2, ], use.names = FALSE)
@@ -89,8 +89,8 @@ read_assessment_excel <- function(path, na_vals = c("-", "", "NA", "N/A")) {
 ## 1.1 Read and Score
 
 ```{r noms-child-read}
-noms_child <- read_assessment_excel(
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/NOMS-child.xlsx"
+noms_child <- read_assessment_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/NOMS-child.csv"
 ) |>
   mutate(across(ends_with("_score"), as.numeric)) |>
   rowwise() |>
@@ -105,12 +105,11 @@ noms_child <- read_assessment_excel(
   ) |>
   filter(
     date_completed >= "2024-01-01",
- #   date_completed <= "2025-12-31",
     date_completed <= Sys.Date()
   )
 
 cat("NOMS Child rows after cleaning:", nrow(noms_child), "\n")
-cat("Unique clients:                 ", n_distinct(noms_child$system_id), "\n")
+cat("Unique clients:                 ", n_distinct(noms_child$client_system_id), "\n")
 ```
 
 ## 1.2 Pivot Long
@@ -129,7 +128,7 @@ noms_child_long <- noms_child |>
 
 ```{r noms-child-pair}
 pairs_primary_long <- noms_child_long |>
-  group_by(system_id, question) |>
+  group_by(client_system_id, question) |>
   arrange(date_completed, .by_group = TRUE) |>
   mutate(
     days_since_initial = as.integer(date_completed - first(date_completed)),
@@ -140,7 +139,7 @@ pairs_primary_long <- noms_child_long |>
   filter(is_after3) |>
   slice_tail(n = 1) |>
   transmute(
-    system_id,
+    client_system_id,
     question,
     initial_date,
     initial_score,
@@ -150,7 +149,7 @@ pairs_primary_long <- noms_child_long |>
   )
 
 cat("NOMS Child paired rows: ", nrow(pairs_primary_long), "\n")
-cat("Unique clients paired:  ", n_distinct(pairs_primary_long$system_id), "\n")
+cat("Unique clients paired:  ", n_distinct(pairs_primary_long$client_system_id), "\n")
 cat("Questions covered:      ", n_distinct(pairs_primary_long$question), "\n")
 ```
 
@@ -161,8 +160,8 @@ cat("Questions covered:      ", n_distinct(pairs_primary_long$question), "\n")
 ## 2.1 Read and Score
 
 ```{r noms-self-read}
-noms_self <- read_assessment_excel(
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/NOMS-self_report.xlsx"
+noms_self <- read_assessment_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/NOMS-self_report.csv"
 ) |>
   mutate(across(ends_with("_score"), as.numeric)) |>
   rowwise() |>
