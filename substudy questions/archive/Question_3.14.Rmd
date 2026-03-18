@@ -1,0 +1,203 @@
+---
+title: "Annual Report Data Analysis - Question 3.15"
+author: "Cristin Young"
+date: "2025-05-15"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  html_notebook: default
+---
+
+5/15: THIS CODE IS NOT UPDATED - ONLY ONE PERSON FILLED OUT THE BASIS-24 AS AN ADULT - CY
+
+
+#Read in data
+```{r}
+library(tidyverse)
+library(janitor)
+library(gt)
+
+all_data <- read_csv("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
+```
+
+#3.14 To what extent did adults report reductions in problematic symptoms after receiving the intervention?
+BASIS-24 population sizes: 
+Child (0-15): 27
+Parent/Caregiver: 1
+Youth (16-25): 10
+```{r}
+basis_24 <- all_data %>% 
+  filter(trimmed_pre_assessment_name == "Basis-24")
+
+table(basis_24$client_type, useNA = "ifany")
+```
+
+##Checking missing data
+
+How much data is missing? 
+
+- 67% (n=402/601) of rows have a pre but no post score
+
+- 0 rows have a post score but no pre score
+
+- 33% (n=199/601) of rows have both a pre and post score
+
+```{r}
+pre_no_post <- child_youth %>% 
+  filter(is.na(trimmed_post_assessment_name))
+
+#checking there's no opposite to above (yes post, no pre score)
+post_no_pre <- child_youth %>% 
+  filter(is.na(trimmed_pre_assessment_name) & !is.na(trimmed_post_assessment_name))
+
+pre_post <- child_youth %>% 
+  filter(!is.na(trimmed_pre_assessment_name) & !is.na(trimmed_post_assessment_name))
+```
+
+##do we have any duplicates?
+
+Looks like they're reporting both caregiver AND self-assessment. Keeping only self-assessment right now.
+```{r}
+#how many duplicates are there?
+n_occur <- data.frame(table(pre_post$client_id))
+#how many times do they occur?
+n_occur[n_occur$Freq > 1,]
+#what's the data? 
+duplicates <- pre_post[pre_post$client_id %in% n_occur$Var1[n_occur$Freq > 1],]
+duplicates
+
+#take out caregiver rows; keep only unique rows of data based on trimmed name
+pre_post <- pre_post %>% 
+  filter(!grepl("Caregiver", pre_measure_s)) %>% 
+  distinct(client_id, provider_id, trimmed_pre_assessment_name, pre_score, post_score, .keep_all = TRUE)
+```
+
+
+#checking positive outcome is scored correctly
+```{r}
+pre_post %>% 
+  mutate(result = case_when(
+    pre_score < post_score & positive_outcomes == "Yes" ~ FALSE,
+    TRUE ~ TRUE
+  )) %>% 
+  filter(result == FALSE)
+```
+
+#how many positive outcomes?
+80 / 126 = 63%
+```{r}
+table(pre_post$positive_outcomes)
+```
+
+#how many above clinical cutoff at discharge?
+Clinical cutoff:
+
+  - Self-report: ≥ 30 --> n=29 (from n=55)
+```{r}
+self <- pre_post %>% 
+  filter(pre_measure_s == "YOQ 30.2 Self Report Initial",
+         post_score >= 30)
+
+pre_post %>% 
+  filter(pre_measure_s == "YOQ 30.2 Self Report Initial",
+        pre_score >= 30)
+```
+
+#**RCI**
+
+Let's create a reliable change index to see how many really matter
+```{r, include = FALSE}
+pre_post <- pre_post %>% 
+  mutate(rci = pre_score - post_score)
+```
+
+
+**How many of these scores changed for the better or worse?**
+
+RCI ≤-10 or ≥10 is a reliable change
+
+- 37% (n=46/126) saw reliable change
+- 83% (n=38/46) did reliably better
+- 17% (n=8/46) did reliably worse
+```{r, include = FALSE}
+reliable_change <- pre_post %>% 
+  filter(rci >= 10 | rci <= -10)
+
+#these people did reliably better
+pos_rci <- reliable_change %>% 
+  filter(rci >= 10)
+
+#these people did reliably worse
+neg_rci <- reliable_change %>% 
+  filter(rci <= -10)
+```
+
+#**Some plots for fun**
+
+What's the spread?
+```{r}
+#conditional color formatting
+pre_post$rci_col <- as.factor((pre_post[,34] > 10 | pre_post[,34] <= -10)*1)
+
+pre_post %>% 
+  ggplot(aes(rci)) + 
+  geom_histogram(aes(fill = rci_col), color = "white", binwidth = 4) +
+  theme_classic() +
+  scale_x_continuous(breaks = seq(-25, 50, 5), expand = c(0,0)) +
+  scale_y_continuous(expand = c(0,0))+
+  labs(x = "Reliable Change Index") +
+  scale_fill_manual("Reliable Change Index",
+                    labels = c("no meaningful change (n=80)", "meaningful change (n=46)"), 
+                    values = c("#ABDDDE", "#046C9A"))
+```
+
+##mean and SD of pre and post scores
+```{r}
+#mean and sd of this data
+summary_pre_score <- pre_post %>%
+  summarise(
+    mean_score = mean(pre_score, na.rm = TRUE),
+    median_score = median(pre_score, na.rm = TRUE),
+    sd_score = sd(pre_score, na.rm = TRUE)
+  )
+
+summary_pre_score
+summary_pre_score %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+
+summary_post_score <- pre_post %>%
+  summarise(
+    mean_score = mean(post_score, na.rm = TRUE),
+    median_score = median(post_score, na.rm = TRUE),
+    sd_score = sd(post_score, na.rm = TRUE)
+  )
+
+summary_post_score
+summary_post_score %>% 
+  knitr::kable() %>% 
+  clipr::write_clip()
+```
+
+##do a t test on the data
+```{r}
+t.test(pre_post$pre_score, pre_post$post_score, paired = TRUE)
+```
+##plot pre vs post scores
+```{r}
+pre_post_long <- pre_post %>%
+  ungroup() %>% 
+  select(client_id, pre_score, post_score, pre_time_point, post_time_point) %>% 
+  pivot_longer(
+    cols = -client_id,
+    names_to = c("timepoint", ".value"),
+    names_sep = "_"
+  )
+
+pre_post_long$time <- factor(pre_post_long$time, levels = c("Initial", "Follow up 1", "Follow up 2"))
+
+pre_post_long %>% 
+  ggplot() + 
+  geom_line(aes(time, score, group = client_id, color = factor(client_id)), show.legend = FALSE) 
+```
