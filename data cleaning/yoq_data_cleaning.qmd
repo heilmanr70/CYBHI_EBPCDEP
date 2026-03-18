@@ -1,7 +1,7 @@
 ---
 title: "YOQ Assessment Data Cleaning"
 author: "Cristin Young"
-date: "2026-03-09"
+date: "2026-03-17"
 format:
   html:
     df-print: paged
@@ -35,7 +35,6 @@ This notebook prepares **CYBHI EBP/CDEP** Youth Outcome Questionnaire (YOQ) asse
 
 ## Open Issues / Action Items
 
-- [ ] No date range filter is applied to YOQ (unlike NOMS which filters to 2024–2025). Confirm whether a period filter is needed here.
 - [ ] The `rci_col` variable in the main analysis uses `yoq_caregiver_paired[,7]` (column 7 by position) to identify reliable changers. This is fragile — consider whether to add an explicit named column here for robustness.
 
 ---
@@ -54,9 +53,11 @@ library(janitor)
 Both YOQ files share identical scoring and pairing logic. We define a single helper to avoid duplication.
 
 ```{r yoq-helper}
-# Reads a YOQ CSV, scores items, and returns a wide paired data frame.
+# Reads a YOQ CSV, scores items, filters to the reporting period,
+# and returns a wide paired data frame.
 clean_yoq <- function(path) {
-  raw <- read_csv(path, na = c("-", "", "NA", "N/A"), show_col_types = FALSE) |>
+  raw <- read_csv(path, na = c("-", "", "NA", "N/A"), show_col_types = FALSE,
+                  col_types = cols(.default = "c")) |>
     janitor::clean_names()
 
   scored <- raw |>
@@ -71,9 +72,10 @@ clean_yoq <- function(path) {
       )
     ) |>
     ungroup() |>
-    mutate(
-      date_completed = as.Date(date_completed),
-      row_id         = row_number()
+    mutate(date_completed = as.Date(date_completed)) |>
+    filter(
+      date_completed >= "2024-01-01",
+      date_completed <= Sys.Date()
     ) |>
     select(client_system_id, collection, date_completed, total_score)
 
@@ -81,19 +83,19 @@ clean_yoq <- function(path) {
     group_by(client_system_id) |>
     arrange(date_completed, .by_group = TRUE) |>
     summarise(
-      n_assessments   = n(),
-      initial_date    = first(date_completed),
-      initial_score   = first(total_score),
-      follow_up_date  = if_else(n_assessments >= 2, last(date_completed),  as.Date(NA)),
-      follow_up_score = if_else(n_assessments >= 2, last(total_score),     NA_real_)
+      n_assessments    = n(),
+      initial_date     = first(date_completed),
+      initial_score    = first(total_score),
+      follow_up_date   = if_else(n_assessments >= 2, last(date_completed),  as.Date(NA)),
+      follow_up_score  = if_else(n_assessments >= 2, last(total_score),     NA_real_)
     ) |>
     ungroup() |>
     filter(!is.na(follow_up_date)) |>
     mutate(
       # RCI = baseline − follow-up; positive = doing better (lower distress)
-      rci              = initial_score - follow_up_score,
-      reliably_better  = rci >= 10,
-      initial_quarter  = paste0("Q", quarter(initial_date),    " ", year(initial_date)),
+      rci               = initial_score - follow_up_score,
+      reliably_better   = rci >= 10,
+      initial_quarter   = paste0("Q", quarter(initial_date),    " ", year(initial_date)),
       follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))
     )
 }
@@ -113,9 +115,9 @@ cat("YOQ Caregiver paired clients:", nrow(yoq_caregiver_paired), "\n")
 yoq_caregiver_paired |>
   filter(!is.na(reliably_better), rci != 0) |>
   summarise(
-    n             = n(),
-    n_better      = sum(reliably_better),
-    pct_better    = round(100 * n_better / n, 1)
+    n          = n(),
+    n_better   = sum(reliably_better),
+    pct_better = round(100 * n_better / n, 1)
   )
 ```
 
@@ -151,3 +153,4 @@ write_csv(yoq_self_paired,      file.path(out_dir, "yoq_self_paired_clean.csv"))
 
 cat("CSVs written successfully.\n")
 ```
+
