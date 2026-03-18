@@ -1,7 +1,7 @@
 ---
 title: "Satisfaction Survey Data Cleaning"
 author: "Cristin Young"
-date: "2026-03-09"
+date: "2026-03-17"
 format:
   html:
     df-print: paged
@@ -15,30 +15,28 @@ This notebook prepares **CYBHI EBP/CDEP** satisfaction survey data for analysis 
 
 **Data sources (eInsight exports):**
 
-- **Satisfaction Survey — Caregiver** — Respondents who are caregivers of a child receiving services.
-- **Satisfaction Survey — Child (13–17)** — Respondents who are youth ages 13–17.
-- **Satisfaction Survey — Adult (18–59)** — Respondents who are adults ages 18–59.
-- **Satisfaction Survey — Adult (60+)** — Respondents who are older adults age 60 and above.
+-   **Satisfaction Survey — Caregiver** — Respondents who are caregivers of a child receiving services.
+-   **Satisfaction Survey — Child (13–17)** — Respondents who are youth ages 13–17.
+-   **Satisfaction Survey — Adult (18–59)** — Respondents who are adults ages 18–59.
+-   **Satisfaction Survey — Adult (60+)** — Respondents who are older adults age 60 and above.
 
 Each file has a two-row header: row 1 contains question text (with merged cells exported as `NA`), and row 2 contains subheader labels (e.g., "Rating", "Comments"). These are combined into clean column names using `zoo::na.locf()` to forward-fill the question text across merged cells.
 
 **Outputs:**
 
 | File | Contents |
-|------|----------|
+|----|----|
 | `satisfaction_caregiver_clean.csv` | Cleaned caregiver survey responses |
 | `satisfaction_child_clean.csv` | Cleaned child (13–17) survey responses |
 | `satisfaction_adult_clean.csv` | Cleaned adult (18–59) survey responses |
 | `satisfaction_senior_clean.csv` | Cleaned adult (60+) survey responses |
 | `combined_satisfaction_clean.csv` | All four surveys combined, with cleaned dates, period filter, `year`, and `quarter_label` — **primary input for downstream analysis** |
 
----
+------------------------------------------------------------------------
 
 ## Open Issues / Action Items
 
-- [ ] The `0` value is treated as `NA` on read (see `na` argument below). Confirm this is appropriate for all columns; a legitimate "0" response would be silently dropped.
-
----
+------------------------------------------------------------------------
 
 # Setup
 
@@ -48,7 +46,7 @@ library(janitor)
 library(zoo)
 ```
 
----
+------------------------------------------------------------------------
 
 # Helper Function
 
@@ -56,24 +54,20 @@ The header-processing logic is identical across all four survey files. We define
 
 ```{r header-helper}
 # Reads a satisfaction survey CSV with two-row headers and returns a clean
-# data frame with combined column names. Rows marked as DEMO are filtered out.
-read_satisfaction_survey <- function(path) {
-  raw <- read_csv(
-    path,
-    na = c("-", "", "NA", "N/A", "0"),
-    col_names = FALSE,
-    show_col_types = FALSE
-  )
+# data frame with combined column names and empty columns removed.
+# Rows marked as DEMO are filtered out.
+read_satisfaction_survey <- function(path, na_vals = c("-", "", "NA", "N/A")) {
+  raw <- read_csv(path, na = na_vals, col_names = FALSE, show_col_types = FALSE,
+                  col_types = cols(.default = "c"))
 
-  h1    <- unlist(raw[1, ], use.names = FALSE)   # question text row
-  h2    <- unlist(raw[2, ], use.names = FALSE)   # subheaders
-  h1_ff <- na.locf(h1, na.rm = FALSE)            # forward-fill NAs across merged cells
-  h1_ff <- str_squish(h1_ff)
+  h1    <- unlist(raw[1, ], use.names = FALSE)
+  h2    <- unlist(raw[2, ], use.names = FALSE)
+  h1_ff <- na.locf(h1, na.rm = FALSE) |> str_squish()
 
   new_names <- ifelse(
     is.na(h1_ff) | h1_ff == "",
-    h2,                               # keep subheader only when no question text
-    paste(h1_ff, h2, sep = " - ")     # combine question text + subheader
+    h2,
+    paste(h1_ff, h2, sep = " - ")
   )
   new_names <- janitor::make_clean_names(new_names)
 
@@ -81,11 +75,12 @@ read_satisfaction_survey <- function(path) {
   names(df) <- new_names
 
   df |>
+    select(where(~ !all(is.na(.)))) |>
     filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
 }
 ```
 
----
+------------------------------------------------------------------------
 
 # 1. Read and Clean Survey Files
 
@@ -129,7 +124,7 @@ senior <- read_satisfaction_survey(
 cat("Senior rows:", nrow(senior), "\n")
 ```
 
----
+------------------------------------------------------------------------
 
 # 2. Quick Checks
 
@@ -140,15 +135,15 @@ surveys <- list(caregiver = caregiver, child = child, adult = adult, senior = se
 
 purrr::imap_dfr(surveys, ~ {
   tibble(
-    survey      = .y,
-    n_rows      = nrow(.x),
-    n_demo      = sum(str_detect(as.character(.x$provider_id), "DEMO"), na.rm = TRUE),
+    survey       = .y,
+    n_rows       = nrow(.x),
+    n_demo       = sum(str_detect(as.character(.x$provider_id), "DEMO"), na.rm = TRUE),
     n_missing_id = sum(is.na(.x$client_system_id))
   )
 })
 ```
 
----
+------------------------------------------------------------------------
 
 # 3. Create Combined Dataset
 
@@ -156,7 +151,7 @@ Bind all four survey types into a single data frame, clean malformed dates, filt
 
 **Date cleaning rationale:** Some date_completed values have year prefixes of `00` or `29` (e.g., "0024-03-15" or "2924-03-15"), likely from data entry errors in eInsight. These are corrected to `20` before converting to Date.
 
-**Period filter:** Rows with no valid date or with `date_clean > "2025-12-30"` are excluded.
+**Period filter:** Rows with no valid date, with `date_clean < "2024-01-01"`, or with `date_clean > today` are excluded.
 
 ```{r create-combined}
 combined_all <- bind_rows(
@@ -170,10 +165,11 @@ combined_all <- bind_rows(
     date_clean = str_replace(date_clean,     "^29", "20"),
     date_clean = as.Date(date_clean)
   ) |>
-  # filter(
-  #   !is.na(date_clean),
-  #   date_clean <= "2025-12-30"
-  # ) |>
+  filter(
+    !is.na(date_clean),
+    date_clean >= "2024-01-01",
+    date_clean <= Sys.Date()
+  ) |>
   mutate(
     year          = year(date_clean),
     quarter_label = paste0("Q", quarter(date_clean), " ", year(date_clean))
@@ -182,12 +178,12 @@ combined_all <- bind_rows(
   arrange(date_clean)
 
 cat("Combined rows:", nrow(combined_all), "\n")
-cat("Date range:   ", format(min(combined_all$date_clean)), "to",
-                      format(max(combined_all$date_clean)), "\n")
-cat("Sources:      ", paste(sort(unique(combined_all$source)), collapse = ", "), "\n")
+cat("Date range:   ", format(min(combined_all$date_clean, na.rm = TRUE)), "to",
+                      format(max(combined_all$date_clean, na.rm = TRUE)), "\n")
+cat("Missing dates:", sum(is.na(combined_all$date_clean)), "\n")
 ```
 
----
+------------------------------------------------------------------------
 
 # 4. Write Clean CSVs
 

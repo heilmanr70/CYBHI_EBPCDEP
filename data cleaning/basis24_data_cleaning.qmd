@@ -31,7 +31,7 @@ The items comprising each subscale are as follows: - Depression/Functioning: 1,2
 **Output:**
 
 | File | Contents |
-|----|----|
+|------------------------------------|------------------------------------|
 | `basis24_paired_clean.csv` | One row per client: initial/follow-up scores, `positive_outcome`, `score_change`, quarter labels |
 
 ------------------------------------------------------------------------
