@@ -1,0 +1,86 @@
+---
+title: "Annual Report Data Analysis - Question 4.01"
+author: "Tristan Burgess and Cristin Young"
+date: "`r Sys.Date()`"
+output:
+  html_notebook: default
+  word_document: default
+  html_document: default
+  pdf_document: default
+editor_options:
+  chunk_output_type: inline
+  markdown:
+    wrap: 72
+---
+
+# 4. What percentage of clients reported high satisfaction with services?
+
+```{r setup}
+#| echo: false
+#| warning: false
+#| message: false
+library(tidyverse)
+library(janitor)
+library(ggridges)
+library(scales)
+```
+
+```{r load_data}
+#| echo: false
+#| warning: false
+#| message: false
+assess_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+# Produced by data cleaning/satisfaction_data_cleaning.qmd
+sat_combined <- read_csv(
+  file.path(assess_dir, "combined_satisfaction_clean.csv"),
+  show_col_types = FALSE
+) |>
+  filter(
+    !is.na(date_clean)
+  ) |>
+  mutate(quarter_label = factor(quarter_label, levels = unique(quarter_label)))
+```
+
+## 4.01 What percentage of clients reported receiving services in their preferred language?
+
+**Definition:** Clients from the primary evaluation who indicate services received in their preferred language on the satisfaction survey divided by the total number of clients served by the grantees who completed a satisfaction survey after an intervention during the designated time frame.
+
+**Calculation:** This KPI represents the percent of clients that report services received in their preferred language on the satisfaction survey out of the total that completed the satisfaction survey by period(s).
+
+**Assumptions:** I cleaned dates with "002X" and "292X" and replaced them with "202X." I also filtered dates in the future (<= "2025-12-31"). I filtered out NAs for both the quarter label and the question first before calculating %.
+
+The following table shows the percent of clients who received services in their preferred language on the satisfaction survey by quarter:
+
+```{r preferred_language}
+#| echo: false
+#| warning: false
+#| message: false
+client_lang_all <- sat_combined |>
+  rename(lang_pref = were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) |>
+  filter(
+    !is.na(quarter_label),
+    !is.na(lang_pref)
+  )
+
+# By quarter
+client_lang_all |>
+  tabyl(quarter_label, lang_pref) |>
+  adorn_totals("row") |>
+  adorn_percentages("row") |>
+  adorn_pct_formatting(digits = 0) |>
+  adorn_ns()
+
+# By year
+client_lang_all |>
+  tabyl(year, lang_pref) |>
+  adorn_totals("row") |>
+  adorn_percentages("row") |>
+  adorn_pct_formatting(digits = 0) |>
+  adorn_ns()
+
+# Overall
+client_lang_all |>
+  tabyl(lang_pref) |>
+  adorn_pct_formatting(digits = 1)
+```

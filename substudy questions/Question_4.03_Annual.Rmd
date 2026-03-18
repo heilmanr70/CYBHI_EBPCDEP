@@ -1,5 +1,5 @@
 ---
-title: "Annual Report Data Analysis - Question 4.02"
+title: "Annual Report Data Analysis - Question 4.03"
 author: "Tristan Burgess and Cristin Young"
 date: "`r Sys.Date()`"
 output:
@@ -42,7 +42,7 @@ sat_combined <- read_csv(
   mutate(quarter_label = factor(quarter_label, levels = unique(quarter_label)))
 ```
 
-## 4.02 What, if any, factors predicted high satisfaction with services ratings by clients?
+## 4.03 Within the grantees doing CDEPs, were there higher client satisfaction rates among specific target populations?
 
 **Definition:** 
 
@@ -50,4 +50,5 @@ sat_combined <- read_csv(
 
 **Assumptions:** 
 
-**Final analysis:** Regression - outcomes = high satisfaction (4/5 vs other). Same predictors as for 3.01
+**Final analysis:** Regression - outcomes = high satisfaction (4/5 vs other). Same predictors as for 3.01; subset for CDEPs from SPSS file
+

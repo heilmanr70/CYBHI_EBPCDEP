@@ -1,0 +1,202 @@
+---
+title: "Annual Report Data Analysis - Question 3.14"
+author: "Tristan Burgess and Cristin Young"
+date: "`r Sys.Date()`"
+output:
+  html_notebook: default
+  word_document: default
+  html_document: default
+  pdf_document: default
+editor_options:
+  chunk_output_type: inline
+  markdown:
+    wrap: 72
+---
+
+# 3. Did EBP/CDEP services impact clinical and functional outcomes for clients who participated?
+
+**Inclusion criteria:** 1. must have initial time point data (i.e., be enrolled in an intervention), 2. must have a valid assessment collected at both intake and discharge time points, and 3. limited to tools with a clinical cut-off.
+
+**Scoring:** An **increase** in score indicates a positive outcome. There are no benchmarks or clinical cutoffs established for NOMS scoring — if the follow-up assessment score is higher than the initial score, a positive outcome is indicated.
+
+**Assumptions:** Filtered out dates before 2024-01-01 and after the date the code was run. Filtered data that's \>3 days from initial assessment and paired to the LAST follow-up. Filtered positive outcomes that had NAs before computing %.
+
+```{r setup}
+#| echo: false
+#| warning: false
+#| message: false
+library(tidyverse)
+library(janitor)
+library(ggridges)
+library(scales)
+```
+
+```{r load_data}
+#| echo: false
+#| warning: false
+#| message: false
+assess_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+# Produced by data cleaning/basis24_data_cleaning.qmd
+basis24_paired <- read_csv(
+  file.path(assess_dir, "basis24_paired_clean.csv"),
+  show_col_types = FALSE
+)
+```
+
+## 3.14 To what extent did adults report reductions in problematic symptoms after receiving the intervention?
+
+**Definition:** Basis-24 item(s) measuring reduction in parent/caregiver-related problematic symptoms after the intervention. Assessments showing improvement from pre- to post-time point for clients who discharged from an intervention during the designated time frame.
+
+**Calculation:** Sum of Q1-Q24 (reverse Q4-Q9); this KPI represents the percent of assessments that show clients who have improvement from pre-post time points out of the total number of assessments from clients who discharge from the intervention and complete pre-post measures by period(s).
+
+**Scoring:** Each item is rated on a five-point scale from 0, indicating the lowest severity of symptoms, to 4, indicating greatest severity of symptoms. It is important to note that the **rating values for items 4 through 9 are reversed**. Subscale and overall mean scores also range from 0 to 4. The overall range for this 24-item questionnaire is 0-96, with **higher global scores indicating greater functional impairment (lower is better)**.
+
+The six distinct subscales are calculated by summing up and then dividing by the number of non-missing items for that subscale. An overall mean score is also calculated. For example, the Depression/Functioning subscale consists of six items. If the respondent answers all items in this subscale, then the subscale score is the mean of all six items. If one item is omitted, then the subscale score is the sum rating of the items answered, divided by five.
+
+There are no specified clinical cutoffs for the BASIS-24. Subjective interpretation of scores is made by the provider based on patient history and further investigation of reported symptoms.
+
+**Assumptions:** used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
+
+**Range:** 0-96
+
+```{r basis24_summary}
+#| echo: false
+#| warning: false
+#| message: false
+basis24_paired |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+```
+
+Plot it.
+
+```{r basis24_bar_plot}
+#| echo: false
+#| warning: false
+#| message: false
+basis24_paired_long <- basis24_paired |>
+  ungroup() |>
+  filter(
+    !is.na(client_system_id),
+    !is.na(initial_score),
+    !is.na(follow_up_score)
+  ) |>
+  select(client_system_id, initial_score, follow_up_score) |>
+  pivot_longer(
+    cols      = c(initial_score, follow_up_score),
+    names_to  = "score_type",
+    values_to = "score_value"
+  ) |>
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score"   = "Initial",
+                        "follow_up_score" = "Follow-up"),
+    score_type = factor(score_type, levels = c("Initial", "Follow-up"))
+  )
+
+ggplot(basis24_paired_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width    = 0.8,
+    alpha    = 0.8
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    x     = "Score",
+    y     = "Count",
+    title = "Distribution of Initial and Follow-up Scores, Basis-24"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.title           = element_text(size = 9),
+    axis.text            = element_text(size = 9),
+    panel.grid.major     = element_blank(),
+    panel.grid.minor.x   = element_blank(),
+    axis.line.x          = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position      = "inside",
+    legend.justification = c("left", "top"),
+    legend.title         = element_blank(),
+    legend.text          = element_text(size = 8),
+    plot.margin          = margin(5, 5, 5, 5)
+  )
+```
+
+Ridgeline plot
+
+```{r basis24_ridgeline}
+#| echo: false
+#| warning: false
+#| message: false
+summary_stats_basis24 <- basis24_paired_long |>
+  group_by(score_type) |>
+  summarise(
+    mean_score   = mean(score_value, na.rm = TRUE),
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score     = sd(score_value, na.rm = TRUE),
+    n            = sum(!is.na(score_value))
+  ) |>
+  mutate(y_text = if_else(score_type == "Follow-up", 1.0375, 1.04))
+
+summary_stats_basis24
+#clipr::write_clip(summary_stats_basis24)
+
+ggplot(basis24_paired_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha          = 0.7,
+    scale          = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    x     = "Basis-24 Total Score",
+    y     = NULL,
+    title = "Distribution of Initial and Follow-up Scores, Basis-24 (lower is better)"
+  ) +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x         = element_text(size = 9, hjust = 0.5),
+    axis.text.y          = element_blank(),
+    axis.text.x          = element_text(size = 9),
+    panel.grid           = element_blank(),
+    axis.ticks.y         = element_blank(),
+    axis.line.x          = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position      = "inside",
+    legend.justification = c("left", "top"),
+    legend.title         = element_blank(),
+    legend.text          = element_text(size = 8),
+    plot.margin          = margin(5, 5, 5, 5),
+    plot.title           = element_text(size = 11)
+  ) +
+  geom_segment(
+    data     = summary_stats_basis24,
+    aes(x = median_score, y = 1, xend = median_score, yend = 1.035),
+    color    = "grey30",
+    linetype = "dotted"
+  ) +
+  geom_text(
+    data = summary_stats_basis24,
+    aes(x     = median_score,
+        y     = y_text,
+        label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+    vjust = 2,
+    hjust = 0.5,
+    size  = 2
+  )
+```
