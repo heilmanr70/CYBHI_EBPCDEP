@@ -34,7 +34,7 @@ Each file has a two-row header: row 1 contains question text, row 2 contains sub
 **Outputs:**
 
 | File | Contents |
-|----|----|
+|------------------------------------|------------------------------------|
 | `sdq_p24_pairs_clean.csv` | One row per client: initial/follow-up total and externalizing scores, Parent SDQ 2–4 |
 | `sdq_p410_pairs_clean.csv` | Same, Parent SDQ 4–10 |
 | `sdq_p1117_pairs_clean.csv` | Same, Parent SDQ 11–17 |
@@ -44,7 +44,6 @@ Each file has a two-row header: row 1 contains question text, row 2 contains sub
 
 ## Open Issues / Action Items
 
--   [ ] Date filter lower bound: P2-4, P4-10, and P11-17 are filtered to `<= "2025-12-31"` in the original analysis file but have no lower bound. S11-17 filters to `2024-01-01`–`2025-12-31`. Confirm consistent reporting window for all four versions.
 -   [ ] Pairing uses the last available assessment as the follow-up (no minimum gap enforced). Confirm whether a minimum gap (e.g., \>3 days, as used in NOMS) should be applied here.
 -   [ ] Impact supplement items are present in the raw files but have all-NA score columns. Confirm whether these should be retained, removed, or flagged.
 
@@ -94,6 +93,8 @@ read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A")) {
 ```{r score-helper}
 # Applies SDQ scoring to a cleaned data frame using a question lookup table.
 # Produces total_score, externalizing_score, and cut-off band columns.
+# Response columns are recoded from text to numeric:
+#   Not True = 0, Somewhat True = 1, Certainly True = 2
 score_sdq <- function(df, lookup, cutoffs_total, cutoffs_externalizing,
                       rev_items, exclude_items, externalizing_items) {
 
@@ -105,7 +106,11 @@ score_sdq <- function(df, lookup, cutoffs_total, cutoffs_externalizing,
   df <- df |>
     select(all_of(meta_cols), all_of(lookup$column_name)) |>
     rename_with(~ lookup$new_name, all_of(lookup$column_name)) |>
-    mutate(across(all_of(lookup$new_name), as.numeric))
+    mutate(across(
+      all_of(lookup$new_name),
+      ~ as.numeric(c("Not True" = 0, "Somewhat True" = 1, "Certainly True" = 2,
+                     "0" = 0, "1" = 1, "2" = 2)[.x])
+    ))
 
   included  <- lookup |> filter(item %in% 1:25, !item %in% exclude_items)
   rev_cols  <- included$new_name[included$item %in% rev_items]
@@ -177,24 +182,36 @@ pair_sdq <- function(df) {
     group_by(client_system_id) |>
     arrange(date_completed, .by_group = TRUE) |>
     summarise(
-      n_assessments       = n(),
-      initial_date        = first(date_completed),
-      follow_up_date      = if_else(n_assessments >= 2, last(date_completed),  as.Date(NA)),
-      initial_total       = first(total_score),
-      follow_up_total     = if_else(n_assessments >= 2, last(total_score),      NA_real_),
-      initial_ext         = first(externalizing_score),
-      follow_up_ext       = if_else(n_assessments >= 2, last(externalizing_score), NA_real_),
-      initial_total_band  = first(cut_off_band),
-      follow_up_total_band = if_else(n_assessments >= 2, last(cut_off_band),   NA_character_),
+      n_assessments        = n(),
+      initial_date         = first(date_completed),
+      follow_up_date       = if_else(n_assessments >= 2, last(date_completed),  as.Date(NA)),
+      initial_total        = first(total_score),
+      follow_up_total      = if_else(n_assessments >= 2, last(total_score),         NA_real_),
+      initial_ext          = first(externalizing_score),
+      follow_up_ext        = if_else(n_assessments >= 2, last(externalizing_score), NA_real_),
+      initial_total_band   = first(cut_off_band),
+      follow_up_total_band = if_else(n_assessments >= 2, last(cut_off_band),    NA_character_),
       .groups = "drop"
     ) |>
     filter(!is.na(follow_up_date)) |>
     mutate(
-      days_since_initial      = as.integer(follow_up_date - initial_date),
-      positive_outcome_total  = if_else(follow_up_total  < initial_total,  1L, 0L),
-      positive_outcome_ext    = if_else(follow_up_ext    < initial_ext,    1L, 0L),
-      initial_quarter         = paste0("Q", lubridate::quarter(initial_date),    " ", lubridate::year(initial_date)),
-      follow_up_quarter       = paste0("Q", lubridate::quarter(follow_up_date),  " ", lubridate::year(follow_up_date))
+      days_since_initial = as.integer(follow_up_date - initial_date),
+      # Lower follow-up = positive outcome (lower difficulties score is better)
+      # 1 = improved, 0 = no change, -1 = worsened
+      positive_outcome_total = case_when(
+        follow_up_total <  initial_total ~ 1L,
+        follow_up_total == initial_total ~ 0L,
+        follow_up_total >  initial_total ~ -1L
+      ),
+      positive_outcome_ext = case_when(
+        follow_up_ext <  initial_ext ~ 1L,
+        follow_up_ext == initial_ext ~ 0L,
+        follow_up_ext >  initial_ext ~ -1L
+      ),
+      score_change_total = follow_up_total - initial_total,
+      score_change_ext   = follow_up_ext   - initial_ext,
+      initial_quarter    = paste0("Q", lubridate::quarter(initial_date), " ", lubridate::year(initial_date)),
+      follow_up_quarter  = paste0("Q", lubridate::quarter(follow_up_date), " ", lubridate::year(follow_up_date))
     )
 }
 ```
@@ -296,7 +313,8 @@ cutoffs_ext_S1117 <- list(
 sdq_P24 <- read_assessment_csv(
   "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ P2-4.csv"
 ) |>
-  filter(date_completed >= "2024-01-01", date_completed <= Sys.Date()) |>
+  filter(date_completed >= "2024-01-01", 
+         date_completed <= Sys.Date()) |>
   score_sdq(
     lookup                = sdq_24_questions,
     cutoffs_total         = cutoffs_total_P24,
@@ -318,6 +336,21 @@ sdq_P24_pairs <- pair_sdq(sdq_P24)
 
 cat("SDQ P2-4 paired rows:         ", nrow(sdq_P24_pairs), "\n")
 cat("Unique clients paired:        ", n_distinct(sdq_P24_pairs$client_system_id), "\n")
+
+sdq_P24_pairs |>
+  summarise(
+    n_paired                  = n(),
+    n_improved_total          = sum(positive_outcome_total ==  1, na.rm = TRUE),
+    n_no_change_total         = sum(positive_outcome_total ==  0, na.rm = TRUE),
+    n_worsened_total          = sum(positive_outcome_total == -1, na.rm = TRUE),
+    pct_improved_total        = round(100 * n_improved_total / n_paired, 1),
+    n_missing_outcome_total   = sum(is.na(positive_outcome_total)),
+    n_improved_ext            = sum(positive_outcome_ext ==  1, na.rm = TRUE),
+    n_no_change_ext           = sum(positive_outcome_ext ==  0, na.rm = TRUE),
+    n_worsened_ext            = sum(positive_outcome_ext == -1, na.rm = TRUE),
+    pct_improved_ext          = round(100 * n_improved_ext / n_paired, 1),
+    n_missing_outcome_ext     = sum(is.na(positive_outcome_ext))
+  )
 ```
 
 ------------------------------------------------------------------------
@@ -330,7 +363,8 @@ cat("Unique clients paired:        ", n_distinct(sdq_P24_pairs$client_system_id)
 sdq_P410 <- read_assessment_csv(
   "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ P4-10.csv"
 ) |>
-  filter(date_completed >= "2024-01-01", date_completed <= Sys.Date()) |>
+  filter(date_completed >= "2024-01-01", 
+         date_completed <= Sys.Date()) |>
   score_sdq(
     lookup                = sdq_410_questions,
     cutoffs_total         = cutoffs_total_P410,
@@ -352,6 +386,21 @@ sdq_P410_pairs <- pair_sdq(sdq_P410)
 
 cat("SDQ P4-10 paired rows:        ", nrow(sdq_P410_pairs), "\n")
 cat("Unique clients paired:        ", n_distinct(sdq_P410_pairs$client_system_id), "\n")
+
+sdq_P410_pairs |>
+  summarise(
+    n_paired                  = n(),
+    n_improved_total          = sum(positive_outcome_total ==  1, na.rm = TRUE),
+    n_no_change_total         = sum(positive_outcome_total ==  0, na.rm = TRUE),
+    n_worsened_total          = sum(positive_outcome_total == -1, na.rm = TRUE),
+    pct_improved_total        = round(100 * n_improved_total / n_paired, 1),
+    n_missing_outcome_total   = sum(is.na(positive_outcome_total)),
+    n_improved_ext            = sum(positive_outcome_ext ==  1, na.rm = TRUE),
+    n_no_change_ext           = sum(positive_outcome_ext ==  0, na.rm = TRUE),
+    n_worsened_ext            = sum(positive_outcome_ext == -1, na.rm = TRUE),
+    pct_improved_ext          = round(100 * n_improved_ext / n_paired, 1),
+    n_missing_outcome_ext     = sum(is.na(positive_outcome_ext))
+  )
 ```
 
 ------------------------------------------------------------------------
@@ -364,7 +413,8 @@ cat("Unique clients paired:        ", n_distinct(sdq_P410_pairs$client_system_id
 sdq_P1117 <- read_assessment_csv(
   "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ P11-17.csv"
 ) |>
-  filter(date_completed >= "2024-01-01", date_completed <= Sys.Date()) |>
+  filter(date_completed >= "2024-01-01", 
+         date_completed <= Sys.Date()) |>
   score_sdq(
     lookup                = sdq_1117_questions,
     cutoffs_total         = cutoffs_total_P1117,
@@ -386,6 +436,21 @@ sdq_P1117_pairs <- pair_sdq(sdq_P1117)
 
 cat("SDQ P11-17 paired rows:       ", nrow(sdq_P1117_pairs), "\n")
 cat("Unique clients paired:        ", n_distinct(sdq_P1117_pairs$client_system_id), "\n")
+
+sdq_P1117_pairs |>
+  summarise(
+    n_paired                  = n(),
+    n_improved_total          = sum(positive_outcome_total ==  1, na.rm = TRUE),
+    n_no_change_total         = sum(positive_outcome_total ==  0, na.rm = TRUE),
+    n_worsened_total          = sum(positive_outcome_total == -1, na.rm = TRUE),
+    pct_improved_total        = round(100 * n_improved_total / n_paired, 1),
+    n_missing_outcome_total   = sum(is.na(positive_outcome_total)),
+    n_improved_ext            = sum(positive_outcome_ext ==  1, na.rm = TRUE),
+    n_no_change_ext           = sum(positive_outcome_ext ==  0, na.rm = TRUE),
+    n_worsened_ext            = sum(positive_outcome_ext == -1, na.rm = TRUE),
+    pct_improved_ext          = round(100 * n_improved_ext / n_paired, 1),
+    n_missing_outcome_ext     = sum(is.na(positive_outcome_ext))
+  )
 ```
 
 ------------------------------------------------------------------------
@@ -398,7 +463,8 @@ cat("Unique clients paired:        ", n_distinct(sdq_P1117_pairs$client_system_i
 sdq_S1117 <- read_assessment_csv(
   "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ S11-17.csv"
 ) |>
-  filter(date_completed >= "2024-01-01", date_completed <= Sys.Date()) |>
+  filter(date_completed >= "2024-01-01", 
+         date_completed <= Sys.Date()) |>
   score_sdq(
     lookup                = sdq_1117_self_questions,
     cutoffs_total         = cutoffs_total_S1117,
@@ -420,6 +486,21 @@ sdq_S1117_pairs <- pair_sdq(sdq_S1117)
 
 cat("SDQ S11-17 paired rows:       ", nrow(sdq_S1117_pairs), "\n")
 cat("Unique clients paired:        ", n_distinct(sdq_S1117_pairs$client_system_id), "\n")
+
+sdq_S1117_pairs |>
+  summarise(
+    n_paired                  = n(),
+    n_improved_total          = sum(positive_outcome_total ==  1, na.rm = TRUE),
+    n_no_change_total         = sum(positive_outcome_total ==  0, na.rm = TRUE),
+    n_worsened_total          = sum(positive_outcome_total == -1, na.rm = TRUE),
+    pct_improved_total        = round(100 * n_improved_total / n_paired, 1),
+    n_missing_outcome_total   = sum(is.na(positive_outcome_total)),
+    n_improved_ext            = sum(positive_outcome_ext ==  1, na.rm = TRUE),
+    n_no_change_ext           = sum(positive_outcome_ext ==  0, na.rm = TRUE),
+    n_worsened_ext            = sum(positive_outcome_ext == -1, na.rm = TRUE),
+    pct_improved_ext          = round(100 * n_improved_ext / n_paired, 1),
+    n_missing_outcome_ext     = sum(is.na(positive_outcome_ext))
+  )
 ```
 
 ------------------------------------------------------------------------
