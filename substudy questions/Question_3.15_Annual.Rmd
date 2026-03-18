@@ -1,0 +1,355 @@
+---
+title: "Annual Report Data Analysis - Question 3.15"
+author: "Tristan Burgess and Cristin Young"
+date: "`r Sys.Date()`"
+output:
+  html_notebook: default
+  word_document: default
+  html_document: default
+  pdf_document: default
+editor_options:
+  chunk_output_type: inline
+  markdown:
+    wrap: 72
+---
+
+# 3. Did EBP/CDEP services impact clinical and functional outcomes for clients who participated?
+
+```{r setup}
+#| echo: false
+#| warning: false
+#| message: false
+library(tidyverse)
+library(janitor)
+library(ggridges)
+library(scales)
+```
+
+```{r load_data}
+#| echo: false
+#| warning: false
+#| message: false
+assess_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+# Produced by data cleaning/cpss5_data_cleaning.qmd
+cpss_i_paired <- read_csv(
+  file.path(assess_dir, "cpss_i_paired_clean.csv"),
+  show_col_types = FALSE
+)
+
+cpss_s_paired <- read_csv(
+  file.path(assess_dir, "cpss_s_paired_clean.csv"),
+  show_col_types = FALSE
+)
+```
+
+## 3.15 To what extent did children/youth report reductions in PTSD symptoms/PTSD symptom severity after the intervention?
+
+**Definition:** CPSS-5 item(s) measuring reduction in child/youth report of reductions in PTSD symptoms/severity after the intervention. Assessments showing improvement from pre- to post-time point for clients who discharged from an intervention during the designated time frame.
+
+The CPSS-5-I is a 27-item semi-structured interview that assesses PTSD DSM-5 diagnosis and symptom severity in the past month based on interviewer ratings. The CPSS-5-I assesses history of Criterion A traumatic experiences to identify an index trauma. Next, the 20 items assessing DSM-5 PTSD symptoms are presented. The interviewer rates each item from 0 (not at all) to 4 (6 or more times a week/almost always) based on the frequency and severity of the reported symptom experienced in the past month related to the index trauma. Finally, seven items assess impairment of endorsed symptoms on daily functioning pertinent to youth (e.g., fun things you want to do, doing your chores, relationships with your friends).
+
+**Calculation:** Sum of Q1-Q20; this KPI represents the percent of assessments that show clients who have improvement from pre-post time points out of the total number of assessments from clients who discharge from the intervention and complete pre-post measures by period(s).
+
+**Scoring:** The total severity score ranges from 0 to 80 and is calculated by summing the ratings of the first 20 items. **Higher scores indicate greater severity of symptoms (lower scores are better).** A cut off score of 31 can be used for identifying a probable PTSD diagnosis in children.
+
+"Child PTSD Symptom Scale (CPSS): https://www.tandfonline.com/doi/10.1080/15374416.2017.1350962
+
+Child and Adolescent Trauma Scale (CATS): https://istss.org/clinical-resources/child-adolescent-trauma-assessments/child-and-adolescent-trauma-screen/"
+
+**Assumptions:** used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
+
+**Range:** 0-80
+
+**Final analysis:** Regression - outcome = binary (positive or clincal cutoff met). Predictors as for 3.01
+
+### Interviewer version
+
+```{r cpss_i_summary}
+#| echo: false
+#| warning: false
+#| message: false
+cpss_i_paired |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+```
+
+Plot it.
+
+```{r cpss_i_bar_plot}
+#| echo: false
+#| warning: false
+#| message: false
+cpss_i_paired_long <- cpss_i_paired |>
+  ungroup() |>
+  filter(
+    !is.na(client_system_id),
+    !is.na(initial_score),
+    !is.na(follow_up_score)
+  ) |>
+  select(client_system_id, initial_score, follow_up_score) |>
+  pivot_longer(
+    cols      = c(initial_score, follow_up_score),
+    names_to  = "score_type",
+    values_to = "score_value"
+  ) |>
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score"   = "Initial",
+                        "follow_up_score" = "Follow-up"),
+    score_type = factor(score_type, levels = c("Initial", "Follow-up"))
+  )
+
+ggplot(cpss_i_paired_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width    = 0.8,
+    alpha    = 0.8
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    x     = "Score",
+    y     = "Count",
+    title = "Distribution of Initial and Follow-up Scores, CPSS-5 Interviewer Version"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.title           = element_text(size = 9),
+    axis.text            = element_text(size = 9),
+    panel.grid.major     = element_blank(),
+    panel.grid.minor.x   = element_blank(),
+    axis.line.x          = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position      = "inside",
+    legend.justification = c("left", "top"),
+    legend.title         = element_blank(),
+    legend.text          = element_text(size = 8),
+    plot.margin          = margin(5, 5, 5, 5)
+  )
+```
+
+Ridgeline plot
+
+```{r cpss_i_ridgeline}
+#| echo: false
+#| warning: false
+#| message: false
+summary_stats_cpss_i <- cpss_i_paired_long |>
+  group_by(score_type) |>
+  summarise(
+    mean_score   = mean(score_value, na.rm = TRUE),
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score     = sd(score_value, na.rm = TRUE),
+    n            = sum(!is.na(score_value))
+  )
+
+summary_stats_cpss_i
+#clipr::write_clip(summary_stats_cpss_i)
+
+ggplot(cpss_i_paired_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha          = 0.7,
+    scale          = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    x     = "CPSS Interviewer Total Score",
+    y     = NULL,
+    title = "Distribution of Initial and Follow-up Scores, CPSS Interviewer (lower is better)"
+  ) +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x         = element_text(size = 9, hjust = 0.5),
+    axis.text.y          = element_blank(),
+    axis.text.x          = element_text(size = 9),
+    panel.grid           = element_blank(),
+    axis.ticks.y         = element_blank(),
+    axis.line.x          = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position      = "inside",
+    legend.justification = c("left", "top"),
+    legend.title         = element_blank(),
+    legend.text          = element_text(size = 8),
+    plot.margin          = margin(5, 5, 5, 5),
+    plot.title           = element_text(size = 11)
+  ) +
+  geom_segment(
+    data     = summary_stats_cpss_i,
+    aes(x = median_score, y = 1, xend = median_score, yend = 1.03),
+    color    = "grey30",
+    linetype = "dotted"
+  ) +
+  geom_text(
+    data = summary_stats_cpss_i,
+    aes(x     = median_score,
+        y     = 1.035,
+        label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+    vjust = 2,
+    hjust = 0.5,
+    size  = 2
+  )
+```
+
+### Self version
+
+```{r cpss_s_summary}
+#| echo: false
+#| warning: false
+#| message: false
+cpss_s_paired |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+```
+
+Plot it.
+
+```{r cpss_s_bar_plot}
+#| echo: false
+#| warning: false
+#| message: false
+cpss_s_paired_long <- cpss_s_paired |>
+  ungroup() |>
+  filter(
+    !is.na(client_system_id),
+    !is.na(initial_score),
+    !is.na(follow_up_score)
+  ) |>
+  select(client_system_id, initial_score, follow_up_score) |>
+  pivot_longer(
+    cols      = c(initial_score, follow_up_score),
+    names_to  = "score_type",
+    values_to = "score_value"
+  ) |>
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score"   = "Initial",
+                        "follow_up_score" = "Follow-up"),
+    score_type = factor(score_type, levels = c("Initial", "Follow-up"))
+  )
+
+ggplot(cpss_s_paired_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width    = 0.8,
+    alpha    = 0.8
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    x     = "Score",
+    y     = "Count",
+    title = "Distribution of Initial and Follow-up Scores, CPSS-5 Self Version"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.title           = element_text(size = 9),
+    axis.text            = element_text(size = 9),
+    panel.grid.major     = element_blank(),
+    panel.grid.minor.x   = element_blank(),
+    axis.line.x          = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position      = "inside",
+    legend.justification = c("left", "top"),
+    legend.title         = element_blank(),
+    legend.text          = element_text(size = 8),
+    plot.margin          = margin(5, 5, 5, 5)
+  )
+```
+
+Ridgeline plot
+
+```{r cpss_s_wilcox}
+#| echo: false
+#| warning: false
+#| message: false
+wilcox.test(cpss_s_paired$follow_up_score, cpss_s_paired$initial_score, paired = TRUE)
+```
+
+```{r cpss_s_ridgeline}
+#| echo: false
+#| warning: false
+#| message: false
+summary_stats_cpss_s <- cpss_s_paired_long |>
+  group_by(score_type) |>
+  summarise(
+    mean_score   = mean(score_value, na.rm = TRUE),
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score     = sd(score_value, na.rm = TRUE),
+    n            = sum(!is.na(score_value))
+  )
+
+summary_stats_cpss_s
+#clipr::write_clip(summary_stats_cpss_s)
+
+ggplot(cpss_s_paired_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha          = 0.7,
+    scale          = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    x     = "CPSS Self Total Score",
+    y     = NULL,
+    title = "Distribution of Initial and Follow-up Scores, CPSS Self (lower is better)"
+  ) +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x         = element_text(size = 9, hjust = 0.5),
+    axis.text.y          = element_blank(),
+    axis.text.x          = element_text(size = 9),
+    panel.grid           = element_blank(),
+    axis.ticks.y         = element_blank(),
+    axis.line.x          = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position      = "inside",
+    legend.justification = c("left", "top"),
+    legend.title         = element_blank(),
+    legend.text          = element_text(size = 8),
+    plot.margin          = margin(5, 5, 5, 5),
+    plot.title           = element_text(size = 11)
+  ) +
+  geom_segment(
+    data     = summary_stats_cpss_s,
+    aes(x = median_score, y = 1, xend = median_score, yend = 1.03),
+    color    = "grey30",
+    linetype = "dotted"
+  ) +
+  geom_text(
+    data = summary_stats_cpss_s,
+    aes(x     = median_score,
+        y     = 1.035,
+        label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+    vjust = 2,
+    hjust = 0.5,
+    size  = 2
+  )
+```

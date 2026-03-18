@@ -1,0 +1,280 @@
+---
+title: "NOMS Assessment Data Cleaning"
+author: "Cristin Young"
+date: "2026-03-09"
+format:
+  html:
+    df-print: paged
+    toc: true
+    toc-float: true
+---
+
+## Project Overview
+
+This notebook prepares **CYBHI EBP/CDEP** NOMS (National Outcome Measures) assessment data for analysis and reporting. It ingests two raw eInsight exports (child and self-report versions), processes the two-row hierarchical headers, coerces scores to numeric, computes total scores, filters to the reporting period, pivots to long format, and pairs each client's initial assessment with their last follow-up (\>3 days after initial).
+
+**Data sources (eInsight Individual Assessments exports):**
+
+-   **NOMS-child.csv** — Caregiver-completed NOMS for child clients.
+-   **NOMS-self_report.csv** — Client self-report NOMS.
+
+Each file has a two-row header: row 1 contains question text, row 2 contains subheader labels (e.g., "Score", "Comments").
+
+**Scoring:** Range 1–5 per question. An increase in follow-up score vs. initial indicates a positive outcome. Four questions are scored:
+
+-   Q1: Overall mental health (single item, range 1–5)
+-   Q2: Daily life functioning (7 items, range 7–35)
+-   Q3: Well-being (6 items, range 6–30)
+-   Q4: Social connectedness (6 items, range 6–30)
+
+**Pairing logic:** Rows are grouped by client ID and question. The first assessment is the initial; the last assessment at least 3 days later is the follow-up. Clients without a qualifying follow-up are excluded from the paired output.
+
+**Outputs:**
+
+| File | Contents |
+|---------------------------|---------------------------------------------|
+| `noms_child_pairs_clean.csv` | Long-format paired assessments (one row per client × question), child version |
+| `noms_self_pairs_clean.csv` | Long-format paired assessments, self-report version |
+
+------------------------------------------------------------------------
+
+## Open Issues / Action Items
+
+-   [ ] The 3-day threshold for "follow-up" is a pragmatic cutoff. Confirm this is the intended definition.
+
+------------------------------------------------------------------------
+
+## Setup
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(janitor)
+library(zoo)
+```
+
+------------------------------------------------------------------------
+
+## Helper Function
+
+```{r header-helper}
+# Reads an eInsight assessment CSV export with two-row headers.
+# Returns a cleaned data frame with combined column names and empty columns removed.
+read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A")) {
+  raw <- read_csv(path, na = na_vals, col_names = FALSE, show_col_types = FALSE,
+                  col_types = cols(.default = "c"))
+
+  h1    <- unlist(raw[1, ], use.names = FALSE)
+  h2    <- unlist(raw[2, ], use.names = FALSE)
+  h1_ff <- na.locf(h1, na.rm = FALSE) |> str_squish()
+
+  new_names <- ifelse(
+    is.na(h1_ff) | h1_ff == "",
+    h2,
+    paste(h1_ff, h2, sep = " - ")
+  )
+  new_names <- janitor::make_clean_names(new_names)
+
+  df <- raw[-c(1, 2), ]
+  names(df) <- new_names
+
+  df |> select(where(~ !all(is.na(.))))
+}
+```
+
+------------------------------------------------------------------------
+
+# 1. NOMS Child
+
+## 1.1 Read and Score
+
+```{r noms-child-read}
+noms_child <- read_assessment_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/NOMS-child.csv"
+) |>
+  mutate(across(ends_with("_score"), as.numeric)) |>
+  rowwise() |>
+  mutate(
+    any_missing_q1x = any(is.na(c_across(matches("^(q1|x).*_score$")))),
+    total_score     = sum(c_across(matches("^(q1|x).*_score$")), na.rm = TRUE)
+  ) |>
+  ungroup() |>
+  mutate(
+    date_completed = as.Date(date_completed),
+    row_id         = row_number()
+  ) |>
+  filter(
+    date_completed >= "2024-01-01",
+    date_completed <= Sys.Date()
+  )
+
+cat("NOMS Child rows after cleaning:", nrow(noms_child), "\n")
+cat("Unique clients:                 ", n_distinct(noms_child$client_system_id), "\n")
+```
+
+## 1.2 Pivot Long
+
+```{r noms-child-long}
+noms_child_long <- noms_child |>
+  pivot_longer(
+    cols      = matches("^(q1|x).*_score$"),
+    names_to  = "question",
+    values_to = "score"
+  ) |>
+  mutate(score = as.numeric(score))
+```
+
+## 1.3 Pair Initial and Follow-up
+
+```{r noms-child-pair}
+pairs_primary_long <- noms_child_long |>
+  group_by(client_system_id, question) |>
+  arrange(date_completed, .by_group = TRUE) |>
+  mutate(
+    days_since_initial = as.integer(date_completed - first(date_completed)),
+    initial_date       = first(date_completed),
+    initial_score      = first(score),
+    is_after3          = days_since_initial > 3
+  ) |>
+  filter(is_after3) |>
+  slice_tail(n = 1) |>
+  transmute(
+    client_system_id,
+    question,
+    initial_date,
+    initial_score,
+    follow_up_date  = date_completed,
+    follow_up_score = score,
+    days_since_initial,
+    # Higher follow-up = positive outcome (higher score is better)
+    # 1 = improved, 0 = no change, -1 = worsened
+    positive_outcome = case_when(
+      follow_up_score >  initial_score ~ 1L,
+      follow_up_score == initial_score ~ 0L,
+      follow_up_score <  initial_score ~ -1L
+    ),
+    score_change      = follow_up_score - initial_score,
+    initial_quarter   = paste0("Q", quarter(initial_date),   " ", year(initial_date)),
+    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))
+  )
+
+cat("NOMS Child paired rows: ", nrow(pairs_primary_long), "\n")
+cat("Unique clients paired:  ", n_distinct(pairs_primary_long$client_system_id), "\n")
+cat("Questions covered:      ", n_distinct(pairs_primary_long$question), "\n")
+
+pairs_primary_long |>
+  group_by(question) |>
+  summarise(
+    n_paired          = n(),
+    n_improved        = sum(positive_outcome ==  1, na.rm = TRUE),
+    n_no_change       = sum(positive_outcome ==  0, na.rm = TRUE),
+    n_worsened        = sum(positive_outcome == -1, na.rm = TRUE),
+    pct_improved      = round(100 * n_improved / n_paired, 1),
+    n_missing_outcome = sum(is.na(positive_outcome))
+  )
+```
+
+------------------------------------------------------------------------
+
+# 2. NOMS Self-Report
+
+## 2.1 Read and Score
+
+```{r noms-self-read}
+noms_self <- read_assessment_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/NOMS-self_report.csv"
+) |>
+  mutate(across(ends_with("_score"), as.numeric)) |>
+  rowwise() |>
+  mutate(
+    any_missing_q1x = any(is.na(c_across(matches("^(q1|x).*_score$")))),
+    total_score     = sum(c_across(matches("^(q1|x).*_score$")), na.rm = TRUE)
+  ) |>
+  ungroup() |>
+  mutate(
+    date_completed = as.Date(date_completed),
+    row_id         = row_number()
+  ) |>
+  filter(
+    date_completed >= "2024-01-01",
+#    date_completed <= "2025-12-31",
+    date_completed <= Sys.Date()
+  )
+
+cat("NOMS Self rows after cleaning:", nrow(noms_self), "\n")
+cat("Unique clients:               ", n_distinct(noms_self$client_system_id), "\n")
+```
+
+## 2.2 Pivot Long
+
+```{r noms-self-long}
+noms_self_long <- noms_self |>
+  pivot_longer(
+    cols      = matches("^(q1|x).*_score$"),
+    names_to  = "question",
+    values_to = "score"
+  ) |>
+  mutate(score = as.numeric(score))
+```
+
+## 2.3 Pair Initial and Follow-up
+
+```{r noms-self-pair}
+pairs_primary_long_self <- noms_self_long |>
+  group_by(client_system_id, question) |>
+  arrange(date_completed, .by_group = TRUE) |>
+  mutate(
+    days_since_initial = as.integer(date_completed - first(date_completed)),
+    initial_date       = first(date_completed),
+    initial_score      = first(score),
+    is_after3          = days_since_initial > 3
+  ) |>
+  filter(is_after3) |>
+  slice_tail(n = 1) |>
+  transmute(
+    client_system_id,
+    question,
+    initial_date,
+    initial_score,
+    follow_up_date  = date_completed,
+    follow_up_score = score,
+    days_since_initial,
+    # Higher follow-up = positive outcome (higher score is better)
+    # 1 = improved, 0 = no change, -1 = worsened
+    positive_outcome = case_when(
+      follow_up_score >  initial_score ~ 1L,
+      follow_up_score == initial_score ~ 0L,
+      follow_up_score <  initial_score ~ -1L
+    ),
+    score_change      = follow_up_score - initial_score,
+    initial_quarter   = paste0("Q", quarter(initial_date),   " ", year(initial_date)),
+    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))
+  )
+
+cat("NOMS Self paired rows: ", nrow(pairs_primary_long_self), "\n")
+cat("Unique clients paired: ", n_distinct(pairs_primary_long_self$client_system_id), "\n")
+cat("Questions covered:     ", n_distinct(pairs_primary_long_self$question), "\n")
+
+pairs_primary_long_self |>
+  group_by(question) |>
+  summarise(
+    n_paired          = n(),
+    n_improved        = sum(positive_outcome ==  1, na.rm = TRUE),
+    n_no_change       = sum(positive_outcome ==  0, na.rm = TRUE),
+    n_worsened        = sum(positive_outcome == -1, na.rm = TRUE),
+    pct_improved      = round(100 * n_improved / n_paired, 1),
+    n_missing_outcome = sum(is.na(positive_outcome))
+  )
+```
+
+------------------------------------------------------------------------
+
+# 3. Write Clean CSVs
+
+```{r write-csvs}
+out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+write_csv(pairs_primary_long,      file.path(out_dir, "noms_child_pairs_clean.csv"))
+write_csv(pairs_primary_long_self, file.path(out_dir, "noms_self_pairs_clean.csv"))
+
+cat("CSVs written successfully.\n")
+```

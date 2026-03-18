@@ -1,0 +1,187 @@
+---
+title: "PSS Assessment Data Cleaning"
+author: "Cristin Young"
+date: "2026-03-09"
+format:
+  html:
+    df-print: paged
+    toc: true
+    toc-float: true
+---
+
+## Project Overview
+
+This notebook prepares **CYBHI EBP/CDEP** Parenting Stress Scale (PSS) assessment data for analysis and reporting. It ingests the raw eInsight export, processes the two-row hierarchical headers, maps text responses to numeric values, applies reverse scoring, computes total scores, and pairs each client's initial assessment with their last follow-up.
+
+**Data source:** `PSS.csv` — eInsight Individual Assessments export.
+
+**Scoring:**
+
+-   18 items. Responses are stored as text and mapped to numeric values: Strongly Disagree = 1, Disagree = 2, Undecided = 3, Agree = 4, Strongly Agree = 5.
+-   Items 1, 2, 5, 6, 7, 8, 17, and 18 are **reverse scored** using the formula `6 − raw_score`.
+-   Total score range: 18–90. Higher scores indicate greater perceived stress.
+-   **A lower follow-up score indicates a positive outcome.**
+-   Total score is set to `NA` if 2 or more items are missing.
+
+**Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 assessments exist) is the follow-up. Clients with only one assessment are excluded.
+
+**Output:**
+
+| File | Contents |
+|----|----|
+| `pss_paired_clean.csv` | One row per client: initial/follow-up scores, `positive_outcome`, `score_change`, quarter labels |
+
+------------------------------------------------------------------------
+
+## Open Issues / Action Items
+
+-   [ ] The `missing_count` threshold of 2 for treating total score as `NA` — confirm this is the correct PSS rule.
+
+------------------------------------------------------------------------
+
+# Setup
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(janitor)
+library(zoo)
+```
+
+------------------------------------------------------------------------
+
+# Helper Function
+
+```{r header-helper}
+# Reads an eInsight assessment CSV export with two-row headers.
+# Returns a cleaned data frame with combined column names and empty columns removed.
+read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A")) {
+  raw <- read_csv(path, na = na_vals, col_names = FALSE, show_col_types = FALSE,
+                  col_types = cols(.default = "c"))
+
+  h1    <- unlist(raw[1, ], use.names = FALSE)
+  h2    <- unlist(raw[2, ], use.names = FALSE)
+  h1_ff <- na.locf(h1, na.rm = FALSE) |> str_squish()
+
+  new_names <- ifelse(
+    is.na(h1_ff) | h1_ff == "",
+    h2,
+    paste(h1_ff, h2, sep = " - ")
+  )
+  new_names <- janitor::make_clean_names(new_names)
+
+  df <- raw[-c(1, 2), ]
+  names(df) <- new_names
+
+  df |> select(where(~ !all(is.na(.))))
+}
+```
+
+------------------------------------------------------------------------
+
+# 1. Read and Score
+
+```{r pss-read}
+pss_raw <- read_assessment_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/PSS.csv"
+)
+
+# Reverse-scored item positions (1-indexed within response columns)
+rev_idx       <- c(1, 2, 5, 6, 7, 8, 17, 18)
+response_cols <- names(pss_raw)[endsWith(names(pss_raw), "_response")]
+
+# Map text responses to numeric values
+response_map <- c(
+  "Strongly disagree" = 1,
+  "Disagree"          = 2,
+  "Undecided"         = 3,
+  "Agree"             = 4,
+  "Strongly agree"    = 5
+)
+
+pss_scores <- pss_raw |>
+  mutate(across(all_of(response_cols), ~ response_map[.])) |>
+  rowwise() |>
+  mutate(
+    missing_count = sum(is.na(c_across(all_of(response_cols)))),
+    total_score = {
+      vals          <- c_across(all_of(response_cols))
+      vals[rev_idx] <- 6 - vals[rev_idx]
+      sum(vals, na.rm = TRUE)
+    }
+  ) |>
+  ungroup() |>
+  mutate(
+    total_score    = if_else(missing_count >= 2, NA_real_, total_score),
+    date_completed = as.Date(date_completed),
+    row_id         = row_number()
+  ) |>
+  select(client_system_id, collection, date_completed, total_score) |>
+  filter(
+    date_completed >= "2024-01-01",
+    date_completed <= Sys.Date()
+  )
+
+cat("PSS rows after scoring:", nrow(pss_scores), "\n")
+cat("Unique clients:        ", n_distinct(pss_scores$client_system_id), "\n")
+```
+
+------------------------------------------------------------------------
+
+# 2. Pair Initial and Follow-up
+
+```{r pss-pair}
+pss_paired <- pss_scores |>
+  group_by(client_system_id) |>
+  arrange(date_completed, .by_group = TRUE) |>
+  summarise(
+    n_assessments   = n(),
+    initial_date    = first(date_completed),
+    initial_score   = first(total_score),
+    follow_up_date  = if_else(n_assessments >= 2, last(date_completed),  as.Date(NA)),
+    follow_up_score = if_else(n_assessments >= 2, last(total_score),     NA_real_)
+  ) |>
+  ungroup() |>
+  filter(!is.na(follow_up_date)) |>
+  mutate(
+    # Lower follow-up score = positive outcome (lower stress is better)
+    # 1 = improved, 0 = no change, -1 = worsened
+    positive_outcome = case_when(
+      follow_up_score <  initial_score ~ 1L,
+      follow_up_score == initial_score ~ 0L,
+      follow_up_score >  initial_score ~ -1L
+    ),
+    score_change      = follow_up_score - initial_score,
+    initial_quarter   = paste0("Q", quarter(initial_date),    " ", year(initial_date)),
+    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))
+  )
+
+cat("PSS paired clients:", nrow(pss_paired), "\n")
+```
+
+------------------------------------------------------------------------
+
+# 3. Quick Check
+
+```{r pss-check}
+pss_paired |>
+  summarise(
+    n_paired          = n(),
+    n_improved        = sum(positive_outcome ==  1, na.rm = TRUE),
+    n_no_change       = sum(positive_outcome ==  0, na.rm = TRUE),
+    n_worsened        = sum(positive_outcome == -1, na.rm = TRUE),
+    pct_improved      = round(100 * n_improved / n_paired, 1),
+    n_missing_outcome = sum(is.na(positive_outcome))
+  )
+```
+
+------------------------------------------------------------------------
+
+# 4. Write Clean CSV
+
+```{r write-csv}
+out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+write_csv(pss_paired, file.path(out_dir, "pss_paired_clean.csv"))
+
+cat("CSV written successfully.\n")
+```

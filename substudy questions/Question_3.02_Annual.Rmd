@@ -1,0 +1,37 @@
+---
+title: "Annual Report Data Analysis - Question 3.02"
+author: "Tristan Burgess and Cristin Young"
+date: "`r Sys.Date()`"
+output:
+  html_notebook: default
+  word_document: default
+  html_document: default
+  pdf_document: default
+editor_options:
+  chunk_output_type: inline
+  markdown:
+    wrap: 72
+---
+# 3. Did EBP/CDEP services impact clinical and functional outcomes for clients who participated?
+
+## 3.01: Was there meaningful change in intervention scores as assessed by validated outcomes tools, or were scores above clinical cut-offs at discharge?
+
+**Inclusion criteria:** 1. must have initial time point data (i.e., be enrolled in an intervention), 2. must have a valid assessment collected at both intake and discharge time points, and 3. limited to tools with a clinical cut-off. 
+
+
+```{r setup}
+#| echo: false
+#| warning: false
+#| message: false
+library(tidyverse)
+library(janitor)
+library(gt)
+library(gtsummary)
+library(openxlsx)
+```
+
+```{r load_data}
+#| echo: false
+#| warning: false
+#| message: false
+```

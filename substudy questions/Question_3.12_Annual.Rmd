@@ -1,0 +1,214 @@
+---
+title: "Annual Report Data Analysis - Question 3.12"
+author: "Tristan Burgess and Cristin Young"
+date: "`r Sys.Date()`"
+output:
+  html_notebook: default
+  word_document: default
+  html_document: default
+  pdf_document: default
+editor_options:
+  chunk_output_type: inline
+  markdown:
+    wrap: 72
+---
+
+# 3. Did EBP/CDEP services impact clinical and functional outcomes for clients who participated?
+
+**Inclusion criteria:** 1. must have initial time point data (i.e., be enrolled in an intervention), 2. must have a valid assessment collected at both intake and discharge time points, and 3. limited to tools with a clinical cut-off.
+
+**Scoring:** An **increase** in score indicates a positive outcome. There are no benchmarks or clinical cutoffs established for NOMS scoring — if the follow-up assessment score is higher than the initial score, a positive outcome is indicated.
+
+**Assumptions:** Filtered out dates before 2024-01-01 and after the date the code was run. Filtered data that's \>3 days from initial assessment and paired to the LAST follow-up. Filtered positive outcomes that had NAs before computing %.
+
+```{r setup}
+#| echo: false
+#| warning: false
+#| message: false
+library(tidyverse)
+library(janitor)
+library(ggridges)
+library(scales)
+```
+
+```{r load_data}
+#| echo: false
+#| warning: false
+#| message: false
+assess_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+# Produced by data cleaning/pss_data_cleaning.qmd
+pss_paired <- read_csv(
+  file.path(assess_dir, "pss_paired_clean.csv"),
+  show_col_types = FALSE
+)
+```
+
+## 3.12 To what extent did parents/caregivers report a reduction in parent-related stress after receiving the intervention?
+
+**Definition:** PSS item(s) measuring reduction in parent/caregiver-related stress after the intervention. Assessments showing improvement from pre- to post-time point for clients who discharged from an intervention during the designated time frame.
+
+**Calculation:** Sum of Q1--Q18 (reverse Q4, Q5, Q7, Q8); this KPI represents the percent of assessments that show clients who have improvement from pre-post time points out of the total number of assessments from clients who discharge from the intervention and complete pre-post measures by period(s).
+
+**Scoring:** To calculate a total PSS score, items 1, 2, 5, 6, 7, 8, 17, and 18 should be reverse scored as follows: (1=5) (2=4) (3=3) (4=2) (5=1). The PSS score is then obtained by summing across all items. Higher scores indicate higher levels of perceived stress. If follow-up is LOWER than initial, that indicates a positive outcome.
+
+-   1 = Strongly disagree
+
+-   2 = Disagree
+
+-   3 = Undecided
+
+-   4 = Agree
+
+-   5 = Strongly Agree
+
+**Assumptions:** Total score = NA if 2+ items are missing; used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
+
+**Range:** 18 - 90
+
+**Inclusion Criteria:** 1. must have initial time point data (i.e., be enrolled in an intervention); 2. must have a valid assessment collected at both initial and discharge comparison time points
+
+**Final analysis:** Regression - outcome = binary (4/5 vs other), predictors as for 3.01
+
+```{r pss_summary}
+#| echo: false
+#| warning: false
+#| message: false
+tab <- pss_paired |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+
+tab
+```
+
+Plot it.
+
+```{r pss_bar_plot}
+#| echo: false
+#| warning: false
+#| message: false
+pss_paired_long <- pss_paired |>
+  ungroup() |>
+  select(client_system_id, initial_score, follow_up_score) |>
+  filter(
+    !is.na(client_system_id),
+    !is.na(initial_score),
+    !is.na(follow_up_score)
+  ) |>
+  pivot_longer(
+    cols      = c(initial_score, follow_up_score),
+    names_to  = "score_type",
+    values_to = "score_value"
+  ) |>
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score"   = "Initial",
+                        "follow_up_score" = "Follow-up"),
+    score_type = factor(score_type, levels = c("Initial", "Follow-up"))
+  )
+
+ggplot(pss_paired_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width    = 0.8,
+    alpha    = 0.8
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    x     = "Score",
+    y     = "Count",
+    title = "Distribution of Initial and Follow-up Scores, PSS"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.title           = element_text(size = 9),
+    axis.text            = element_text(size = 9),
+    panel.grid.major     = element_blank(),
+    panel.grid.minor.x   = element_blank(),
+    axis.line.x          = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position      = "inside",
+    legend.justification = c("left", "top"),
+    legend.title         = element_blank(),
+    legend.text          = element_text(size = 8),
+    plot.margin          = margin(5, 5, 5, 5)
+  )
+```
+
+Ridgeline plot
+
+```{r pss_ridgeline}
+#| echo: false
+#| warning: false
+#| message: false
+summary_stats_pss <- pss_paired_long |>
+  group_by(score_type) |>
+  filter(!is.na(score_value)) |>
+  summarise(
+    mean_score   = mean(score_value, na.rm = TRUE),
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score     = sd(score_value, na.rm = TRUE),
+    n            = sum(!is.na(score_value))
+  ) |>
+  mutate(y_text = if_else(score_type == "Follow-up", 1.08, 1.085))
+
+summary_stats_pss
+
+ggplot(pss_paired_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha          = 0.7,
+    scale          = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    x     = "PSS Score",
+    y     = NULL,
+    title = "Distribution of Initial and Follow-up Scores, PSS (lower is better)"
+  ) +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x         = element_text(size = 9, hjust = 0.5),
+    axis.text.y          = element_blank(),
+    axis.text.x          = element_text(size = 9),
+    panel.grid           = element_blank(),
+    axis.ticks.y         = element_blank(),
+    axis.line.x          = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position      = "inside",
+    legend.justification = c("left", "top"),
+    legend.title         = element_blank(),
+    legend.text          = element_text(size = 8),
+    plot.margin          = margin(5, 5, 5, 5),
+    plot.title           = element_text(size = 11)
+  ) +
+  geom_segment(
+    data     = summary_stats_pss,
+    aes(x = median_score, y = 1, xend = median_score, yend = 1.07),
+    color    = "grey30",
+    linetype = "dotted"
+  ) +
+  geom_text(
+    data = summary_stats_pss,
+    aes(x     = median_score,
+        y     = y_text,
+        label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+    vjust = 2,
+    hjust = 0.5,
+    size  = 2
+  )
+```

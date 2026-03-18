@@ -1,0 +1,591 @@
+---
+title: "Annual Report Data Analysis - Question 2.01 and 2.02"
+author: "Cristin Young and Tristan Burgess"
+date: "`r Sys.Date()`"
+output:
+  html_notebook: default
+  word_document: default
+  html_document: default
+  pdf_document: default
+editor_options:
+  chunk_output_type: inline
+  markdown:
+    wrap: 72
+---
+
+# 2. Did the EBP/CDEP Workstream increase access to services for targeted populations?
+
+```{r setup}
+#| echo: false
+#| warning: false
+#| message: false
+library(tidyverse)
+library(janitor)
+library(gt)
+library(svglite)
+library(haven)
+library(sf)
+library(tigris)
+library(ggrepel)
+library(openxlsx)
+options(tigris_use_cache = TRUE)
+```
+
+```{r load_data}
+#| echo: false
+#| warning: false
+#| message: false
+all_data <- read_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv",
+  show_col_types = FALSE
+)
+
+discharge_data <- read_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv",
+  show_col_types = FALSE
+)
+
+demographic_data <- read_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv"
+)
+
+spss <- haven::read_spss(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Quant Team File/MasterGranteeSpreadsheet_forBHESQuantTeam_1-20-26_NEW!.sav"
+) |>
+  zap_missing() |>
+  mutate(across(where(is.labelled), as.character)) |>
+  mutate(across(where(is.character), ~ na_if(str_trim(.x), ""))) |>
+  rename_with(~ gsub("^@", "", .x)) |>
+  janitor::clean_names() |>
+  rename_with(~ gsub("^x", "", .x))
+```
+
+```{r prep_data201}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Base dataset for Q2.01/2.02: requires location, scores, and discharge reason
+data201 <- all_data |>
+  filter(
+    !is.na(location),
+    !is.na(pre_score),
+    !is.na(post_score),
+    !is.na(reason_for_discharge)
+  ) |>
+  mutate(positive_outcomes = factor(positive_outcomes, levels = c("No", "Yes")))
+
+# Join discharge data to demographic data for region analysis
+key <- c("client_system_id", "provider_system_id", "provider_id")
+
+discharge_unique <- discharge_data |>
+  select(all_of(key), provider, intervention_name) |>
+  distinct(across(all_of(key)), .keep_all = TRUE)
+
+demo_discharge <- left_join(demographic_data, discharge_unique, by = key)
+
+demo_spss <- left_join(
+  demo_discharge,
+  spss,
+  by = c("provider_id" = "2grantee_provider_id")
+) |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  rename(region = `8c_regions`)
+
+# Join data201 to SPSS for region-level outcomes
+data201_spss <- left_join(
+  data201,
+  spss,
+  by = c("provider" = "1a_grantee_provider_name", "provider_id" = "2grantee_provider_id")
+) |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  rename(region = `8c_regions`)
+```
+
+# Question 2.01: Did successful transition rates out of EBP/CDEP services differ by location?
+
+THREE inclusion criteria: 1. must have initial time point data (i.e., be enrolled in an intervention), 2. must have a valid reason for discharge selected at time of discharge (i.e., excludes those with "no reason selected"), 3. client must be attached to a specific grantee location.
+
+## % successful completion at discharge by location
+
+```{r success_by_location}
+#| echo: false
+perc_successful_table <- data201 |>
+  group_by(location) |>
+  summarise(
+    total = n(),
+    successful = sum(
+      reason_for_discharge %in% c(
+        "Mutually agreed cessation of treatment (Successful Completion)",
+        "Clinically referred out"
+      ),
+      na.rm = TRUE
+    ),
+    perc_success = round(100 * (successful / total), 1)
+  )
+
+perc_successful_table
+```
+
+## % successful completion at discharge by region
+
+```{r success_by_region}
+#| echo: false
+region_success <- data201_spss |>
+  group_by(region) |>
+  summarise(
+    total = n(),
+    successful = sum(
+      reason_for_discharge %in% c(
+        "Mutually agreed cessation of treatment (Successful Completion)",
+        "Clinically referred out"
+      ),
+      na.rm = TRUE
+    ),
+    perc_success = round(100 * (successful / total), 1)
+  )
+
+region_success
+```
+
+### Mapping by region
+
+```{r map_by_region}
+#| echo: false
+#| warning: false
+#| message: false
+ca_counties <- counties("CA", cb = TRUE, class = "sf")
+
+region_lookup <- tibble::tribble(
+  ~county,           ~region,
+  # Region 1
+  "Butte",           1,
+  "Colusa",          1,
+  "El Dorado",       1,
+  "Glenn",           1,
+  "Lassen",          1,
+  "Modoc",           1,
+  "Nevada",          1,
+  "Placer",          1,
+  "Plumas",          1,
+  "Sacramento",      1,
+  "Shasta",          1,
+  "Sierra",          1,
+  "Siskiyou",        1,
+  "Sutter",          1,
+  "Tehama",          1,
+  "Yolo",            1,
+  "Yuba",            1,
+  # Region 2
+  "Del Norte",       2,
+  "Humboldt",        2,
+  "Lake",            2,
+  "Mendocino",       2,
+  "Napa",            2,
+  "Sonoma",          2,
+  "Trinity",         2,
+  # Region 3
+  "Alameda",         3,
+  "Contra Costa",    3,
+  "Marin",           3,
+  "San Francisco",   3,
+  "San Mateo",       3,
+  "Santa Clara",     3,
+  "Solano",          3,
+  # Region 4
+  "Alpine",          4,
+  "Amador",          4,
+  "Calaveras",       4,
+  "Madera",          4,
+  "Mariposa",        4,
+  "Merced",          4,
+  "Mono",            4,
+  "San Joaquin",     4,
+  "Stanislaus",      4,
+  "Tuolumne",        4,
+  # Region 5
+  "Monterey",        5,
+  "San Benito",      5,
+  "San Luis Obispo", 5,
+  "Santa Barbara",   5,
+  "Santa Cruz",      5,
+  "Ventura",         5,
+  # Region 6
+  "Fresno",          6,
+  "Inyo",            6,
+  "Kern",            6,
+  "Kings",           6,
+  "Tulare",          6,
+  # Region 7
+  "Riverside",       7,
+  "San Bernardino",  7,
+  # Region 8
+  "Los Angeles",     8,
+  # Region 9
+  "Orange",          9,
+  # Region 10
+  "Imperial",        10,
+  "San Diego",       10
+)
+
+ca_counties_region <- ca_counties |>
+  mutate(county = str_remove(NAME, " County$")) |>
+  left_join(region_lookup, by = "county")
+
+ca_census_regions <- ca_counties_region |>
+  group_by(region) |>
+  summarise(geometry = sf::st_union(geometry), .groups = "drop") |>
+  arrange(region)
+
+# Confirm regional polygons look correct
+ca_census_regions |>
+  ggplot() +
+  geom_sf(aes(fill = factor(region)), color = "white", linewidth = 0.3) +
+  scale_fill_viridis_d(name = "Region") +
+  theme_minimal() +
+  labs(title = "California Census Regions (1–10)")
+
+# Merge outcomes and client counts with region polygons
+ca_census_regions <- ca_census_regions |>
+  mutate(region = as.character(region))
+
+region_success <- region_success |>
+  mutate(region = as.character(region))
+
+ca_regions_data <- ca_census_regions |>
+  left_join(region_success, by = "region") |>
+  mutate(label_color = if_else(perc_success < 90, "white", "black"))
+
+clients_by_region <- demo_spss |>
+  group_by(region) |>
+  summarise(clients_served = n_distinct(client_system_id), .groups = "drop")
+
+ca_regions_demo_data <- ca_regions_data |>
+  left_join(clients_by_region, by = "region") |>
+  mutate(label_color = if_else(clients_served < 2200, "white", "black"))
+
+# Map: % successful outcomes by region
+ggplot(ca_regions_data) +
+  geom_sf(aes(fill = perc_success), color = "white", linewidth = 0.3) +
+  geom_sf_text(
+    aes(
+      label = paste0("Region ", region, "\n", perc_success, "%"),
+      color = label_color
+    ),
+    size = 3,
+    lineheight = 0.9
+  ) +
+  scale_color_identity() +
+  scale_fill_gradientn(
+    colours = c("#003C71", "#8BD3DD", "#BBDB49"),
+    name = "% successful",
+    limits = c(87, 100)
+  ) +
+  labs(title = "% Successful Outcomes by Region", fill = "% success") +
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    panel.grid = element_blank(),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 11)
+  )
+
+# Map: clients served by region
+ggplot(ca_regions_demo_data) +
+  geom_sf(aes(fill = clients_served), color = "white", linewidth = 0.3) +
+  geom_sf_text(
+    aes(
+      label = paste0("Region ", region, "\n", scales::comma(clients_served)),
+      color = label_color
+    ),
+    size = 3,
+    lineheight = 0.9
+  ) +
+  scale_color_identity() +
+  scale_fill_gradientn(
+    colours = c("#003C71", "#8BD3DD", "#BBDB49"),
+    name = "Clients served",
+    limits = c(1200, 5500)
+  ) +
+  labs(title = "Clients Served by Region", fill = "Clients") +
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    panel.grid = element_blank(),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 11)
+  )
+
+#ggsave("/Users/cristin/Downloads/map_clients.svg", width = 8, height = 5)
+```
+
+### Mapping by primary county
+
+```{r map_by_county}
+  geom_sf(aes(fill = factor(name)), color = "white", linewidth = 0.3) +
+  scale_fill_viridis_d(name = "Region") +
+  theme_minimal() +
+  labs(title = "California Census Regions (1–10)")
+#| echo: false
+#| warning: false
+#| message: false
+ca_counties_clean <- counties("CA", cb = TRUE, class = "sf") |>
+  janitor::clean_names()
+
+county_success <- data201_spss |>
+  rename(primary_county = `8a_primary_county`) |>
+  group_by(primary_county) |>
+  summarise(
+    total = n(),
+    successful = sum(
+      reason_for_discharge %in% c(
+        "Mutually agreed cessation of treatment (Successful Completion)",
+        "Clinically referred out"
+      ),
+      na.rm = TRUE
+    ),
+    perc_success = round(100 * successful / total, 1)
+  )
+
+county_map_data <- ca_counties_clean |>
+  left_join(county_success, by = c(name = "primary_county"))
+
+x_push <- diff(st_bbox(county_map_data)[c("xmin", "xmax")]) * 0.45
+
+# NOTE: `threshold` must be defined before running (e.g., threshold <- 75)
+ggplot(county_map_data) +
+  geom_sf(aes(fill = perc_success), color = "white", linewidth = 0.3) +
+  geom_text_repel(
+    data = county_map_data |> filter(perc_success < threshold),
+    aes(
+      geometry = geometry,
+      label = paste0(name, "\n", perc_success, "%")
+    ),
+    color = "black",
+    stat = "sf_coordinates",
+    nudge_x = -x_push,
+    direction = "y",
+    hjust = 1,
+    box.padding = 0.6,
+    point.padding = 0.4,
+    max.overlaps = Inf,
+    min.segment.length = 0,
+    segment.size = 0.4,
+    size = 3.2
+  ) +
+  scale_fill_viridis_c(
+    option = "C",
+    direction = -1,
+    name = "% successful",
+    limits = c(50, 100)
+  ) +
+  labs(
+    title = "% Successful Outcomes by Primary County",
+    subtitle = "Primary counties with <75% successful completion labeled",
+    fill = "% success"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    panel.grid = element_blank(),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 11)
+  ) +
+  coord_sf(clip = "off")
+```
+
+## % of those who met treatment goals (successful completion + improved score) by location
+
+```{r tx_goals}
+#| echo: false
+table(data201$reason_for_discharge)
+
+data201 |>
+  filter(positive_outcomes == "Yes") |>
+  tabyl(reason_for_discharge) |>
+  adorn_pct_formatting(digits = 1) |>
+  adorn_totals("row")
+
+p_yes <- function(x) round(x[2] / sum(x), 2)
+
+addmargins(
+  xtabs(
+    data = data201,
+    ~ location + positive_outcomes,
+    subset = data201$reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)"
+  ),
+  FUN = list(p_yes)
+) |>
+  knitr::kable()
+```
+
+# Question 2.02: Did successful transition rates out of EBP/CDEP services differ by subpopulations?
+
+## Race
+
+```{r race_detailed}
+#| echo: false
+detailed_race <- data201 |>
+  group_by(code_num) |>
+  summarise(
+    total = n(),
+    successful = sum(
+      reason_for_discharge %in% c(
+        "Mutually agreed cessation of treatment (Successful Completion)",
+        "Clinically referred out"
+      ),
+      na.rm = TRUE
+    ),
+    perc_success = round(100 * successful / total, 1)
+  )
+
+detailed_race
+
+chisq.test(data201$positive_outcomes, data201$code_num)
+```
+
+## Race summary
+
+Roll detailed race variables up based on first answer into: Asian, Black or African American, Don't Know, Hispanic or Latino, Middle Eastern or North African, Native American/American Indian or Alaska Native, Native Hawaiian or Pacific Islander, Not Applicable, Prefer Not to Answer, White.
+
+```{r race_summary}
+#| echo: false
+data201 <- data201 |>
+  separate(race, into = c("first_race", NA), sep = ",", extra = "drop", remove = FALSE)
+
+summary_race <- data201 |>
+  group_by(first_race) |>
+  summarise(
+    total = n(),
+    successful = sum(
+      reason_for_discharge %in% c(
+        "Mutually agreed cessation of treatment (Successful Completion)",
+        "Clinically referred out"
+      ),
+      na.rm = TRUE
+    ),
+    perc_success = round(100 * successful / total, 1)
+  )
+
+summary_race
+
+chisq.test(data201$positive_outcomes, data201$first_race)
+
+model_race <- glm(positive_outcomes ~ first_race, data = data201, family = "binomial")
+summary(model_race)
+table(data201$first_race)
+
+summary(model_race)
+```
+
+## Ethnicity
+
+Codebook: `Chinese` = 1, `Asian Indian` = 2, `Filipino` = 3, `Vietnamese` = 4, `Korean` = 5, `Japanese` = 6, `African American` = 7, `Jamaican` = 8, `Haitian` = 9, `Nigerian` = 10, `Somali` = 11, `Mexican` = 12, `Puerto Rican` = 13, `Salvadoran` = 14, `Cuban` = 15, `Dominican` = 16, `Guatemalan` = 17, `Native Hawaiian` = 18, `Samoan` = 19, `Chamorro` = 20, `English` = 21, `German` = 22, `Irish` = 23, `Italian` = 24, `Polish` = 25, `Scottish` = 26, `2+ ethnicities selected` = 88
+
+```{r ethnicity}
+#| echo: false
+detailed_ethnicity <- data201 |>
+  group_by(ethn_num) |>
+  summarise(
+    total = n(),
+    successful = sum(
+      reason_for_discharge %in% c(
+        "Mutually agreed cessation of treatment (Successful Completion)",
+        "Clinically referred out"
+      ),
+      na.rm = TRUE
+    ),
+    perc_success = round(100 * successful / total, 1)
+  )
+
+detailed_ethnicity
+
+chisq.test(data201$positive_outcomes, data201$ethnicity)
+```
+
+## Gender identity
+
+```{r gender_identity}
+#| echo: false
+gender_identity <- data201 |>
+  group_by(gender_identity) |>
+  summarise(
+    total = n(),
+    successful = sum(
+      reason_for_discharge %in% c(
+        "Mutually agreed cessation of treatment (Successful Completion)",
+        "Clinically referred out"
+      ),
+      na.rm = TRUE
+    ),
+    perc_success = round(100 * successful / total, 1)
+  )
+
+gender_identity 
+
+chisq.test(data201$gender_identity, data201$positive_outcomes)
+
+data201 <- data201 |>
+  mutate(gender_identity = relevel(as.factor(gender_identity), ref = "Woman/girl"))
+
+model_gender <- glm(positive_outcomes ~ gender_identity, data = data201, family = "binomial")
+
+summary(model_gender)
+```
+
+## Sexual orientation
+
+```{r sexual_orientation}
+#| echo: false
+sex_orientation <- data201 |>
+  group_by(sexual_orientation) |>
+  summarise(
+    total = n(),
+    successful = sum(
+      reason_for_discharge %in% c(
+        "Mutually agreed cessation of treatment (Successful Completion)",
+        "Clinically referred out"
+      ),
+      na.rm = TRUE
+    ),
+    perc_success = round(100 * successful / total, 1)
+  )
+
+sex_orientation 
+
+chisq.test(data201$positive_outcomes, data201$sexual_orientation)
+
+model_sexori <- glm(positive_outcomes ~ sexual_orientation, data = data201, family = "binomial")
+
+summary(model_sexori)
+```
+
+## Insurance status
+
+```{r insurance}
+#| echo: false
+insurance <- data201 |>
+  group_by(insurance_status) |>
+  summarise(
+    total = n(),
+    successful = sum(
+      reason_for_discharge %in% c(
+        "Mutually agreed cessation of treatment (Successful Completion)",
+        "Clinically referred out"
+      ),
+      na.rm = TRUE
+    ),
+    perc_success = round(100 * successful / total, 1)
+  )
+
+insurance 
+
+chisq.test(data201$positive_outcomes, data201$insurance_status)
+
+model_insurance <- glm(positive_outcomes ~ insurance_status, data = data201, family = "binomial")
+
+summary(model_insurance)
+```

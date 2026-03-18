@@ -1,0 +1,337 @@
+---
+title: "Annual Report Results-12-08-2025"
+author: "Cristin Young"
+format: 
+  docx:
+    page-width: 7.5
+editor: visual
+---
+
+## Period
+
+2024-01-01 - 2025-12-31
+
+## Client_sat
+
+**Definition:** Clients from the primary evaluation who indicate high satisfaction with services divided by the total number of clients served by the grantees who completed a satisfaction survey after an intervention during the designated timeframe.
+
+**Calculation:** This KPI represents ***the percent*** of clients that report high satisfaction with services out of the total that completed the satisfaction survey by period(s). Clients must have a record in the eInsight platform with an intervention type and start date, have discharged from services (with an intervention end date), and have completed a satisfaction survey to be included in this count. Calculation assumes dates before 2024 or after 2025 are correct and any rows with these dates have not been revised.
+
+```{r, client_sat}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+
+# Produced by data cleaning/satisfaction_data_cleaning.qmd
+# Contains all four survey types; date-cleaned; filtered to reporting period;
+# includes year and quarter_label columns.
+sat_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+combined_all <- read_csv(
+  file.path(sat_dir, "combined_satisfaction_clean.csv"),
+  show_col_types = FALSE
+) %>%
+  mutate(quarter_label = fct_inorder(quarter_label))
+```
+
+Satisfaction is defined two ways below. The first is the percent of individuals who answered question 1 as "Agree" or "Strongly Agree" on the satisfaction survey. The second definition is the percent of individuals who selected "Agree" or "Strongly Agree" on 80% or more of the questions completed.
+
+**Nitty gritty:** There are four satisfaction surveys: Caregiver (n=`{r} sum(combined_all$source == "caregiver")`), Child (13-17) (n=`{r} sum(combined_all$source == "child")`), Adult (18-59) (n=`{r} sum(combined_all$source == "adult")`), and Adult (60+) (n=`{r} sum(combined_all$source == "senior")`). A separate data frame was made for question 1, and high satisfaction was defined as the percent of individuals who answered a 4 or 5 for question 1.
+
+**Assumptions:** I cleaned dates with "002X" and "292X" and replaced them with "202X." I also filtered dates in the future (\<= "2025-12-31").
+
+#### Question 1 Satisfaction
+
+The following table shows high survey satisfaction by year.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+# Question 1 satisfaction by year
+pct_4_5_year <- combined_all %>% 
+  filter(!is.na(year),!is.na(q2)) %>% 
+  group_by(year) %>% 
+  summarise(
+    pct_4_5 = round((100 * sum(q2 %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q2))), 1),
+    x_4_5 = sum(q2 %in% c(4, 5), na.rm = TRUE),
+    n_4_5 = length(q2)
+  )
+
+pct_4_5_year
+
+# Question 1 satisfaction overall
+pct_4_5_overall <- combined_all %>% 
+  filter(!is.na(year),!is.na(q2)) %>% 
+  summarise(
+    pct_4_5 = round((100 * sum(q2 %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q2))), 1),
+    x_4_5 = sum(q2 %in% c(4, 5), na.rm = TRUE),
+    n_4_5 = length(q2)
+  )
+
+pct_4_5_overall 
+```
+
+#### Combined Survey Satisfaction
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+
+summary_agree <- combined_all %>%
+  # keep only question columns
+  select(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) %>%
+  mutate(across(everything(), ~ as.numeric(.))) 
+
+df2 <- summary_agree %>% 
+  mutate(across(everything(), ~ na_if(., 0))) %>% 
+  # calculate per-person proportion of "Agree"/"Strongly Agree"
+  rowwise() %>%
+  summarise(
+    n_answered = sum(!is.na(c_across(everything()))),
+    n_agree = sum(c_across(everything()) %in% c(4,5), na.rm = TRUE),
+    pct_agree = n_agree / n_answered
+  ) %>%
+  ungroup() %>% 
+  summarise(
+    n_total = n(),
+    n_meeting_80pct = sum(pct_agree >= 0.8, na.rm = TRUE),
+    pct_meeting_80pct = round((100 * n_meeting_80pct / n_total), 1)
+  )
+
+df2
+
+# CONFIRMED THIS WORKS THE SAME AS ABOVE
+df3 <- summary_agree %>%   
+  mutate(across(everything(), ~ na_if(., 0))) %>% 
+  rowwise() %>% 
+  mutate(count_4 = sum(c(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) == "4", na.rm = TRUE), 
+         count_5 = sum(c(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) == "5", na.rm = TRUE),
+         n_4_5 = sum(c(count_4, count_5), na.rm = TRUE),
+         n_total = sum(!is.na(c_across(starts_with("q")))),
+         perc_4_5 = n_4_5 / n_total
+         ) %>% 
+  ungroup() 
+
+df4 <- df3 %>% 
+  summarise(
+    n_total = n(),
+    n_meeting_80pct = sum(perc_4_5 >= 0.8, na.rm = TRUE),
+    pct_meeting_80pct = round((100 * n_meeting_80pct / n_total), 1)
+  )
+
+df4
+```
+
+The following table shows high survey satisfaction results by quarter, for data where both `client_id` and `quarter_label` were available.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+summary_agree_quarter <- combined_all %>%
+  filter(!is.na(quarter_label)) %>% 
+  group_by(quarter_label) %>% 
+  # keep only question columns
+  select(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) %>%
+  mutate(across(everything(), ~ as.numeric(.))) %>% 
+  # calculate per-person proportion of "Agree"/"Strongly Agree"
+  rowwise() %>%
+  summarise(
+    n_answered = sum(!is.na(c_across(everything()))),
+    n_agree = sum(c_across(everything()) %in% c(4, 5)),
+    pct_agree = n_agree / n_answered
+  ) %>%
+  summarise(
+    n_total = n(),
+    n_meeting_80pct = sum(pct_agree >= 0.8, na.rm = TRUE),
+    pct_meeting_80pct = round((100 * n_meeting_80pct / n_total), 1)
+  )
+
+summary_agree_quarter
+```
+
+## Client_end
+
+**Definition:** Clients from the primary evaluation whose discharge reason is "mutually agreed cessation of treatment" for clients who discharged from an intervention during the designated time frame, divided by the total number of clients from the primary evaluation served and who have a discharge reason recorded.
+
+**Calculation:** This KPI represents ***the percent*** of clients who have a disenrollment/discharge response as "mutually agreed cessation of treatment" out of the total number of clients with a discharge reason by period(s).
+
+**Assumptions:** This is discharge data from EInsight, so can have clients in here multiple times (they can have multiple interventions, or the same intervention on multiple dates). I removed NA's from reason_for_discharge, but did not clean dates at all. I filtered by intervention_start date \>= "2024-01-1" and \<= "12-31-2025."
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| include: false
+
+# number of rows with a reason for discharge
+count_rows <- nrow(discharge_data_filtered %>% filter(!is.na(reason_for_discharge)))
+count_rows
+
+# number of rows with successful discharge
+# table of positive outcomes 
+tab3 <- discharge_data_filtered %>%
+  filter(intervention_start >= "2024-01-01",
+         intervention_start <= "2025-12-31") %>% 
+  tabyl(reason_for_discharge) %>%               
+  adorn_pct_formatting(digits = 2)
+
+# count of successful discharge
+yes_count <- tab3 %>%
+  filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)") %>%
+  pull(n)
+
+# percent of successful discharge
+yes_pct3 <- tab3 %>%
+  filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)") %>%
+  pull(valid_percent)
+
+tab3
+```
+
+The results below show % of successful discharges by `intervention_end_quarter`, once NA's are removed from the data.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+# total table of successful discharges by quarter of intervention END
+tab4q <- discharge_data_filtered %>% 
+  filter(!is.na(reason_for_discharge),
+         intervention_end >= "2024-01-01",
+         intervention_end <= "2025-12-31") %>% 
+  tabyl(reason_for_discharge) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+
+tab4q %>% filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)")
+
+discharge_data_filtered$intervention_end_year <- year(discharge_data_filtered$intervention_end)
+
+tab4y <- discharge_data_filtered %>% 
+  filter(!is.na(reason_for_discharge),
+         intervention_end >= "2024-01-01",
+         intervention_end <= "2025-12-31") %>% 
+  tabyl(reason_for_discharge, intervention_end_year) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 0) %>%
+  adorn_ns() 
+
+tab4y %>% filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)")
+
+tab4 <- discharge_data_filtered %>% 
+  filter(!is.na(reason_for_discharge),
+         !is.na(intervention_name),
+         !is.na(pre_measure_s),
+         !is.na(post_measure_s),
+         !is.na(location),
+         intervention_start >= "2024-01-01",
+         intervention_start <= "2025-12-31",
+         positive_outcomes == "Yes") %>% 
+  tabyl(reason_for_discharge) %>% 
+  adorn_totals("row") %>%
+  adorn_pct_formatting(digits = 1)
+
+tab4
+
+
+tab4 %>% filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)")
+```
+
+## Rikke's SPSS master file
+
+**Access to services**
+
+Among these clients/participants, the largest share (\[XX%\]) received services through a Round 2 program implementing \[EBP\], which \[brief context about the intervention—e.g., target population and core focus\].
+
+Service reach was also concentrated among \[ENTITY TYPE: CBO\] (\[XX%\]) and in Region 8 (Los Angeles County; \[XX%\]).
+
+At the same time, the Workstream served a diverse set of children, youth, and caregivers across provider types. For example, \[XX%\] of clients/participants received services through non-traditional behavioral health providers (e.g., hospitals/hospital systems; \[XX%\]) and tribal entities (\[XX%\]).
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+library(haven)
+
+# load in spss data
+master_grantee_file <- haven::read_spss("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Quant Team File/MasterGranteeSpreadsheet_forBHESQuantTeam_1-20-26_NEW!.sav") %>% 
+  zap_missing() %>%
+  mutate(across(where(is.labelled), as.character)) %>%
+  mutate(across(where(is.character), ~ na_if(str_trim(.x), ""))) %>% 
+  rename_with(~ gsub("^@", "", .x)) %>% 
+  janitor::clean_names() %>% 
+  rename_with(~ gsub("^x", "", .x))
+
+#join to all data
+all_data_spss <- left_join(all_data, master_grantee_file, by = c("provider" = "1a_grantee_provider_name", "intervention_name" = "9a_ebpcde"))
+
+#get #'s for report 
+all_data_spss %>%
+  filter(`4funding_round` == "Round 4") %>% 
+  distinct(client_system_id, provider) %>%   # one row per client per round
+  tabyl(provider) %>%
+  adorn_totals("row") %>%
+  adorn_rounding(digits = 2)
+
+#join to just demographic data - need to add provider name and intervention first to help with join
+key <- c("client_system_id", "provider_system_id", "provider_id")
+
+discharge_small <- discharge_data_filtered %>%
+  select(all_of(key), provider, intervention_name)
+
+discharge_small %>%
+  count(across(all_of(key)), name = "n") %>%
+  filter(n > 1)
+
+discharge_unique <- discharge_small %>%
+  distinct(across(all_of(key)), .keep_all = TRUE)
+
+demo_discharge <- left_join(demographic_data_filtered, discharge_unique, by = key)
+
+demo_spss <- left_join(demo_discharge, master_grantee_file, by = c("provider_id" = "2grantee_provider_id"))
+
+#get #'s on master spss file
+demo_spss %>% 
+  tabyl(`12a_grantee_entity_type_for_report`, `8c_regions`) %>% 
+  adorn_totals("row") %>% 
+  adorn_rounding(digits = 2)
+
+demo_spss %>% 
+  filter(`7a_grant_track` == "Expansion") %>% 
+  tabyl(`12a_grantee_entity_type_for_report`, `8c_regions`) %>% 
+  adorn_totals("row") %>% 
+  adorn_rounding(digits = 2)
+
+master_grantee_file %>% 
+  #filter(`7a_grant_track` == "Expansion") %>% 
+  tabyl(`1a_grantee_provider_name`, `8c_regions`) %>% 
+  adorn_totals("row") %>% 
+  adorn_rounding(digits = 2)
+
+demo_spss %>% 
+  tabyl(`12a_grantee_entity_type`) %>% 
+  adorn_totals("row") %>% 
+  adorn_rounding(digits = 2)
+
+demo_spss %>% 
+  tabyl(`8c_regions`) %>% 
+  adorn_totals("row") %>% 
+  adorn_rounding(digits = 2)
+
+test <- demo_spss %>% 
+  filter(is.na(`8c_regions`))
+
+table(test$provider_id)
+
+master_grantee_file %>%
+  count(`2grantee_provider_id`) %>%
+  filter(n > 1)
+```
