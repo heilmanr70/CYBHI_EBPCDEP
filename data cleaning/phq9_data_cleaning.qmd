@@ -1,0 +1,195 @@
+---
+title: "PHQ-9 Assessment Data Cleaning"
+author: "Cristin Young"
+date: "2026-03-17"
+format:
+  html:
+    df-print: paged
+    toc: true
+    toc-float: true
+---
+
+## Project Overview
+
+This notebook prepares **CYBHI EBP/CDEP** Patient Health Questionnaire-9 (PHQ-9) assessment data for analysis and reporting. It ingests the raw eInsight export, processes the two-row hierarchical headers, maps text responses to numeric values, computes total scores and cut-off bands, pairs each client's initial assessment with their last follow-up, and writes a clean paired output.
+
+**Data source:** `PHQ-9.csv` — eInsight Individual Assessments export.
+
+**Scoring:**
+
+-   9 items. Responses are stored as text and mapped to numeric values: Not at all = 0, Several days = 1, More than half the days = 2, Nearly every day = 3.
+-   Total score range: 0–27. Higher scores indicate greater depression severity.
+-   **A lower follow-up score indicates a positive outcome.**
+-   Total score is set to `NA` if 2 or more items are missing.
+-   Cut-off bands: 0–4 = minimal, 5–9 = mild, 10–14 = moderate, 15–19 = moderately severe, 20–27 = severe.
+-   Item 10 (functional impairment) is not included in the total score.
+
+**Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 exist) is the follow-up. Clients with only one assessment are excluded.
+
+**Output:**
+
+| File | Contents |
+|----|----|
+| `phq9_paired_clean.csv` | One row per client: initial/follow-up scores and bands, `positive_outcome`, `score_change`, quarter labels |
+
+------------------------------------------------------------------------
+
+## Open Issues / Action Items
+
+------------------------------------------------------------------------
+
+# Setup
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(janitor)
+library(zoo)
+```
+
+------------------------------------------------------------------------
+
+# Helper Function
+
+```{r header-helper}
+# Reads an eInsight assessment CSV export with two-row headers.
+# Returns a cleaned data frame with combined column names and empty columns removed.
+read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A")) {
+  raw <- read_csv(path, na = na_vals, col_names = FALSE, show_col_types = FALSE,
+                  col_types = cols(.default = "c"))
+
+  h1    <- unlist(raw[1, ], use.names = FALSE)
+  h2    <- unlist(raw[2, ], use.names = FALSE)
+  h1_ff <- na.locf(h1, na.rm = FALSE) |> str_squish()
+
+  new_names <- ifelse(
+    is.na(h1_ff) | h1_ff == "",
+    h2,
+    paste(h1_ff, h2, sep = " - ")
+  )
+  new_names <- janitor::make_clean_names(new_names)
+
+  df <- raw[-c(1, 2), ]
+  names(df) <- new_names
+
+  df |> select(where(~ !all(is.na(.))))
+}
+```
+
+------------------------------------------------------------------------
+
+# 1. Read and Score
+
+```{r phq9-read}
+phq9_raw <- read_assessment_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/PHQ-9.csv"
+)
+
+response_cols <- names(phq9_raw)[
+  endsWith(names(phq9_raw), "_response") &
+  !str_detect(names(phq9_raw), "if_you_checked")
+]
+
+response_map <- c(
+  "Not at all"             = 0,
+  "Several days"           = 1,
+  "More than half the days" = 2,
+  "Nearly every day"       = 3
+)
+
+phq9_scores <- phq9_raw |>
+  mutate(across(all_of(response_cols), ~ as.numeric(response_map[.]))) |>
+  rowwise() |>
+  mutate(
+    missing_count = sum(is.na(c_across(all_of(response_cols)))),
+    total_score   = if_else(
+      missing_count >= 2,
+      NA_real_,
+      sum(c_across(all_of(response_cols)), na.rm = TRUE)
+    )
+  ) |>
+  ungroup() |>
+  mutate(
+    cut_off_band = case_when(
+      total_score <= 4                        ~ "minimal",
+      total_score >= 5  & total_score <= 9   ~ "mild",
+      total_score >= 10 & total_score <= 14  ~ "moderate",
+      total_score >= 15 & total_score <= 19  ~ "moderately severe",
+      total_score >= 20                       ~ "severe",
+      .default = NA_character_
+    ),
+    date_completed = as.Date(date_completed)
+  ) |>
+  filter(
+    date_completed >= "2024-01-01",
+    date_completed <= Sys.Date()
+  ) |>
+  select(client_system_id, collection, date_completed, total_score, cut_off_band)
+
+cat("PHQ-9 rows after scoring:", nrow(phq9_scores), "\n")
+cat("Unique clients:          ", n_distinct(phq9_scores$client_system_id), "\n")
+cat("Missing total_score:     ", sum(is.na(phq9_scores$total_score)), "\n")
+```
+
+------------------------------------------------------------------------
+
+# 2. Pair Initial and Follow-up
+
+```{r phq9-pair}
+phq9_paired <- phq9_scores |>
+  group_by(client_system_id) |>
+  arrange(date_completed, .by_group = TRUE) |>
+  summarise(
+    n_assessments        = n(),
+    initial_date         = first(date_completed),
+    initial_score        = first(total_score),
+    initial_band         = first(cut_off_band),
+    follow_up_date       = if_else(n_assessments >= 2, last(date_completed),  as.Date(NA)),
+    follow_up_score      = if_else(n_assessments >= 2, last(total_score),     NA_real_),
+    follow_up_band       = if_else(n_assessments >= 2, last(cut_off_band),    NA_character_),
+    .groups = "drop"
+  ) |>
+  filter(!is.na(follow_up_date)) |>
+  mutate(
+    days_since_initial = as.integer(follow_up_date - initial_date),
+    # Lower follow-up = positive outcome (lower depression severity is better)
+    # 1 = improved, 0 = no change, -1 = worsened
+    positive_outcome = case_when(
+      follow_up_score <  initial_score ~ 1L,
+      follow_up_score == initial_score ~ 0L,
+      follow_up_score >  initial_score ~ -1L
+    ),
+    score_change      = follow_up_score - initial_score,
+    initial_quarter   = paste0("Q", quarter(initial_date),    " ", year(initial_date)),
+    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))
+  )
+
+cat("PHQ-9 paired clients:", nrow(phq9_paired), "\n")
+```
+
+------------------------------------------------------------------------
+
+# 3. Quick Check
+
+```{r phq9-check}
+phq9_paired |>
+  summarise(
+    n_paired          = n(),
+    n_improved        = sum(positive_outcome ==  1, na.rm = TRUE),
+    n_no_change       = sum(positive_outcome ==  0, na.rm = TRUE),
+    n_worsened        = sum(positive_outcome == -1, na.rm = TRUE),
+    pct_improved      = round(100 * n_improved / n_paired, 1),
+    n_missing_outcome = sum(is.na(positive_outcome))
+  )
+```
+
+------------------------------------------------------------------------
+
+# 4. Write Clean CSV
+
+```{r write-csv}
+out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+write_csv(phq9_paired, file.path(out_dir, "phq9_paired_clean.csv"))
+
+cat("CSV written successfully.\n")
+```
