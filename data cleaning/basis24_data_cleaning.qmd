@@ -24,27 +24,19 @@ This notebook prepares **CYBHI EBP/CDEP** BASIS-24 assessment data for analysis 
 -   **A lower follow-up score indicates a positive outcome.**
 -   `total_score` is set to `NA` if fewer than 23 of 24 items are answered (more than 1 item missing).
 
-The items comprising each subscale are as follows:
--  Depression/Functioning: 1,2,3,9,10,12
--  Relationships: 4,5,6,7,8
--  Self-Harm: 11,20
--  Emotional Lability: 13,18,19
--  Psychosis: 14,15,16,17
--  Substance Abuse: 21,22,23,24
-
+The items comprising each subscale are as follows: - Depression/Functioning: 1,2,3,9,10,12 - Relationships: 4,5,6,7,8 - Self-Harm: 11,20 - Emotional Lability: 13,18,19 - Psychosis: 14,15,16,17 - Substance Abuse: 21,22,23,24
 
 **Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 exist) is the follow-up. Clients with only one assessment are excluded.
 
 **Output:**
 
 | File | Contents |
-|------------------------------------|------------------------------------|
+|----|----|
 | `basis24_paired_clean.csv` | One row per client: initial/follow-up scores, `positive_outcome`, `score_change`, quarter labels |
 
 ------------------------------------------------------------------------
 
 ## Open Issues / Action Items
-
 
 ------------------------------------------------------------------------
 
