@@ -11,41 +11,40 @@ format:
 
 ## Project Overview
 
-This notebook prepares **CYBHI EBP/CDEP** NOMS (National Outcome Measures) assessment data for analysis and reporting. It ingests two raw eInsight exports (child and self-report versions), processes the two-row hierarchical headers, coerces scores to numeric, computes total scores, filters to the reporting period, pivots to long format, and pairs each client's initial assessment with their last follow-up (>3 days after initial).
+This notebook prepares **CYBHI EBP/CDEP** NOMS (National Outcome Measures) assessment data for analysis and reporting. It ingests two raw eInsight exports (child and self-report versions), processes the two-row hierarchical headers, coerces scores to numeric, computes total scores, filters to the reporting period, pivots to long format, and pairs each client's initial assessment with their last follow-up (\>3 days after initial).
 
 **Data sources (eInsight Individual Assessments exports):**
 
-- **NOMS-child.csv** — Caregiver-completed NOMS for child clients.
-- **NOMS-self_report.csv** — Client self-report NOMS.
+-   **NOMS-child.csv** — Caregiver-completed NOMS for child clients.
+-   **NOMS-self_report.csv** — Client self-report NOMS.
 
 Each file has a two-row header: row 1 contains question text, row 2 contains subheader labels (e.g., "Score", "Comments").
 
 **Scoring:** Range 1–5 per question. An increase in follow-up score vs. initial indicates a positive outcome. Four questions are scored:
 
-- Q1: Overall mental health (single item, range 1–5)
-- Q2: Daily life functioning (7 items, range 7–35)
-- Q3: Well-being (6 items, range 6–30)
-- Q4: Social connectedness (6 items, range 6–30)
+-   Q1: Overall mental health (single item, range 1–5)
+-   Q2: Daily life functioning (7 items, range 7–35)
+-   Q3: Well-being (6 items, range 6–30)
+-   Q4: Social connectedness (6 items, range 6–30)
 
 **Pairing logic:** Rows are grouped by client ID and question. The first assessment is the initial; the last assessment at least 3 days later is the follow-up. Clients without a qualifying follow-up are excluded from the paired output.
 
 **Outputs:**
 
 | File | Contents |
-|------|----------|
+|---------------------------|---------------------------------------------|
 | `noms_child_pairs_clean.csv` | Long-format paired assessments (one row per client × question), child version |
 | `noms_self_pairs_clean.csv` | Long-format paired assessments, self-report version |
 
----
+------------------------------------------------------------------------
 
 ## Open Issues / Action Items
 
-- [ ] The 3-day threshold for "follow-up" is a pragmatic cutoff. Confirm this is the intended definition.
-- [ ] Date filter lower bound is `2024-01-01`; confirm this is the right start of the reporting window.
+-   [ ] The 3-day threshold for "follow-up" is a pragmatic cutoff. Confirm this is the intended definition.
 
----
+------------------------------------------------------------------------
 
-# Setup
+## Setup
 
 ```{r setup, message=FALSE, warning=FALSE}
 library(tidyverse)
@@ -53,9 +52,9 @@ library(janitor)
 library(zoo)
 ```
 
----
+------------------------------------------------------------------------
 
-# Helper Function
+## Helper Function
 
 ```{r header-helper}
 # Reads an eInsight assessment CSV export with two-row headers.
@@ -82,7 +81,7 @@ read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A")) {
 }
 ```
 
----
+------------------------------------------------------------------------
 
 # 1. NOMS Child
 
@@ -145,15 +144,36 @@ pairs_primary_long <- noms_child_long |>
     initial_score,
     follow_up_date  = date_completed,
     follow_up_score = score,
-    days_since_initial
+    days_since_initial,
+    # Higher follow-up = positive outcome (higher score is better)
+    # 1 = improved, 0 = no change, -1 = worsened
+    positive_outcome = case_when(
+      follow_up_score >  initial_score ~ 1L,
+      follow_up_score == initial_score ~ 0L,
+      follow_up_score <  initial_score ~ -1L
+    ),
+    score_change      = follow_up_score - initial_score,
+    initial_quarter   = paste0("Q", quarter(initial_date),   " ", year(initial_date)),
+    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))
   )
 
 cat("NOMS Child paired rows: ", nrow(pairs_primary_long), "\n")
 cat("Unique clients paired:  ", n_distinct(pairs_primary_long$client_system_id), "\n")
 cat("Questions covered:      ", n_distinct(pairs_primary_long$question), "\n")
+
+pairs_primary_long |>
+  group_by(question) |>
+  summarise(
+    n_paired          = n(),
+    n_improved        = sum(positive_outcome ==  1, na.rm = TRUE),
+    n_no_change       = sum(positive_outcome ==  0, na.rm = TRUE),
+    n_worsened        = sum(positive_outcome == -1, na.rm = TRUE),
+    pct_improved      = round(100 * n_improved / n_paired, 1),
+    n_missing_outcome = sum(is.na(positive_outcome))
+  )
 ```
 
----
+------------------------------------------------------------------------
 
 # 2. NOMS Self-Report
 
@@ -217,15 +237,36 @@ pairs_primary_long_self <- noms_self_long |>
     initial_score,
     follow_up_date  = date_completed,
     follow_up_score = score,
-    days_since_initial
+    days_since_initial,
+    # Higher follow-up = positive outcome (higher score is better)
+    # 1 = improved, 0 = no change, -1 = worsened
+    positive_outcome = case_when(
+      follow_up_score >  initial_score ~ 1L,
+      follow_up_score == initial_score ~ 0L,
+      follow_up_score <  initial_score ~ -1L
+    ),
+    score_change      = follow_up_score - initial_score,
+    initial_quarter   = paste0("Q", quarter(initial_date),   " ", year(initial_date)),
+    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))
   )
 
 cat("NOMS Self paired rows: ", nrow(pairs_primary_long_self), "\n")
 cat("Unique clients paired: ", n_distinct(pairs_primary_long_self$client_system_id), "\n")
 cat("Questions covered:     ", n_distinct(pairs_primary_long_self$question), "\n")
+
+pairs_primary_long_self |>
+  group_by(question) |>
+  summarise(
+    n_paired          = n(),
+    n_improved        = sum(positive_outcome ==  1, na.rm = TRUE),
+    n_no_change       = sum(positive_outcome ==  0, na.rm = TRUE),
+    n_worsened        = sum(positive_outcome == -1, na.rm = TRUE),
+    pct_improved      = round(100 * n_improved / n_paired, 1),
+    n_missing_outcome = sum(is.na(positive_outcome))
+  )
 ```
 
----
+------------------------------------------------------------------------
 
 # 3. Write Clean CSVs
 
