@@ -13,30 +13,38 @@ format:
 
 This notebook prepares **CYBHI EBP/CDEP** BASIS-24 assessment data for analysis and reporting. It ingests the raw eInsight export, processes the two-row hierarchical headers, applies reverse scoring to items 4–9, computes total scores, and pairs each client's initial assessment with their last follow-up.
 
-**Data source:** `Basis-24.xlsx` — eInsight Individual Assessments export.
+**Data source:** `Basis-24.csv` — eInsight Individual Assessments export.
 
 **Scoring:**
 
 -   24 items, each rated 0–4.
 -   Items **4 through 9 are reverse scored** using the formula `6 − raw_score`.
--   Total score range: 0–96. Higher scores indicate greater functional impairment.
+-   Total score is a **weighted sum**: `sum(weight_i × rating_i) / (1 − sum of weights for missing items)`. Weights for Q1–Q24 are defined in the scoring chunk below and sum to 1.
+-   Total score range: 0–4. Higher scores indicate greater functional impairment.
 -   **A lower follow-up score indicates a positive outcome.**
--   Note: The existing code does not apply a missing-item threshold for `total_score` (unlike PSS/YOQ). The sum is computed with `na.rm = TRUE` regardless of how many items are missing.
+-   `total_score` is set to `NA` if fewer than 23 of 24 items are answered (more than 1 item missing).
+
+The items comprising each subscale are as follows:
+-  Depression/Functioning: 1,2,3,9,10,12
+-  Relationships: 4,5,6,7,8
+-  Self-Harm: 11,20
+-  Emotional Lability: 13,18,19
+-  Psychosis: 14,15,16,17
+-  Substance Abuse: 21,22,23,24
+
 
 **Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 exist) is the follow-up. Clients with only one assessment are excluded.
 
 **Output:**
 
 | File | Contents |
-|----|----|
+|------------------------------------|------------------------------------|
 | `basis24_paired_clean.csv` | One row per client: initial/follow-up scores, `positive_outcome`, `score_change`, quarter labels |
 
 ------------------------------------------------------------------------
 
 ## Open Issues / Action Items
 
--   [ ] No missing-item threshold is applied for BASIS-24 (unlike PSS which uses `NA` if 2+ missing). Confirm whether a threshold should be added.
--   [ ] No date range filter is applied (unlike NOMS). Confirm whether a period filter is needed.
 
 ------------------------------------------------------------------------
 
@@ -45,7 +53,6 @@ This notebook prepares **CYBHI EBP/CDEP** BASIS-24 assessment data for analysis 
 ```{r setup, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(janitor)
-library(readxl)
 library(zoo)
 ```
 
@@ -54,8 +61,9 @@ library(zoo)
 # Helper Function
 
 ```{r header-helper}
-read_assessment_excel <- function(path, na_vals = c("-", "", "NA", "N/A", "0")) {
-  raw <- read_xlsx(path, na = na_vals, col_names = FALSE)
+read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A", "0")) {
+  raw <- read_csv(path, na = na_vals, col_names = FALSE, show_col_types = FALSE,
+                  col_types = cols(.default = "c"))
 
   h1    <- unlist(raw[1, ], use.names = FALSE)
   h2    <- unlist(raw[2, ], use.names = FALSE)
@@ -80,31 +88,53 @@ read_assessment_excel <- function(path, na_vals = c("-", "", "NA", "N/A", "0")) 
 # 1. Read and Score
 
 ```{r basis24-read}
-basis24_raw <- read_assessment_excel(
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/Basis-24.xlsx"
+
+# "0" is a valid rating on the 0–4 scale — do not treat it as NA
+basis24_raw <- read_assessment_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/Basis-24.csv",
+  na_vals = c("-", "", "NA", "N/A")
 )
 
 # Reverse-scored item positions (1-indexed within score columns)
 rev_idx    <- c(4, 5, 6, 7, 8, 9)
 score_cols <- names(basis24_raw)[endsWith(names(basis24_raw), "_score")]
 
+# Official BASIS-24 item weights (Q1–Q24); sum to 1
+basis24_weights <- c(
+  0.069588, 0.106112, 0.070040, 0.025082, 0.027949, 0.029729,
+  0.026978, 0.024052, 0.056511, 0.094193, 0.048262, 0.058638,
+  0.038422, 0.016425, 0.022986, 0.024274, 0.030429, 0.064966,
+  0.058904, 0.052358, 0.017836, 0.013450, 0.010047, 0.012771
+)
+
+# Weighted score formula: sum(w_i * x_i) / (1 - sum of weights for missing items)
+weighted_basis24 <- function(vals, weights) {
+  missing_wt <- sum(weights[is.na(vals)])
+  sum(weights * vals, na.rm = TRUE) / (1 - missing_wt)
+}
+
 basis24_scores <- basis24_raw |>
   mutate(across(all_of(score_cols), as.numeric)) |>
+  mutate(across(all_of(score_cols[rev_idx]), ~ 6 - .x)) |>
   rowwise() |>
   mutate(
     missing_count = sum(is.na(c_across(all_of(score_cols)))),
-    total_score = {
-      vals          <- c_across(all_of(score_cols))
-      vals[rev_idx] <- 6 - vals[rev_idx]
-      sum(vals, na.rm = TRUE)
-    }
+    total_score   = if_else(
+      missing_count <= 1,
+      weighted_basis24(c_across(all_of(score_cols)), basis24_weights),
+      NA_real_
+    )
   ) |>
   ungroup() |>
   mutate(
     date_completed = as.Date(date_completed),
     row_id         = row_number()
   ) |>
-  select(client_system_id, collection, date_completed, total_score)
+  select(client_system_id, collection, date_completed, total_score) |>
+  filter(
+    date_completed >= "2024-01-01",
+    date_completed <= Sys.Date()
+  )
 
 cat("BASIS-24 rows after scoring:", nrow(basis24_scores), "\n")
 cat("Unique clients:             ", n_distinct(basis24_scores$client_system_id), "\n")
@@ -129,7 +159,12 @@ basis24_paired <- basis24_scores |>
   filter(!is.na(follow_up_date)) |>
   mutate(
     # Lower follow-up = positive outcome (lower impairment is better)
-    positive_outcome  = if_else(follow_up_score < initial_score, 1L, 0L),
+    # 1 = improved, 0 = no change, -1 = worsened
+    positive_outcome = case_when(
+      follow_up_score <  initial_score ~ 1L,
+      follow_up_score == initial_score ~ 0L,
+      follow_up_score >  initial_score ~ -1L
+    ),
     score_change      = follow_up_score - initial_score,
     initial_quarter   = paste0("Q", quarter(initial_date),    " ", year(initial_date)),
     follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))
@@ -146,8 +181,10 @@ cat("BASIS-24 paired clients:", nrow(basis24_paired), "\n")
 basis24_paired |>
   summarise(
     n_paired          = n(),
-    n_positive        = sum(positive_outcome == 1, na.rm = TRUE),
-    pct_positive      = round(100 * n_positive / n_paired, 1),
+    n_improved        = sum(positive_outcome ==  1, na.rm = TRUE),
+    n_no_change       = sum(positive_outcome ==  0, na.rm = TRUE),
+    n_worsened        = sum(positive_outcome == -1, na.rm = TRUE),
+    pct_improved      = round(100 * n_improved  / n_paired, 1),
     n_missing_outcome = sum(is.na(positive_outcome))
   )
 ```
