@@ -18,7 +18,7 @@ This notebook prepares **CYBHI EBP/CDEP** BASIS-24 assessment data for analysis 
 **Scoring:**
 
 -   24 items, each rated 0–4.
--   Items **4 through 9 are reverse scored** using the formula `6 − raw_score`.
+-   Items **4 through 9 are reverse scored** using the formula `4 − raw_score`.
 -   Total score is a **weighted sum**: `sum(weight_i × rating_i) / (1 − sum of weights for missing items)`. Weights for Q1–Q24 are defined in the scoring chunk below and sum to 1.
 -   Total score range: 0–4. Higher scores indicate greater functional impairment.
 -   **A lower follow-up score indicates a positive outcome.**
@@ -115,7 +115,7 @@ weighted_basis24 <- function(vals, weights) {
 
 basis24_scores <- basis24_raw |>
   mutate(across(all_of(score_cols), as.numeric)) |>
-  mutate(across(all_of(score_cols[rev_idx]), ~ 6 - .x)) |>
+  mutate(across(all_of(score_cols[rev_idx]), ~ 4 - .x)) |>
   rowwise() |>
   mutate(
     missing_count = sum(is.na(c_across(all_of(score_cols)))),
