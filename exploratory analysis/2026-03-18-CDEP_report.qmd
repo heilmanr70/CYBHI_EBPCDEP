@@ -1,0 +1,697 @@
+---
+title: "CDEP Report"
+author: "Cristin Young"
+date: "2026-03-18"
+format:
+  html:
+    df-print: paged
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    theme: cosmo
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+::: {.callout-note title="TO DOs"}
+-   
+:::
+
+## CDEPs
+
+81 CDEPs are the focus of this report.
+
+## Setup
+
+```{r}
+#| label: setup
+
+library(readr)
+library(tidyverse)
+library(janitor)
+library(haven)
+
+knitr::opts_chunk$set(rownames.print = FALSE)
+
+discharge_data    <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
+all_data          <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
+demographic_data  <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
+
+cdep_sav <- read_sav("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Master Files BHES Internal/Other File Versions/CDEPS_3-18-26.sav")
+
+cdep_lookup <- cdep_sav |>
+  select(provider_id = `@2GranteeProviderID`, sav_name = `@9aEBPCDEP`)
+
+# intervention_name_crosswalk <- read_csv(
+#   "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Quant Team File/intervention_name_review_RA_3-19-26.csv",
+#   show_col_types = FALSE
+# )
+
+intervention_name_crosswalk <- read_csv("/Users/cristin/Downloads/intervention_name_crosswalk_updated_RA.xlsx",
+  show_col_types = FALSE
+)
+
+write_csv(intervention_name_crosswalk, "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Quant Team File/intervention_name_review_more.csv")
+
+# Clean crosswalk: remove data-entry artifacts, coerce provider_id to character
+crosswalk_clean <- intervention_name_crosswalk |>
+  filter(
+    !is.na(discharge_data_intervention_name),
+    discharge_data_intervention_name != "added this row",
+    !is.na(cdep_sav_intervention_name)
+  ) |>
+  mutate(provider_id = str_pad(as.character(provider_id), width = 3, pad = "0")) |>
+  distinct(
+    provider_id,
+    intervention_name          = discharge_data_intervention_name,
+    cdep_sav_intervention_name
+  )
+
+# Step 1: direct matches — discharge intervention_name == cdep_sav @9aEBPCDEP
+direct_pairs <- discharge_data |>
+  distinct(provider_id, intervention_name) |>
+  inner_join(cdep_lookup, by = c("provider_id", "intervention_name" = "sav_name")) |>
+  distinct(provider_id, intervention_name)
+
+# Step 2: crosswalk-bridged matches for names that don't align
+crosswalk_pairs <- discharge_data |>
+  distinct(provider_id, intervention_name) |>
+  anti_join(direct_pairs, by = c("provider_id", "intervention_name")) |>
+  inner_join(crosswalk_clean, by = c("provider_id", "intervention_name")) |>
+  inner_join(cdep_lookup, by = c("provider_id", "cdep_sav_intervention_name" = "sav_name")) |>
+  distinct(provider_id, intervention_name)
+
+cdep_intervention_pairs <- bind_rows(direct_pairs, crosswalk_pairs)
+
+discharge_cdep <- discharge_data |>
+  semi_join(cdep_intervention_pairs, by = c("provider_id", "intervention_name"))
+
+# demographic data has no intervention_name — filter by provider_id only
+demo_cdep <- demographic_data |>
+  filter(provider_id %in% cdep_lookup$provider_id)
+
+all_data_cdep <- all_data |>
+  semi_join(cdep_intervention_pairs, by = c("provider_id", "intervention_name"))
+```
+
+## Results
+
+### Enrollment
+
+#### Grantees by Funding Round
+
+```{r}
+#| label: tbl-grantees-by-round
+
+discharge_cdep |>
+  distinct(provider, .keep_all = TRUE) |>
+  tabyl(funding_round) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1)
+```
+
+#### Clients Enrolled by Funding Round
+
+```{r}
+#| label: tbl-enrolled-by-round
+
+discharge_cdep |>
+  filter(!is.na(intervention_start)) |>
+  tabyl(funding_round) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1)
+```
+
+#### Clients Enrolled by Intervention
+
+```{r}
+#| label: tbl-enrolled-by-intervention
+
+discharge_cdep |>
+  filter(!is.na(intervention_start)) |>
+  tabyl(intervention_name) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1)
+```
+
+#### Clients Enrolled by Intervention and Funding Round
+
+```{r}
+#| label: tbl-enrolled-by-intervention-round
+
+discharge_cdep |>
+  filter(!is.na(intervention_start)) |>
+  tabyl(intervention_name, funding_round) |>
+  adorn_totals("row") |>
+  adorn_percentages("col") |>
+  adorn_pct_formatting(digits = 1) |>
+  adorn_ns()
+```
+
+### Discharge
+
+#### Discharged by Intervention
+
+```{r}
+#| label: tbl-discharged-by-intervention
+
+discharge_cdep |>
+  filter(!is.na(intervention_end)) |>
+  tabyl(intervention_name) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1)
+```
+
+#### Discharged by Reason
+
+```{r}
+#| label: tbl-discharged-by-reason
+
+discharge_cdep |>
+  filter(!is.na(intervention_end)) |>
+  tabyl(reason_for_discharge) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1)
+```
+
+#### Discharge Reason by Funding Round
+
+```{r}
+#| label: tbl-discharge-reason-by-round
+
+discharge_cdep |>
+  filter(!is.na(intervention_start)) |>
+  tabyl(reason_for_discharge, funding_round) |>
+  adorn_totals("row") |>
+  adorn_percentages("col") |>
+  adorn_pct_formatting(digits = 1) |>
+  adorn_ns()
+```
+
+#### Discharge Reason by Intervention
+
+```{r}
+#| label: tbl-discharge-reason-by-intervention
+
+discharge_cdep |>
+  filter(!is.na(intervention_start),
+         !is.na(reason_for_discharge)) |>
+  tabyl(reason_for_discharge, intervention_name) |>
+  adorn_totals("row") |>
+  adorn_percentages("col") |>
+  adorn_pct_formatting(digits = 1) |>
+  adorn_ns()
+```
+
+### Client Type
+
+#### Client Type Overall
+
+```{r}
+#| label: tbl-client-type
+
+demo_cdep |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  tabyl(client_type) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1)
+```
+
+#### Client Type by Funding Round
+
+```{r}
+#| label: tbl-client-type-by-round
+
+all_data_cdep |>
+  filter(!is.na(intervention_start)) |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  tabyl(client_type, funding_round) |>
+  adorn_totals("row") |>
+  adorn_percentages("col") |>
+  adorn_pct_formatting(digits = 1) |>
+  adorn_ns()
+```
+
+#### Client Type by Intervention
+
+```{r}
+#| label: tbl-client-type-by-intervention
+
+all_data_cdep |>
+  filter(!is.na(intervention_start)) |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  tabyl(intervention_name, client_type) |>
+  adorn_totals("row") |>
+  adorn_percentages("col") |>
+  adorn_pct_formatting(digits = 1) |>
+  adorn_ns()
+```
+
+## Client Demographics
+
+### Primary Language
+
+```{r}
+#| label: tbl-primary-language
+
+demo_cdep |>
+  filter(
+    housing_status != "Don't Know",
+    housing_status != "No Primary Language Selected",
+    housing_status != "Not Applicable",
+    housing_status != "Prefer Not To Answer",
+    !is.na(primary_language)
+  ) |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  tabyl(primary_language) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1)
+```
+
+### Housing Status
+
+```{r}
+#| label: tbl-housing-status
+
+demo_cdep |>
+  filter(
+    housing_status != "Don't Know",
+    housing_status != "No Housing Status Selected",
+    housing_status != "Not Applicable",
+    housing_status != "Prefer Not To Answer",
+    !is.na(housing_status)
+  ) |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  tabyl(housing_status) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1)
+```
+
+### Client Type with Average Age
+
+```{r}
+#| label: tbl-client-type-age
+
+demo_cdep_distinct <- demo_cdep |>
+  mutate(
+    age_start_tx_num = case_when(
+      age_at_start_of_treatment_in_years %in% c("No Age Provided", "", " ") ~ NA_character_,
+      TRUE ~ age_at_start_of_treatment_in_years
+    ) |> as.numeric()
+  ) |>
+  distinct(client_system_id, .keep_all = TRUE)
+
+tab_counts <- demo_cdep_distinct |>
+  tabyl(client_type) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1)
+
+tab_age <- demo_cdep_distinct |>
+  group_by(client_type) |>
+  summarise(
+    mean_age   = round(mean(age_start_tx_num, na.rm = TRUE), 1),
+    n_with_age = sum(!is.na(age_start_tx_num)),
+    .groups = "drop"
+  )
+
+tab_counts |>
+  left_join(tab_age, by = "client_type") |>
+  select(client_type, n, percent, mean_age, n_with_age)
+```
+
+### Insurance Status
+
+```{r}
+#| label: tbl-insurance-status
+
+demo_cdep |>
+  filter(
+    insurance_status != "Don't Know",
+    insurance_status != "No Insurance Status Selected",
+    insurance_status != "Not Applicable",
+    insurance_status != "Prefer Not To Answer",
+    !is.na(insurance_status)
+  ) |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  tabyl(insurance_status) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1)
+```
+
+### Gender Identity
+
+```{r}
+#| label: tbl-gender-identity
+
+demo_cdep |>
+   filter(
+    housing_status != "Don't Know",
+    housing_status != "No Gender Identify Selected",
+    housing_status != "Not Applicable",
+    housing_status != "Prefer Not To Answer",
+    !is.na(gender_identity)
+  ) |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  tabyl(gender_identity) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1)
+```
+
+### Sexual Orientation
+
+```{r}
+#| label: tbl-sexual-orientation
+
+demo_cdep |>
+   filter(
+    housing_status != "Don't Know",
+    housing_status != "No Sexual Orientation Selected",
+    housing_status != "Not Applicable",
+    housing_status != "Prefer Not To Answer",
+    !is.na(sexual_orientation)
+  ) |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  tabyl(sexual_orientation) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1)
+```
+
+### Race
+
+Race is coded numerically as follows:
+
+| Code | Race                                               |
+|------|----------------------------------------------------|
+| 1    | Asian                                              |
+| 2    | Black or African American                          |
+| 3    | Hispanic or Latino                                 |
+| 4    | Middle Eastern or North African                    |
+| 5    | Native American / American Indian or Alaska Native |
+| 6    | Native Hawaiian or Pacific Islander                |
+| 7    | White                                              |
+| 88   | 2+ races selected                                  |
+
+```{r}
+#| label: tbl-race
+
+demo_cdep |>
+  filter(
+    race != "Don't Know",
+    race != "No Race Selected",
+    race != "Not Applicable",
+    race != "Prefer Not To Answer",
+    !is.na(race)
+  ) |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  tabyl(code_num) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1)
+```
+
+### Ethnicity
+
+Ethnicity is coded numerically as follows:
+
+| Code | Ethnicity               |
+|------|-------------------------|
+| 1    | Chinese                 |
+| 2    | Asian Indian            |
+| 3    | Filipino                |
+| 4    | Vietnamese              |
+| 5    | Korean                  |
+| 6    | Japanese                |
+| 7    | African American        |
+| 8    | Jamaican                |
+| 9    | Haitian                 |
+| 10   | Nigerian                |
+| 11   | Somali                  |
+| 12   | Mexican                 |
+| 13   | Puerto Rican            |
+| 14   | Salvadoran              |
+| 15   | Cuban                   |
+| 16   | Dominican               |
+| 17   | Guatemalan              |
+| 18   | Native Hawaiian         |
+| 19   | Samoan                  |
+| 20   | Chamorro                |
+| 21   | English                 |
+| 22   | German                  |
+| 23   | Irish                   |
+| 24   | Italian                 |
+| 25   | Polish                  |
+| 26   | Scottish                |
+| 88   | 2+ ethnicities selected |
+
+```{r}
+#| label: tbl-ethnicity
+
+all_data_cdep |>
+   filter(
+    race != "Don't Know",
+    race != "No Ethnicity Selected",
+    race != "Not Applicable",
+    race != "Prefer Not To Answer",
+    !is.na(ethnicity)
+  ) |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  tabyl(ethn_num) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1)
+```
+
+## Satisfaction Surveys
+
+```{r}
+#| label: setup-satisfaction
+#| include: false
+
+sat_all <- read_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/combined_satisfaction_clean.csv",
+  show_col_types = FALSE
+)
+
+# Unified Q1 score — coalesce across three survey-specific Q1 columns
+sat_all <- sat_all |>
+  mutate(
+    q1_score = coalesce(
+      x1_overall_i_am_satisfied_with_the_services_my_child_received_score,
+      x1_overall_i_am_satisfied_with_the_services_i_received_score,
+      x1_i_like_the_services_that_i_received_here_score
+    )
+  )
+
+# Join with CDEP discharge data to add intervention_name, then filter to CDEPs
+all_data_cdep_distinct <- all_data_cdep |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  mutate(
+    provider_system_id = as.character(provider_system_id),
+    client_system_id   = as.character(client_system_id)
+  )
+
+sat_cdep <- sat_all |>
+  mutate(
+    provider_system_id = as.character(provider_system_id),
+    client_system_id   = as.character(client_system_id)
+  ) |>
+  left_join(all_data_cdep_distinct,
+            by = c("provider", "provider_id", "provider_system_id", "client_system_id")) |>
+  filter(!is.na(intervention_name))
+
+score_cols <- names(sat_cdep)[str_detect(names(sat_cdep), "_score$")]
+
+# Overall Q1 high satisfaction rate
+pct_4_5 <- sat_cdep |>
+  summarise(
+    pct_4_5 = round(100 * sum(q1_score %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q1_score)), 1)
+  ) |>
+  pull(pct_4_5)
+
+# Overall combined survey high satisfaction rate (>= 80% of questions at 4 or 5)
+df2 <- sat_cdep |>
+  select(all_of(score_cols)) |>
+  mutate(across(everything(), as.numeric)) |>
+  mutate(across(everything(), ~ na_if(., 0))) |>
+  rowwise() |>
+  summarise(
+    n_answered = sum(!is.na(c_across(everything()))),
+    n_agree    = sum(c_across(everything()) %in% c(4, 5), na.rm = TRUE),
+    pct_agree  = n_agree / n_answered
+  ) |>
+  ungroup() |>
+  summarise(
+    n_total           = n(),
+    n_meeting_80pct   = sum(pct_agree >= 0.8, na.rm = TRUE),
+    pct_meeting_80pct = round(100 * n_meeting_80pct / n_total, 1)
+  )
+```
+
+Satisfaction is defined two ways below. The first is the percent of individuals who answered question 1 as "Agree" or "Strongly Agree." The second is the percent of individuals who selected "Agree" or "Strongly Agree" on 80% or more of the questions completed.
+
+There are four satisfaction surveys: Caregiver (n=`{r} sum(sat_all$source == "caregiver")`), Child 13–17 (n=`{r} sum(sat_all$source == "child")`), Adult 18–59 (n=`{r} sum(sat_all$source == "adult")`), and Adult 60+ (n=`{r} sum(sat_all$source == "senior")`). High satisfaction on question 1 is defined as a score of 4 or 5.
+
+### Question 1 Satisfaction
+
+Overall, `{r} pct_4_5`% of survey respondents were highly satisfied based on question 1. The following table shows high satisfaction by intervention:
+
+```{r}
+#| label: tbl-q1-satisfaction
+
+sat_cdep |>
+  group_by(intervention_name) |>
+  summarise(
+    n_total = sum(!is.na(q1_score)),
+    n_4_5   = sum(q1_score %in% c(4, 5), na.rm = TRUE),
+    pct_4_5 = round(100 * n_4_5 / n_total, 1)
+  )
+```
+
+### Combined Survey Satisfaction
+
+Overall, `{r} df2$pct_meeting_80pct`% of survey respondents were highly satisfied, defined as selecting "Agree" or "Strongly Agree" on 80% or more of the questions completed. The following table shows high combined satisfaction by intervention, for clients where both a client ID and intervention name were available:
+
+```{r}
+#| label: tbl-combined-satisfaction
+
+sat_cdep |>
+  filter(!is.na(intervention_name)) |>
+  group_by(intervention_name) |>
+  select(intervention_name, all_of(score_cols)) |>
+  mutate(across(all_of(score_cols), as.numeric)) |>
+  mutate(across(all_of(score_cols), ~ na_if(., 0))) |>
+  rowwise() |>
+  summarise(
+    n_answered = sum(!is.na(c_across(all_of(score_cols)))),
+    n_agree    = sum(c_across(all_of(score_cols)) %in% c(4, 5), na.rm = TRUE),
+    pct_agree  = n_agree / n_answered
+  ) |>
+  summarise(
+    n_total           = n(),
+    n_meeting_80pct   = sum(pct_agree >= 0.8, na.rm = TRUE),
+    pct_meeting_80pct = round(100 * n_meeting_80pct / n_total, 1)
+  )
+```
+
+### Services in Preferred Language
+
+**Definition:** Clients from the primary evaluation who indicate services received in their preferred language on the satisfaction survey divided by the total number of clients served by the grantees who completed a satisfaction survey after an intervention during the designated time frame.
+
+**Calculation:** The percent of clients that report services received in their preferred language out of the total that completed the satisfaction survey, by period.
+
+```{r}
+#| label: tbl-preferred-language
+
+sat_cdep |>
+  arrange(date_clean) |>
+  mutate(quarter_label = factor(quarter_label, levels = unique(quarter_label))) |>
+  rename(preferred_lang_response = were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) |>
+  tabyl(preferred_lang_response) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1)
+```
+
+## Participant Outcomes
+
+### Improved Outcomes
+
+```{r}
+#| label: setup-outcomes
+#| include: false
+
+assessment_rules <- tibble::tribble(
+  ~trimmed_pre_assessment_name, ~higher_is_better, ~min_change,
+  "Basis-24",  FALSE, 0.001, # weighted 0–4 scale; any positive change counts
+  "CATS",      FALSE, 1,
+  "GAD-7",     FALSE, 1,
+  "NOMS",      TRUE,  1,
+  "Pediatric", FALSE, 1,
+  "PHQ-9",     FALSE, 1,
+  "PSS",       FALSE, 1,
+  "SDQ",       FALSE, 1,
+  "YOQ",       FALSE, 1
+)
+
+discharge_cdep_outcome <- discharge_cdep |>
+  left_join(assessment_rules, by = "trimmed_pre_assessment_name") |>
+  mutate(
+    raw_change    = post_score - pre_score,
+    better_change = if_else(higher_is_better, raw_change, -raw_change),
+    min_change    = coalesce(min_change, 0),
+    outcome = case_when(
+      is.na(pre_score) | is.na(post_score) ~ NA_character_,
+      better_change >=  min_change ~ "improved",
+      better_change <= -min_change ~ "worsened",
+      TRUE                         ~ "no_change"
+    ),
+    outcome = factor(outcome, levels = c("worsened", "no_change", "improved"))
+  )
+```
+
+#### Outcome Overall
+
+```{r}
+#| label: tbl-outcome-overall
+
+discharge_cdep_outcome |>
+  tabyl(outcome) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1)
+```
+
+#### Outcome by Intervention
+
+```{r}
+#| label: tbl-outcome-by-intervention
+
+discharge_cdep_outcome |>
+  filter(!is.na(intervention_start), !is.na(outcome)) |>
+  tabyl(intervention_name, outcome) |>
+  adorn_totals("row") |>
+  adorn_totals("col") |>
+  adorn_percentages("row") |>
+  adorn_pct_formatting(digits = 1) |>
+  adorn_ns()
+```
+
+#### Outcome by Funding Round
+
+```{r}
+#| label: tbl-outcome-by-round
+
+discharge_cdep_outcome |>
+  tabyl(outcome, funding_round) |>
+  adorn_totals("row") |>
+  adorn_percentages("col") |>
+  adorn_pct_formatting(digits = 1) |>
+  adorn_ns()
+```
+
+#### Outcome by Assessment Measure
+
+```{r}
+#| label: tbl-outcome-by-measure
+
+discharge_cdep_outcome |>
+  filter(!is.na(outcome)) |>
+  tabyl(post_assessment_name, outcome) |>
+  adorn_totals("row") |>
+  adorn_totals("col") |>
+  adorn_percentages("row") |>
+  adorn_pct_formatting(digits = 1) |>
+  adorn_ns()
+```
+
+### Treatment Goals Met
+
+Two criteria must be met for a client to have met treatment goals: (1) a discharge reason of "Mutually agreed to cessation of treatment" and (2) an improvement according to pre- and post-measures collected (e.g., NOMS sub-scales). A simple positive difference between pre- and post-scores determines improvement.
+
+```{r}
+#| label: tbl-treatment-goals
+
+discharge_cdep_outcome |>
+  filter(outcome %in% c("no_change", "improved")) |>
+  tabyl(reason_for_discharge) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1)
+```
