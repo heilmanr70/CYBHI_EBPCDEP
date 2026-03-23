@@ -15,11 +15,29 @@ editor_options:
 
 # 3. Did EBP/CDEP services impact clinical and functional outcomes for clients who participated?
 
-**Inclusion criteria:** 1. must have initial time point data (i.e., be enrolled in an intervention), 2. must have a valid assessment collected at both intake and discharge time points, and 3. limited to tools with a clinical cut-off.
+## 3.12 To what extent did parents/caregivers report a reduction in parent-related stress after receiving the intervention?
 
-**Scoring:** An **increase** in score indicates a positive outcome. There are no benchmarks or clinical cutoffs established for NOMS scoring — if the follow-up assessment score is higher than the initial score, a positive outcome is indicated.
+**Definition:** PSS item(s) measuring reduction in parent/caregiver-related stress after the intervention. Assessments showing improvement from pre- to post-time point for clients who discharged from an intervention during the designated time frame.
 
-**Assumptions:** Filtered out dates before 2024-01-01 and after the date the code was run. Filtered data that's \>3 days from initial assessment and paired to the LAST follow-up. Filtered positive outcomes that had NAs before computing %.
+**Scoring:** If follow-up is LOWER than initial, that indicates a positive outcome. To calculate a total PSS score, items 1, 2, 5, 6, 7, 8, 17, and 18 should be reverse scored as follows: (1=5) (2=4) (3=3) (4=2) (5=1). The PSS score is then obtained by summing across all items. Higher scores indicate higher levels of perceived stress. If follow-up is LOWER than initial, that indicates a positive outcome.
+
+-   1 = Strongly disagree
+
+-   2 = Disagree
+
+-   3 = Undecided
+
+-   4 = Agree
+
+-   5 = Strongly Agree
+
+**Assumptions:** Filtered out dates before 2024-01-01 and after the date the code was run. Filtered data that's \>3 days from initial assessment and paired to the LAST follow-up. Filtered positive outcomes that had NAs before computing %. Total score = NA if 2+ items are missing; used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
+
+**Range:** 18 - 90
+
+**Inclusion Criteria:** 1. must have initial time point data (i.e., be enrolled in an intervention); 2. must have a valid assessment collected at both initial and discharge comparison time points
+
+**Final analysis:** Regression - outcome = binary (4/5 vs other), predictors as for 3.01
 
 ```{r setup}
 #| echo: false
@@ -43,32 +61,6 @@ pss_paired <- read_csv(
   show_col_types = FALSE
 )
 ```
-
-## 3.12 To what extent did parents/caregivers report a reduction in parent-related stress after receiving the intervention?
-
-**Definition:** PSS item(s) measuring reduction in parent/caregiver-related stress after the intervention. Assessments showing improvement from pre- to post-time point for clients who discharged from an intervention during the designated time frame.
-
-**Calculation:** Sum of Q1--Q18 (reverse Q4, Q5, Q7, Q8); this KPI represents the percent of assessments that show clients who have improvement from pre-post time points out of the total number of assessments from clients who discharge from the intervention and complete pre-post measures by period(s).
-
-**Scoring:** To calculate a total PSS score, items 1, 2, 5, 6, 7, 8, 17, and 18 should be reverse scored as follows: (1=5) (2=4) (3=3) (4=2) (5=1). The PSS score is then obtained by summing across all items. Higher scores indicate higher levels of perceived stress. If follow-up is LOWER than initial, that indicates a positive outcome.
-
--   1 = Strongly disagree
-
--   2 = Disagree
-
--   3 = Undecided
-
--   4 = Agree
-
--   5 = Strongly Agree
-
-**Assumptions:** Total score = NA if 2+ items are missing; used LAST follow-up if 2+ assessments exist; filtered out NA's from follow-up date and positive outcome variable before calculating %.
-
-**Range:** 18 - 90
-
-**Inclusion Criteria:** 1. must have initial time point data (i.e., be enrolled in an intervention); 2. must have a valid assessment collected at both initial and discharge comparison time points
-
-**Final analysis:** Regression - outcome = binary (4/5 vs other), predictors as for 3.01
 
 ```{r pss_summary}
 #| echo: false

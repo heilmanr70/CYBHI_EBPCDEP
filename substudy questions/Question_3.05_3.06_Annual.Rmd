@@ -38,18 +38,199 @@ library(scales)
 assess_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
 
 # Produced by data cleaning/noms_data_cleaning.qmd
+# for 3.06
 pairs_primary_long_self <- read_csv(
   file.path(assess_dir, "noms_self_pairs_clean.csv"),
   show_col_types = FALSE
 )
 
-pairs_primary_long <- read_csv(
+# for 3.05
+pairs_primary_long_child <- read_csv(
   file.path(assess_dir, "noms_child_pairs_clean.csv"),
   show_col_types = FALSE
 )
 ```
 
 ## 3.05 To what extent did parents/caregivers report improved daily life functioning for themselves and their child after receiving the intervention?
+
+Range: 7–35; Sum = Q2a+...+Q2g.
+
+Use the `pairs_primary_long_child` data frame to compute scores. The following had a positive outcome by follow-up quarter:
+
+```{r child_q2_summary}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q2 <- pairs_primary_long_child |>
+  filter(str_detect(question, "^x2.*_score$"))
+
+score_diff_child_q2 <- pairs_primary_long_q2 |>
+  filter(
+    !is.na(initial_score),
+    !is.na(follow_up_score),
+    !is.na(client_system_id)
+  ) |>
+  group_by(client_system_id) |>
+  summarise(
+    initial_total     = sum(initial_score, na.rm = TRUE),
+    followup_total    = sum(follow_up_score, na.rm = TRUE),
+    score_change      = followup_total - initial_total,
+    positive_outcome  = case_when(
+      followup_total > initial_total ~ "improved",
+      followup_total < initial_total ~ "worsened",
+      TRUE                           ~ "no_change"
+    ),
+    positive_outcome  = factor(positive_outcome, levels = c("worsened", "no_change", "improved")),
+    initial_quarter   = paste0("Q", quarter(initial_date), " ", year(initial_date)),
+    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))
+  ) |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  filter(
+    between(initial_total,  7, 35),
+    between(followup_total, 7, 35)
+  )
+
+score_diff_child_q2 |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+```
+
+Plot it.
+
+```{r child_q2_bar_plot}
+#| echo: false
+#| warning: false
+#| message: false
+q2_child_score_long <- score_diff_child_q2 |>
+  ungroup() |>
+  select(client_system_id, initial_total, followup_total) |>
+  pivot_longer(
+    cols      = c(initial_total, followup_total),
+    names_to  = "score_type",
+    values_to = "score_value"
+  ) |>
+  mutate(
+    score_type = recode(score_type,
+                        "initial_total"  = "Initial",
+                        "followup_total" = "Follow-up"),
+    score_type = factor(score_type, levels = c("Initial", "Follow-up"))
+  )
+
+ggplot(q2_child_score_long, aes(x = score_value, fill = score_type)) +
+  geom_bar(
+    position = position_dodge2(preserve = "single", padding = 0.01),
+    width = 0.8,
+    alpha = 0.8
+  ) +
+  scale_fill_manual(values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49")) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    x     = "Measure: Improved Daily Life Functioning Score (7-35)",
+    y     = "Count",
+    title = "Distribution of Initial and Follow-up Scores, NOMS Child Q2"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.title           = element_text(size = 9),
+    axis.text            = element_text(size = 9),
+    panel.grid.major     = element_blank(),
+    panel.grid.minor.x   = element_blank(),
+    axis.line.x          = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position      = "inside",
+    legend.justification = c("left", "top"),
+    legend.title         = element_blank(),
+    legend.text          = element_text(size = 8),
+    plot.margin          = margin(5, 5, 5, 5)
+  )
+```
+
+Ridgeline plot
+
+```{r child_q2_ridgeline}
+#| echo: false
+#| warning: false
+#| message: false
+summary_stats_child_q2 <- q2_child_score_long |>
+  group_by(score_type) |>
+  summarise(
+    mean_score   = mean(score_value, na.rm = TRUE),
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score     = sd(score_value, na.rm = TRUE),
+    n            = sum(!is.na(score_value))
+  )
+
+summary_stats_child_q2
+
+ggplot(q2_child_score_long, aes(x = score_value, y = 1, fill = score_type)) +
+  geom_density_ridges(
+    aes(color = score_type),
+    alpha          = 0.7,
+    scale          = 1.2,
+    rel_min_height = 0.01
+  ) +
+  scale_fill_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_color_manual(
+    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
+    breaks = c("Initial", "Follow-up"),
+    labels = c("Initial", "Follow-up")
+  ) +
+  scale_x_continuous(limits = c(5, 37), breaks = c(7, 14, 21, 28, 35)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    x     = "Measure: Daily Life Functioning Score (7-35)",
+    y     = NULL,
+    title = "Distribution of Initial and Follow-up Scores, NOMS Child"
+  ) +
+  theme_ridges(font_family = "Arial") +
+  theme(
+    axis.title.x         = element_text(size = 9, hjust = 0.5),
+    axis.text.y          = element_blank(),
+    axis.text.x          = element_text(size = 9),
+    panel.grid           = element_blank(),
+    axis.ticks.y         = element_blank(),
+    axis.line.x          = element_line(color = "lightgrey", linewidth = 0.5),
+    legend.position      = "inside",
+    legend.justification = c("left", "top"),
+    legend.title         = element_blank(),
+    legend.text          = element_text(size = 8),
+    plot.margin          = margin(5, 5, 5, 5),
+    plot.title           = element_text(size = 11)
+  ) +
+  geom_segment(
+    data = summary_stats_child_q2,
+    aes(x = median_score, y = 1, xend = median_score, yend = 1.135, color = "grey30"),
+    linetype = "dotted"
+  ) +
+  geom_text(
+    data = summary_stats_child_q2,
+    aes(x = median_score, y = 1.15,
+        label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
+    vjust = 2, hjust = 0.5, size = 2
+  )
+```
+
+#### Summary stats
+
+The percent of those who had total scores of 28 or higher (scores of 4\*7 questions) across Q2 at initial and discharge time points were:
+
+```{r child_q2_pct_28}
+#| echo: false
+#| warning: false
+#| message: false
+score_diff_child_q2 |>
+  ungroup() |>
+  summarise(
+    initial_28  = round(100 * mean(initial_total[!is.na(initial_total)]   >= 28, na.rm = TRUE), 2),
+    followup_28 = round(100 * mean(followup_total[!is.na(followup_total)] >= 28, na.rm = TRUE), 2)
+  )
+```
+
+## 3.06 To what extent did the youth report improved daily life functioning after receiving the intervention?
 
 Range: 7–35; Sum = Q2a+...+Q2g.
 
@@ -73,7 +254,12 @@ score_diff_self_q2 <- pairs_primary_long_q2_self |>
     initial_total     = sum(initial_score, na.rm = TRUE),
     followup_total    = sum(follow_up_score, na.rm = TRUE),
     score_change      = followup_total - initial_total,
-    positive_outcome  = ifelse(followup_total > initial_total, 1, 0),
+    positive_outcome  = case_when(
+      followup_total > initial_total ~ "improved",
+      followup_total < initial_total ~ "worsened",
+      TRUE                           ~ "no_change"
+    ),
+    positive_outcome  = factor(positive_outcome, levels = c("worsened", "no_change", "improved")),
     initial_quarter   = paste0("Q", quarter(initial_date), " ", year(initial_date)),
     follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))
   ) |>
@@ -173,9 +359,10 @@ ggplot(q2_self_score_long, aes(x = score_value, y = 1, fill = score_type)) +
     breaks = c("Initial", "Follow-up"),
     labels = c("Initial", "Follow-up")
   ) +
+  scale_x_continuous(limits = c(5, 37), breaks = c(7, 14, 21, 28, 35)) +
   scale_y_continuous(expand = c(0, 0)) +
   labs(
-    x     = "Measure: Daily Life Functioning Score (1-5 Likert Scale)",
+    x     = "Measure: Daily Life Functioning Score (7-35)",
     y     = NULL,
     title = "Distribution of Initial and Follow-up Scores, NOMS Self"
   ) +
@@ -223,7 +410,7 @@ score_diff_self_q2 |>
   )
 ```
 
-#### Summary stats overall
+### Summary stats overall
 
 ```{r self_summary_dot_arrow}
 #| echo: false
@@ -264,181 +451,8 @@ ggplot(dfq2, aes(y = group)) +
     panel.grid.minor.x   = element_blank(),
     axis.line.x          = element_line(color = "lightgrey", linewidth = 0.5),
     legend.text          = element_text(size = 8),
-    legend.position      = "inside",
-    legend.justification = c("left", "top"),
+    legend.position      = c(0.98, 0.98),
+    legend.justification = c("right", "top"),
     plot.margin          = margin(5, 5, 5, 5)
-  )
-```
-
-## 3.06 To what extent did the youth report improved daily life functioning after receiving the intervention?
-
-Range: 7–35; Sum = Q2a+...+Q2g.
-
-Use the `pairs_primary_long` data frame to compute scores. The following had a positive outcome by follow-up quarter:
-
-```{r child_q2_summary}
-#| echo: false
-#| warning: false
-#| message: false
-pairs_primary_long_q2 <- pairs_primary_long |>
-  filter(str_detect(question, "^x2.*_score$"))
-
-score_diff_child_q2 <- pairs_primary_long_q2 |>
-  filter(
-    !is.na(initial_score),
-    !is.na(follow_up_score),
-    !is.na(system_id)
-  ) |>
-  group_by(system_id) |>
-  summarise(
-    initial_total     = sum(initial_score, na.rm = TRUE),
-    followup_total    = sum(follow_up_score, na.rm = TRUE),
-    score_change      = followup_total - initial_total,
-    positive_outcome  = ifelse(followup_total > initial_total, 1, 0),
-    initial_quarter   = paste0("Q", quarter(initial_date), " ", year(initial_date)),
-    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))
-  ) |>
-  distinct(system_id, .keep_all = TRUE) |>
-  filter(
-    between(initial_total,  7, 35),
-    between(followup_total, 7, 35)
-  )
-
-score_diff_child_q2 |>
-  filter(!is.na(positive_outcome)) |>
-  tabyl(positive_outcome) |>
-  adorn_pct_formatting(digits = 0)
-```
-
-Plot it.
-
-```{r child_q2_bar_plot}
-#| echo: false
-#| warning: false
-#| message: false
-q2_child_score_long <- score_diff_child_q2 |>
-  ungroup() |>
-  select(system_id, initial_total, followup_total) |>
-  pivot_longer(
-    cols      = c(initial_total, followup_total),
-    names_to  = "score_type",
-    values_to = "score_value"
-  ) |>
-  mutate(
-    score_type = recode(score_type,
-                        "initial_total"  = "Initial",
-                        "followup_total" = "Follow-up"),
-    score_type = factor(score_type, levels = c("Initial", "Follow-up"))
-  )
-
-ggplot(q2_child_score_long, aes(x = score_value, fill = score_type)) +
-  geom_bar(
-    position = position_dodge2(preserve = "single", padding = 0.01),
-    width = 0.8,
-    alpha = 0.8
-  ) +
-  scale_fill_manual(values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49")) +
-  scale_y_continuous(expand = c(0, 0)) +
-  labs(
-    x     = "Measure: Improved Daily Life Functioning Score (7-35)",
-    y     = "Count",
-    title = "Distribution of Initial and Follow-up Scores, NOMS Child Q2"
-  ) +
-  theme_minimal() +
-  theme(
-    axis.title           = element_text(size = 9),
-    axis.text            = element_text(size = 9),
-    panel.grid.major     = element_blank(),
-    panel.grid.minor.x   = element_blank(),
-    axis.line.x          = element_line(color = "lightgrey", linewidth = 0.5),
-    legend.position      = "inside",
-    legend.justification = c("left", "top"),
-    legend.title         = element_blank(),
-    legend.text          = element_text(size = 8),
-    plot.margin          = margin(5, 5, 5, 5)
-  )
-```
-
-Ridgeline plot
-
-```{r child_q2_ridgeline}
-#| echo: false
-#| warning: false
-#| message: false
-summary_stats_child_q2 <- q2_child_score_long |>
-  group_by(score_type) |>
-  summarise(
-    mean_score   = mean(score_value, na.rm = TRUE),
-    median_score = median(score_value, na.rm = TRUE),
-    sd_score     = sd(score_value, na.rm = TRUE),
-    n            = sum(!is.na(score_value))
-  )
-
-summary_stats_child_q2
-
-ggplot(q2_child_score_long, aes(x = score_value, y = 1, fill = score_type)) +
-  geom_density_ridges(
-    aes(color = score_type),
-    alpha          = 0.7,
-    scale          = 1.2,
-    rel_min_height = 0.01
-  ) +
-  scale_fill_manual(
-    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
-    breaks = c("Initial", "Follow-up"),
-    labels = c("Initial", "Follow-up")
-  ) +
-  scale_color_manual(
-    values = c("Initial" = "#8A8C8E", "Follow-up" = "#BBDB49"),
-    breaks = c("Initial", "Follow-up"),
-    labels = c("Initial", "Follow-up")
-  ) +
-  scale_y_continuous(expand = c(0, 0)) +
-  labs(
-    x     = "Measure: Daily Life Functioning Score (1-5 Likert Scale)",
-    y     = NULL,
-    title = "Distribution of Initial and Follow-up Scores, NOMS Child"
-  ) +
-  theme_ridges(font_family = "Arial") +
-  theme(
-    axis.title.x         = element_text(size = 9, hjust = 0.5),
-    axis.text.y          = element_blank(),
-    axis.text.x          = element_text(size = 9),
-    panel.grid           = element_blank(),
-    axis.ticks.y         = element_blank(),
-    axis.line.x          = element_line(color = "lightgrey", linewidth = 0.5),
-    legend.position      = "inside",
-    legend.justification = c("left", "top"),
-    legend.title         = element_blank(),
-    legend.text          = element_text(size = 8),
-    plot.margin          = margin(5, 5, 5, 5),
-    plot.title           = element_text(size = 11)
-  ) +
-  geom_segment(
-    data = summary_stats_child_q2,
-    aes(x = median_score, y = 1, xend = median_score, yend = 1.135, color = "grey30"),
-    linetype = "dotted"
-  ) +
-  geom_text(
-    data = summary_stats_child_q2,
-    aes(x = median_score, y = 1.15,
-        label = paste0(score_type, "\nmedian = ", round(median_score, 2))),
-    vjust = 2, hjust = 0.5, size = 2
-  )
-```
-
-#### Summary stats
-
-The percent of those who had total scores of 28 or higher (scores of 4\*7 questions) across Q2 at initial and discharge time points were:
-
-```{r child_q2_pct_28}
-#| echo: false
-#| warning: false
-#| message: false
-score_diff_child_q2 |>
-  ungroup() |>
-  summarise(
-    initial_28  = round(100 * mean(initial_total[!is.na(initial_total)]   >= 28, na.rm = TRUE), 2),
-    followup_28 = round(100 * mean(followup_total[!is.na(followup_total)] >= 28, na.rm = TRUE), 2)
   )
 ```
