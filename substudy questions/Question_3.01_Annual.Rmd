@@ -18,6 +18,13 @@ editor_options:
 
 **Inclusion criteria:** 1. must have initial time point data (i.e., be enrolled in an intervention), 2. must have a valid assessment collected at both intake and discharge time points, and 3. must have reported information in the demographic variables of interest.
 
+### TO DO FOR JAKE
+
+- [ ] add in more info about filtering/assumptions
+- [ ] throw in codebooks for race/ethnicity
+- [ ] write down variables used
+- [ ] ask rikke for intervention type from SPSS file, care setting, 
+
 ```{r setup}
 #| echo: false
 #| warning: false
@@ -26,7 +33,6 @@ library(tidyverse)
 library(janitor)
 library(gt)
 library(gtsummary)
-library(openxlsx)
 ```
 
 ```{r load_data}
@@ -42,8 +48,7 @@ sat_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and T
 combined_all <- read_csv(
   file.path(sat_dir, "combined_satisfaction_clean.csv"),
   show_col_types = FALSE
-) |>
-  mutate(quarter_label = fct_inorder(quarter_label))
+) 
 ```
 
 ```{r prep_data301}
