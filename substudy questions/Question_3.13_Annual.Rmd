@@ -15,11 +15,19 @@ editor_options:
 
 # 3. Did EBP/CDEP services impact clinical and functional outcomes for clients who participated?
 
-**Inclusion criteria:** 1. must have initial time point data (i.e., be enrolled in an intervention), 2. must have a valid assessment collected at both intake and discharge time points, and 3. limited to tools with a clinical cut-off.
+## 3.13 To what extent did children/youth report reductions in overall distress after receiving the intervention?
 
-**Scoring:** An **increase** in score indicates a positive outcome. There are no benchmarks or clinical cutoffs established for NOMS scoring — if the follow-up assessment score is higher than the initial score, a positive outcome is indicated.
+**Definition:** This KPI represents the percent of assessments that show clients who have improvement from pre-post time points out of the total number of assessments from clients who discharge from the intervention and complete pre-post measures by period(s).
 
-**Assumptions:** Filtered out dates before 2024-01-01 and after the date the code was run. Filtered data that's \>3 days from initial assessment and paired to the LAST follow-up. Filtered positive outcomes that had NAs before computing %.
+The YOQ total score reflects total distress in a client's life, with a high score reflecting increased distress related to experiencing a high number of symptoms, interpersonal difficulties, and decreased satisfaction and quality of life.
+
+**Range:** 0 - 120
+
+**Calculation:** Sum of 30 items (0-4 scale); invalid if 3+ items missing; total score only calculated if 28+ items completed; including those doing reliably better / total who took YOQ by quarter RCI = baseline score - follow-up score - RCI ≤ -10 doing reliably worse - RCI ≥ 10 doing reliably better
+
+**Assumptions:** A positive outcome was if a client was doing reliably better as defined by the YOQ RCI. I used follow-up quarter as the date. I used the LAST follow-up date if there were \>1 assessments. I filtered out NA's from "reliably better"; Filtered out dates before 2024-01-01 and after the date the code was run. 
+
+**Final analysis:** Regression - outcome = binary (positive or clincal cutoff met). Predictors as for 3.01
 
 ```{r setup}
 #| echo: false
@@ -51,20 +59,6 @@ yoq_self_paired <- read_csv(
   mutate(rci_col = as.factor(as.integer(rci > 10 | rci <= -10)))
 ```
 
-## 3.13 To what extent did children/youth report reductions in overall distress after receiving the intervention?
-
-**Definition:** This KPI represents the percent of assessments that show clients who have improvement from pre-post time points out of the total number of assessments from clients who discharge from the intervention and complete pre-post measures by period(s).
-
-The YOQ total score reflects total distress in a client's life, with a high score reflecting increased distress related to experiencing a high number of symptoms, interpersonal difficulties, and decreased satisfaction and quality of life.
-
-**Range:** 0 - 120
-
-**Calculation:** Sum of 30 items (0-4 scale); invalid if 3+ items missing; total score only calculated if 28+ items completed; including those doing reliably better / total who took YOQ by quarter RCI = baseline score - follow-up score - RCI ≤ -10 doing reliably worse - RCI ≥ 10 doing reliably better
-
-**Assumptions:** A positive outcome was if a client was doing reliably better as defined by the YOQ RCI. I used follow-up quarter as the date. I used the LAST follow-up date if there were \>1 assessments. I filtered out NA's from "reliably better"
-
-**Final analysis:** Regression - outcome = binary (positive or clincal cutoff met). Predictors as for 3.01
-
 ### Caregiver
 
 ```{r yoq_caregiver_summary}
@@ -73,6 +67,18 @@ The YOQ total score reflects total distress in a client's life, with a high scor
 #| message: false
 yoq_caregiver_paired |>
   filter(!is.na(reliably_better), rci != 0) |>
+  tabyl(reliably_better) |>
+  adorn_pct_formatting(digits = 0)
+```
+
+Of those with meaningful change, the following did reliably better:
+
+```{r yoq_caregiver_reliable_better}
+#| echo: false
+#| warning: false
+#| message: false
+yoq_caregiver_paired |>
+  filter(!is.na(reliably_better), rci_col == 1) |>
   tabyl(reliably_better) |>
   adorn_pct_formatting(digits = 0)
 ```
@@ -108,6 +114,18 @@ yoq_caregiver_paired |>
 #| message: false
 yoq_self_paired |>
   filter(!is.na(reliably_better), rci != 0) |>
+  tabyl(reliably_better) |>
+  adorn_pct_formatting(digits = 0)
+```
+
+Of those with meaningful change, the following did reliably better:
+
+```{r yoq_self_reliable_better}
+#| echo: false
+#| warning: false
+#| message: false
+yoq_self_paired |>
+  filter(!is.na(reliably_better), rci_col == 1) |>
   tabyl(reliably_better) |>
   adorn_pct_formatting(digits = 0)
 ```
