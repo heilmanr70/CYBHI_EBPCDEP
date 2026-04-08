@@ -4,6 +4,7 @@ author: "Cristin Young"
 date: "`r Sys.Date()`"
 format:
   html:
+    self-contained: true
     df-print: paged
     toc: true
     toc-depth: 3
@@ -17,9 +18,6 @@ execute:
 ---
 
 ::: {.callout-note title="TO DOs"}
-[ ] add what % were NA for each demographic table
-[ ] add NA filter for each demographic table 
-[ ] use funding round from discharge data
 [ ] anything <11 needs to be suppressed. If only one item is suppressed, also suppress the total (so people can't back calculate).
 :::
 
@@ -67,7 +65,10 @@ cat("Discharge data rows (total):", nrow(discharge_data), "\n")
 ```{r}
 #| label: tbl-participants-served-by-round
 
-table(discharge_data$funding_round, useNA = "ifany")
+discharge_data %>% 
+  tabyl(funding_round) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
 ```
 
 ### Improved outcomes
@@ -108,6 +109,8 @@ discharge_data %>%
 ```
 
 ## Satisfaction Surveys
+Satisfaction is defined two ways below. The first is the percent of individuals who answered question 1 as "Agree" or "Strongly Agree." The second is the percent of individuals who selected "Agree" or "Strongly Agree" on 80% or more of the questions completed. High satisfaction on question 1 is defined as a score of 4 or 5.
+
 **Assumptions:** Distinct by client system ID and joined to satisfaction survey data; must have an intervention named; data used: satisfaction survey and all data (demo+discharge joined)
 ```{r}
 #| label: setup-satisfaction
@@ -129,9 +132,13 @@ sat_all <- sat_all |>
   )
 
 all_data_distinct <- all_data |>
-  distinct(client_system_id, .keep_all = TRUE) 
+  distinct(client_system_id, .keep_all = TRUE) |> 
+  mutate(
+    provider_system_id = as.character(provider_system_id),
+    client_system_id   = as.character(client_system_id)
+  )
 
-sat_spss <- sat_all |>
+sat_all_data <- sat_all |>
   mutate(
     provider_system_id = as.character(provider_system_id),
     client_system_id   = as.character(client_system_id)
@@ -140,17 +147,17 @@ sat_spss <- sat_all |>
             by = c("provider", "provider_id", "provider_system_id", "client_system_id")) |>
   filter(!is.na(intervention_name))
 
-score_cols <- names(sat_cdep)[str_detect(names(sat_cdep), "_score$")]
+score_cols <- names(sat_all_data)[str_detect(names(sat_all_data), "_score$")]
 
 # Overall Q1 high satisfaction rate
-pct_4_5 <- sat_cdep |>
+pct_4_5 <- sat_all_data |>
   summarise(
     pct_4_5 = round(100 * sum(q1_score %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q1_score)), 1)
   ) |>
   pull(pct_4_5)
 
 # Overall combined survey high satisfaction rate (>= 80% of questions at 4 or 5)
-df2 <- sat_cdep |>
+df2 <- sat_all_data |>
   select(all_of(score_cols)) |>
   mutate(across(everything(), as.numeric)) |>
   mutate(across(everything(), ~ na_if(., 0))) |>
@@ -169,36 +176,35 @@ df2 <- sat_cdep |>
 
 df2
 ```
-
-Satisfaction is defined two ways below. The first is the percent of individuals who answered question 1 as "Agree" or "Strongly Agree." The second is the percent of individuals who selected "Agree" or "Strongly Agree" on 80% or more of the questions completed. High satisfaction on question 1 is defined as a score of 4 or 5.
-
 ### Question 1 Satisfaction
 
-Overall, `{r} pct_4_5`% of survey respondents were highly satisfied based on question 1. The following table shows high satisfaction by intervention:
+Overall, `{r} pct_4_5`% of survey respondents were highly satisfied based on question 1. The following table shows high satisfaction by round:
 
 ```{r}
-#| label: tbl-q1-satisfaction
+#| label: tbl-q1-satisfaction-round
 
-sat_cdep |>
-  group_by(intervention_name) |>
+sat_all_data |> 
+  filter(!is.na(funding_round)) |> 
+  group_by(funding_round) |> 
   summarise(
-    n_total = sum(!is.na(q1_score)),
-    n_4_5   = sum(q1_score %in% c(4, 5), na.rm = TRUE),
-    pct_4_5 = round(100 * n_4_5 / n_total, 1)
+    n_surveys = n(),
+    pct_4_5 = round(100 * sum(q1_score %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q1_score)), 1),
+    .groups = "drop"
   )
 ```
 
 ### Combined Survey Satisfaction
 
-Overall, `{r} df2$pct_meeting_80pct`% of survey respondents were highly satisfied, defined as selecting "Agree" or "Strongly Agree" on 80% or more of the questions completed. The following table shows high combined satisfaction by intervention, for clients where both a client ID and intervention name were available:
+Overall, `{r} df2$pct_meeting_80pct`% of survey respondents were highly satisfied, defined as selecting "Agree" or "Strongly Agree" on 80% or more of the questions completed. The following table shows high combined satisfaction by round, for clients where both a client ID and intervention name were available:
+
 **Assumptions:** Must have an intervention name; data used: satisfaction survey and all data (demo+discharge joined)
 ```{r}
-#| label: tbl-combined-satisfaction
+#| label: tbl-combined-satisfaction-round
 
-sat_cdep |>
-  filter(!is.na(intervention_name)) |>
-  group_by(intervention_name) |>
-  select(intervention_name, all_of(score_cols)) |>
+sat_all_data |>
+  filter(!is.na(funding_round)) |>
+  group_by(funding_round) |>
+  select(funding_round, all_of(score_cols)) |>
   mutate(across(all_of(score_cols), as.numeric)) |>
   mutate(across(all_of(score_cols), ~ na_if(., 0))) |>
   rowwise() |>
@@ -213,66 +219,42 @@ sat_cdep |>
     pct_meeting_80pct = round(100 * n_meeting_80pct / n_total, 1)
   )
 ```
+## Discharge
 
-
-#### Clients Enrolled by Intervention
-**Assumptions:** Needed to have an intervention start date; data used: discharge_data
+### Discharge Reason 
+**Assumptions:** Needed to have a reason for discharge; data used: discharge_data
 ```{r}
-#| label: tbl-enrolled-by-intervention
+#| label: tbl-reason-for-discharge
 
-discharge_data_cdep |>
-  filter(!is.na(intervention_start)) |>
-  tabyl(intervention_name) |>
-  adorn_totals("row") |>
+discharge_data |>
+  filter(!is.na(reason_for_discharge),
+         reason_for_discharge != "No Reason Selected") |>
+  tabyl(reason_for_discharge) |>
   adorn_pct_formatting(digits = 1)
 ```
 
-#### Clients Enrolled by Intervention and Funding Round
-**Assumptions:** Needed to have an intervention start date; data used: discharge_data
-```{r}
-#| label: tbl-enrolled-by-intervention-round
+### Discharge Reason by Round
+The results below show % of successful discharges by round, once NA's are removed from the data.
 
-discharge_data_cdep |>
-  filter(!is.na(intervention_start)) |>
-  tabyl(intervention_name, funding_round) |>
-  adorn_totals("row") |>
-  adorn_percentages("col") |>
-  adorn_pct_formatting(digits = 1) |>
-  adorn_ns()
-```
-
-### Discharge
-
-#### Discharged by Intervention
-**Assumptions:** Needed to have an intervention end date; data used: discharge_data
-```{r}
-#| label: tbl-discharged-by-intervention
-
-discharge_data_cdep |>
-  filter(!is.na(intervention_end)) |>
-  tabyl(intervention_name) |>
-  adorn_totals("row") |>
-  adorn_pct_formatting(digits = 1)
-```
-
-#### Discharged by Reason
-**Assumptions:** Needed to have an intervention end date; data used: discharge; data
+**Assumptions:** Needed to have a reason for discharge and a funding round; data used: discharge data
 ```{r}
 #| label: tbl-discharged-by-reason
 
-discharge_data_cdep |>
-  filter(!is.na(intervention_end)) |>
-  tabyl(reason_for_discharge) |>
-  adorn_totals("row") |>
-  adorn_pct_formatting(digits = 1)
+discharge_data |>
+ filter(!is.na(reason_for_discharge)) %>% 
+  tabyl(reason_for_discharge, funding_round) %>% 
+  adorn_totals("row") %>% 
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 1) %>%
+  adorn_ns() 
 ```
 
-#### Discharge Reason by Funding Round
+### Discharge Reason by Funding Round
 **Assumptions:** Needed to have an intervention START date -- this is because the data is broken out by funding round, not the funding round in which the intervention ended; data used: discharge_data
 ```{r}
 #| label: tbl-discharge-reason-by-round
 
-discharge_data_cdep |>
+discharge_data |>
   filter(!is.na(intervention_start)) |>
   tabyl(reason_for_discharge, funding_round) |>
   adorn_totals("row") |>
@@ -281,90 +263,78 @@ discharge_data_cdep |>
   adorn_ns()
 ```
 
-#### Discharge Reason by Intervention
-**Assumptions:** Needed to have an intervention start date and a reason for discharge; data used: discharge_data
-```{r}
-#| label: tbl-discharge-reason-by-intervention
+## Client Type
 
-discharge_data_cdep |>
-  filter(!is.na(intervention_start),
-         !is.na(reason_for_discharge)) |>
-  tabyl(reason_for_discharge, intervention_name) |>
-  adorn_totals("row") |>
-  adorn_percentages("col") |>
-  adorn_pct_formatting(digits = 1) |>
-  adorn_ns()
-```
-
-### Client Type
-
-#### Client Type Overall
-**Assumptions:** Distinct by client system ID; data used: all_data (demo + discharge data); must have intervention name
+### Client Type Overall
+**Assumptions:** Distinct by client system ID; data used: all_data (demo + discharge data); must have client_type
 ```{r}
 #| label: tbl-client-type
 
-all_data_cdep |>
-  distinct(client_system_id, .keep_all = TRUE) |>
+.d <- all_data |> 
+  filter(!is.na(client_type)) |> 
+  distinct(client_system_id, .keep_all = TRUE)
+
+.d |>
   tabyl(client_type) |>
   adorn_totals("row") |>
   adorn_pct_formatting(digits = 1)
+
+#cat(.d |> nrow(), "of", n_distinct(all_data$client_system_id), "clients have data\n")
+cat(sprintf("%.1f%% of clients have this data\n", 100 * nrow(.d) / n_distinct(all_data$client_system_id)))
 ```
 
-#### Client Type by Funding Round
-**Assumptions:** Distinct by client system ID; data used: all_data (demo + discharge data); must have intervention name
+### Client Type by Funding Round
+**Assumptions:** Distinct by client system ID; data used: all_data (demo + discharge data); must have client type and funding round
 ```{r}
 #| label: tbl-client-type-by-round
 
-all_data_cdep |>
+.d <- all_data |> 
+  filter(!is.na(client_type),
+         !is.na(funding_round)) |> 
+  distinct(client_system_id, .keep_all = TRUE)
+
+.d |>
   distinct(client_system_id, .keep_all = TRUE) |>
   tabyl(client_type, funding_round) |>
   adorn_totals("row") |>
   adorn_percentages("col") |>
   adorn_pct_formatting(digits = 1) |>
   adorn_ns()
+
+cat(sprintf("%.1f%% of clients have this data\n", 100 * nrow(.d) / n_distinct(all_data$client_system_id)))
 ```
 
-#### Client Type by Intervention
-**Assumptions:** Distinct by client system ID; data used: all_data (demo + discharge data); must have intervention name
-```{r}
-#| label: tbl-client-type-by-intervention
-
-all_data_cdep |>
-  distinct(client_system_id, .keep_all = TRUE) |>
-  tabyl(intervention_name, client_type) |>
-  adorn_totals("row") |>
-  adorn_percentages("col") |>
-  adorn_pct_formatting(digits = 1) |>
-  adorn_ns()
-```
 
 ## Client Demographics
 
 ### Primary Language
-**Assumptions:** Distinct by client system ID, Don't know, no primary language selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 8105); data used: all_data (demo + discharge data); must have intervention name
+**Assumptions:** Distinct by client system ID, Don't know, no primary language selected, not applicable, and prefer not to answer all grouped as NA; data used: all_data (demo + discharge data)
 ```{r}
 #| label: tbl-primary-language
 
-all_data_cdep |>
+.d <- all_data |> 
   filter(
     primary_language != "Don't Know",
     primary_language != "No Primary Language Selected",
     primary_language != "Not Applicable",
     primary_language != "Prefer Not To Answer",
-    !is.na(primary_language)
-  ) |>
-  distinct(client_system_id, .keep_all = TRUE) |>
+    !is.na(primary_language)) |> 
+  distinct(client_system_id, .keep_all = TRUE)
+
+.d |>
   tabyl(primary_language) |>
   adorn_totals("row") |>
   adorn_pct_formatting(digits = 1)
+
+cat(sprintf("%.1f%% of clients have this data\n", 100 * nrow(.d) / n_distinct(all_data$client_system_id)))
 ```
 
 ### Housing Status
-**Assumptions:** Distinct by client system ID, Don't know, no housing status selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 8105); data used: all_data (demo + discharge data); must have intervention name
+**Assumptions:** Distinct by client system ID, Don't know, no housing status selected, not applicable, and prefer not to answer all grouped as NA; data used: all_data (demo + discharge data)
 ```{r}
 #| label: tbl-housing-status
 
-all_data_cdep |>
+.d <- all_data |> 
   filter(
     housing_status != "Don't Know",
     housing_status != "No Housing Status Selected",
@@ -372,32 +342,36 @@ all_data_cdep |>
     housing_status != "Prefer Not To Answer",
     !is.na(housing_status)
   ) |>
-  distinct(client_system_id, .keep_all = TRUE) |>
+  distinct(client_system_id, .keep_all = TRUE)
+
+.d |>
   tabyl(housing_status) |>
   adorn_totals("row") |>
   adorn_pct_formatting(digits = 1)
+
+cat(sprintf("%.1f%% of clients have this data\n", 100 * nrow(.d) / n_distinct(all_data$client_system_id)))
 ```
 
 ### Client Type with Average Age
-**Assumptions:** Distinct by client system ID; data used: all_data (demo + discharge data); must have intervention name
+**Assumptions:** Distinct by client system ID; data used: all_data (demo + discharge data)
 ```{r}
 #| label: tbl-client-type-age
 
-all_data_cdep_distinct <- all_data_cdep |>
+all_data_distinct <- all_data_distinct |>
   mutate(
     age_start_tx_num = case_when(
-      ageat_startof_treatmentin_years %in% c("No Age Provided", "", " ") ~ NA_character_,
-      TRUE ~ ageat_startof_treatmentin_years
+      age_at_start_of_treatment_in_years %in% c("No Age Provided", "", " ") ~ NA_character_,
+      TRUE ~ age_at_start_of_treatment_in_years
     ) |> as.numeric()
   ) |>
   distinct(client_system_id, .keep_all = TRUE)
 
-tab_counts <- all_data_cdep_distinct |>
+tab_counts <- all_data_distinct |>
   tabyl(client_type) |>
   adorn_totals("row") |>
   adorn_pct_formatting(digits = 1)
 
-tab_age <- all_data_cdep_distinct |>
+tab_age <- all_data_distinct |>
   group_by(client_type) |>
   summarise(
     mean_age   = round(mean(age_start_tx_num, na.rm = TRUE), 1),
@@ -411,11 +385,11 @@ tab_counts |>
 ```
 
 ### Insurance Status
-**Assumptions:** Distinct by client system ID, Don't know, no insurance status selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 8105); data used: all_data (demo + discharge data); must have intervention name
+**Assumptions:** Distinct by client system ID, Don't know, no insurance status selected, not applicable, and prefer not to answer all grouped as NA; data used: all_data (demo + discharge data)
 ```{r}
 #| label: tbl-insurance-status
 
-all_data_cdep |>
+.d <- all_data |> 
   filter(
     insurance_status != "Don't Know",
     insurance_status != "No Insurance Status Selected",
@@ -423,48 +397,60 @@ all_data_cdep |>
     insurance_status != "Prefer Not To Answer",
     !is.na(insurance_status)
   ) |>
-  distinct(client_system_id, .keep_all = TRUE) |>
+  distinct(client_system_id, .keep_all = TRUE)
+
+.d |>
   tabyl(insurance_status) |>
   adorn_totals("row") |>
   adorn_pct_formatting(digits = 1)
+
+cat(sprintf("%.1f%% of clients have this data\n", 100 * nrow(.d) / n_distinct(all_data$client_system_id)))
 ```
 
 ### Gender Identity
-**Assumptions:** Distinct by client system ID, Don't know, no gender identity selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 8105); data used: all_data (demo + discharge data); must have intervention name
+**Assumptions:** Distinct by client system ID, Don't know, no gender identity selected, not applicable, and prefer not to answer all grouped as NA; data used: all_data (demo + discharge data)
 ```{r}
 #| label: tbl-gender-identity
 
-all_data_cdep |>
-   filter(
+.d <- all_data |> 
+  filter(
     gender_identity != "Don't Know",
     gender_identity != "No Gender Identify Selected",
     gender_identity != "Not Applicable",
     gender_identity != "Prefer Not To Answer",
     !is.na(gender_identity)
   ) |>
-  distinct(client_system_id, .keep_all = TRUE) |>
+  distinct(client_system_id, .keep_all = TRUE)
+
+.d |>
   tabyl(gender_identity) |>
   adorn_totals("row") |>
   adorn_pct_formatting(digits = 1)
+
+cat(sprintf("%.1f%% of clients have this data\n", 100 * nrow(.d) / n_distinct(all_data$client_system_id)))
 ```
 
 ### Sexual Orientation
-**Assumptions:** Distinct by client system ID, Don't know, no sexual orientation selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 8105); data used: all_data (demo + discharge data); must have intervention name
+**Assumptions:** Distinct by client system ID, Don't know, no sexual orientation selected, not applicable, and prefer not to answer all grouped as NA; data used: all_data (demo + discharge data)
 ```{r}
 #| label: tbl-sexual-orientation
 
-all_data_cdep |>
-   filter(
+.d <- all_data |> 
+  filter(
     sexual_orientation != "Don't Know",
     sexual_orientation != "No Sexual Orientation Selected",
     sexual_orientation!= "Not Applicable",
     sexual_orientation != "Prefer Not To Answer",
     !is.na(sexual_orientation)
   ) |>
-  distinct(client_system_id, .keep_all = TRUE) |>
-  tabyl(sexual_orientation, client_type) |> 
+  distinct(client_system_id, .keep_all = TRUE)
+
+.d |>
+  tabyl(sexual_orientation) |> 
   adorn_totals("row") |>
   adorn_pct_formatting(digits = 1)
+
+cat(sprintf("%.1f%% of clients have this data\n", 100 * nrow(.d) / n_distinct(all_data$client_system_id)))
 ```
 
 ### Race
@@ -481,11 +467,11 @@ Race is coded numerically as follows:
 | 6    | Native Hawaiian or Pacific Islander                |
 | 7    | White                                              |
 | 88   | 2+ races selected                                  |
-**Assumptions:** Distinct by client system ID, Don't know, no race selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 8105); data used: all_data (demo + discharge data); must have intervention name
+**Assumptions:** Distinct by client system ID, Don't know, no race selected, not applicable, and prefer not to answer all grouped as NA; data used: all_data (demo + discharge data)
 ```{r}
 #| label: tbl-race
 
-all_data_cdep |>
+.d <- all_data |> 
   filter(
     race != "Don't Know",
     race != "No Race Selected",
@@ -493,10 +479,14 @@ all_data_cdep |>
     race != "Prefer Not To Answer",
     !is.na(code_num)
   ) |>
-  distinct(client_system_id, .keep_all = TRUE) |>
+  distinct(client_system_id, .keep_all = TRUE)
+
+.d |>
   tabyl(code_num) |>
   adorn_totals("row") |>
   adorn_pct_formatting(digits = 1)
+
+cat(sprintf("%.1f%% of clients have this data\n", 100 * nrow(.d) / n_distinct(all_data$client_system_id)))
 ```
 
 ### Ethnicity
@@ -532,11 +522,11 @@ Ethnicity is coded numerically as follows:
 | 25   | Polish                  |
 | 26   | Scottish                |
 | 88   | 2+ ethnicities selected |
-**Assumptions:** Distinct by client system ID, Don't know, no ethnicity selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 8105); data used: all_data (demo + discharge data); must have intervention name
+**Assumptions:** Distinct by client system ID, Don't know, no ethnicity selected, not applicable, and prefer not to answer all grouped as NA; data used: all_data (demo + discharge data)
 ```{r}
 #| label: tbl-ethnicity
 
-all_data_cdep |>
+.d <- all_data |> 
    filter(
     race != "Don't Know",
     race != "No Ethnicity Selected",
@@ -544,10 +534,14 @@ all_data_cdep |>
     race != "Prefer Not To Answer",
     !is.na(ethn_num)
   ) |>
-  distinct(client_system_id, .keep_all = TRUE) |>
+  distinct(client_system_id, .keep_all = TRUE)
+
+.d |>
   tabyl(ethn_num) |>
   adorn_totals("row") |>
   adorn_pct_formatting(digits = 1)
+
+cat(sprintf("%.1f%% of clients have this data\n", 100 * nrow(.d) / n_distinct(all_data$client_system_id)))
 ```
 
 
@@ -561,7 +555,7 @@ all_data_cdep |>
 ```{r}
 #| label: tbl-preferred-language
 
-sat_cdep |>
+sat_all_data |>
   arrange(date_clean) |>
   mutate(quarter_label = factor(quarter_label, levels = unique(quarter_label))) |>
   rename(preferred_lang_response = were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) |>
@@ -569,108 +563,19 @@ sat_cdep |>
   adorn_totals("row") |>
   adorn_pct_formatting(digits = 1)
 ```
-
-## Participant Outcomes
-
-### Improved Outcomes
-
+### Number (%) of cases for caregiver/parent highest level of education
+**Assumptions:** Distinct by client system ID; must have highest level of education information available
 ```{r}
-#| label: setup-outcomes
-#| include: false
+#| label: tbl-highest-caregiver-education
 
-assessment_rules <- tibble::tribble(
-  ~trimmed_pre_assessment_name, ~higher_is_better, ~min_change,
-  "Basis-24",  FALSE, 0.001, # weighted 0–4 scale; any positive change counts
-  "CATS",      FALSE, 1,
-  "GAD-7",     FALSE, 1,
-  "NOMS",      TRUE,  1,
-  "Pediatric", FALSE, 1,
-  "PHQ-9",     FALSE, 1,
-  "PSS",       FALSE, 1,
-  "SDQ",       FALSE, 1,
-  "YOQ",       FALSE, 1
-)
+.d <- all_data |> 
+  filter(!is.na(highest_caregiver_education_level)) %>%  
+  distinct(client_system_id, .keep_all = TRUE)
 
-discharge_cdep_outcome <- discharge_data_cdep |>
-  left_join(assessment_rules, by = "trimmed_pre_assessment_name") |>
-  mutate(
-    raw_change    = post_score - pre_score,
-    better_change = if_else(higher_is_better, raw_change, -raw_change),
-    min_change    = coalesce(min_change, 0),
-    outcome = case_when(
-      is.na(pre_score) | is.na(post_score) ~ NA_character_,
-      better_change >=  min_change ~ "improved",
-      better_change <= -min_change ~ "worsened",
-      TRUE                         ~ "no_change"
-    ),
-    outcome = factor(outcome, levels = c("worsened", "no_change", "improved"))
-  )
-```
-
-#### Outcome Overall
-**Assumptions:** Must have an intervention name and an outcome; data used: discharge_data
-```{r}
-#| label: tbl-outcome-overall
-
-discharge_cdep_outcome |>
-  tabyl(outcome) |>
-  adorn_totals("row") |>
+.d |>
+  tabyl(highest_caregiver_education_level) %>% 
+  adorn_totals("row") %>% 
   adorn_pct_formatting(digits = 1)
-```
 
-#### Outcome by Intervention
-**Assumptions:** Must have an intervention name and an outcome; data used: discharge_data
-```{r}
-#| label: tbl-outcome-by-intervention
-
-discharge_cdep_outcome |>
-  filter(!is.na(intervention_name), !is.na(outcome)) |>
-  tabyl(intervention_name, outcome) |>
-  adorn_totals("row") |>
-  adorn_totals("col") |>
-  adorn_percentages("row") |>
-  adorn_pct_formatting(digits = 1) |>
-  adorn_ns()
-```
-
-#### Outcome by Funding Round
-**Assumptions:** Must have an intervention name and an outcome; data used: discharge_data
-```{r}
-#| label: tbl-outcome-by-round
-
-discharge_cdep_outcome |>
-  tabyl(outcome, funding_round) |>
-  adorn_totals("row") |>
-  adorn_percentages("col") |>
-  adorn_pct_formatting(digits = 1) |>
-  adorn_ns()
-```
-
-#### Outcome by Assessment Measure
-**Assumptions:** Must have an intervention name and an outcome; data used: discharge_data
-```{r}
-#| label: tbl-outcome-by-measure
-
-discharge_cdep_outcome |>
-  filter(!is.na(outcome)) |>
-  tabyl(post_assessment_name, outcome) |>
-  adorn_totals("row") |>
-  adorn_totals("col") |>
-  adorn_percentages("row") |>
-  adorn_pct_formatting(digits = 1) |>
-  adorn_ns()
-```
-
-### Treatment Goals Met
-
-Two criteria must be met for a client to have met treatment goals: (1) a discharge reason of "Mutually agreed to cessation of treatment" and (2) an improvement according to pre- and post-measures collected (e.g., NOMS sub-scales). Improvement is determined by "improved" in the outcomare variable, compared with "no change" or "worsened."
-**Assumptions:** Must have an intervention name and an outcome; data used: discharge_data
-```{r}
-#| label: tbl-treatment-goals
-
-discharge_cdep_outcome |>
-  filter(outcome %in% c("improved")) |>
-  tabyl(reason_for_discharge) |>
-  adorn_totals("row") |>
-  adorn_pct_formatting(digits = 1)
+cat(sprintf("%.1f%% of clients have this data\n", 100 * nrow(.d) / n_distinct(all_data$client_system_id)))
 ```

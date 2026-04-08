@@ -488,7 +488,7 @@ yes_count
 # percent of successful discharge
 yes_pct3 <- tab3 %>%
   filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)") %>%
-  pull(valid_percent)
+  pull(percent)
 yes_pct3
 ```
 

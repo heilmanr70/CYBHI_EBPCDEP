@@ -3,10 +3,9 @@ title: "Annual Report Data Analysis - Question 3.09 and 3.10"
 author: "Tristan Burgess and Cristin Young"
 date: "`r Sys.Date()`"
 output:
-  html_notebook: default
-  word_document: default
-  html_document: default
-  pdf_document: default
+  html_document:
+    self-contained: true
+    df_print: paged
 editor_options:
   chunk_output_type: inline
   markdown:
