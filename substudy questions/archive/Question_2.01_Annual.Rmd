@@ -1,0 +1,614 @@
+---
+title: "Annual Report Data Analysis - Question 2.01 and 2.02"
+author: "Cristin Young and Tristan Burgess"
+date: '2025-12-10'
+output:
+  html_notebook: default
+  word_document: default
+  html_document: default
+  pdf_document: default
+editor_options: 
+  chunk_output_type: inline
+  markdown: 
+    wrap: 72
+---
+
+This notebook answers Question 2.01: Did successful transition rates out of EBP/CDEP services differ by location? 
+
+and Question 2.02: Did successful transition rates out of EBP/CDEP services differ by subpopulations?
+
+#Read in data
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(gt)
+library(clipr)
+library(svglite)
+
+all_data <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
+
+discharge_data <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv", show_col_types = FALSE)
+#all_data <- read_csv("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv", show_col_types = FALSE)
+
+demographic_data <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
+```
+
+# Question 2.01: Did successful transition rates out of EBP/CDEP services differ by location?
+
+THREE inclusion criteria: 1. must have initial time point data (i.e., be
+enrolled in an intervention), 2. must have a valid reason for discharge
+selected at time of discharge (i.e., excludes those with "no reason
+selected"), 3. client must be attached to a specific grantee location
+
+##Make a table of participation and completion rates by location
+
+```{r}
+data201 <- all_data %>% 
+  filter(!is.na(location) & 
+           !is.na(pre_score) & 
+           !is.na(post_score) & 
+           !is.na(reason_for_discharge))
+
+data201$positive_outcomes <- factor(data201$positive_outcomes, levels = c("No", "Yes"))
+
+data201 <- data201 %>% 
+  filter(intervention_start <= "2025-11-30")
+```
+
+## % reported Mutually agreed upon cessation of Tx/successful completion at Discharge by location
+```{r}
+perc_successful_table <- data201 %>% 
+  group_by(location) %>% 
+  summarise(
+    total = n(),
+    successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+    perc_success = round(100 * (successful / total), 1)
+  )
+              
+perc_successful_table %>% 
+  knitr::kable() %>% 
+   clipr::write_clip(allow_non_interactive = TRUE)
+
+openxlsx::write.xlsx(perc_successful_table,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.01/perc_successful_table.xlsx")
+```
+
+## % reported Mutually agreed upon cessation of Tx/successful completion at discharge by Region
+```{r}
+library(haven)
+
+# load in spss data
+spss <- haven::read_spss("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Quant Team File/MasterGranteeSpreadsheet_forBHESQuantTeam_1-20-26_NEW!.sav") %>% 
+  zap_missing() %>%
+  mutate(across(where(is.labelled), as.character)) %>%
+  mutate(across(where(is.character), ~ na_if(str_trim(.x), ""))) %>% 
+  rename_with(~ gsub("^@", "", .x)) %>% 
+  janitor::clean_names() %>% 
+  rename_with(~ gsub("^x", "", .x))
+
+
+data201_spss <- left_join(data201, spss, by = c("provider" = "1a_grantee_provider_name", "provider_id" = "2grantee_provider_id")) %>% 
+  distinct(client_system_id, .keep_all = TRUE)
+
+#join to just demographic data - need to add provider name and intervention first to help with join
+key <- c("client_system_id", "provider_system_id", "provider_id")
+discharge_small <- discharge_data %>% 
+  select(all_of(key), provider, intervention_name)
+
+discharge_small <- discharge_data %>%
+  select(all_of(key), provider, intervention_name)
+
+discharge_small %>%
+  count(across(all_of(key)), name = "n") %>%
+  filter(n > 1)
+
+discharge_unique <- discharge_small %>%
+  distinct(across(all_of(key)), .keep_all = TRUE)
+
+demo_discharge <- left_join(demographic_data, discharge_unique, by = key)
+
+demo_spss <- left_join(demo_discharge, spss, by = c("provider_id" = "2grantee_provider_id")) %>% 
+  distinct(client_system_id, .keep_all = TRUE)
+
+data201_spss <- data201_spss %>% 
+  rename(region = `8c_regions`)
+
+demo_spss <- demo_spss %>% 
+  rename(region = `8c_regions`)
+
+region_success <- data201_spss %>% 
+  group_by(region) %>% 
+  summarise(
+    total = n(),
+    successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+    perc_success = round(100 * (successful / total), 1)
+  ) %>% 
+  clipr::write_clip()
+
+region_success
+```
+
+###Mapping by region
+```{r}
+library(sf)
+library(tigris)
+options(tigris_use_cache = TRUE)
+
+county_table <- data201_spss %>%
+  group_by(region) %>%
+  summarise(
+    counties = paste(sort(unique(`8a_primary_county`)), collapse = ", ")
+  )
+
+county_table
+
+ca_counties <- counties("CA", cb = TRUE, class = "sf")
+region_lookup <- tibble::tribble(
+  ~county,         ~region,
+  # Region 1
+  "Butte",         1,
+  "Colusa",        1,
+  "El Dorado",     1,
+  "Glenn",         1,
+  "Lassen",        1,
+  "Modoc",         1,
+  "Nevada",        1,
+  "Placer",        1,
+  "Plumas",        1,
+  "Sacramento",    1,
+  "Shasta",        1,
+  "Sierra",        1,
+  "Siskiyou",      1,
+  "Sutter",        1,
+  "Tehama",        1,
+  "Yolo",          1,
+  "Yuba",          1,
+  # Region 2
+  "Del Norte",     2,
+  "Humboldt",      2,
+  "Lake",          2,
+  "Mendocino",     2,
+  "Napa",          2,
+  "Sonoma",        2,
+  "Trinity",       2,
+  # Region 3
+  "Alameda",       3,
+  "Contra Costa",  3,
+  "Marin",         3,
+  "San Francisco", 3,
+  "San Mateo",     3,
+  "Santa Clara",   3,
+  "Solano",        3,
+  # Region 4
+  "Alpine",        4,
+  "Amador",        4,
+  "Calaveras",     4,
+  "Madera",        4,
+  "Mariposa",      4,
+  "Merced",        4,
+  "Mono",          4,
+  "San Joaquin",   4,
+  "Stanislaus",    4,
+  "Tuolumne",      4,
+  # Region 5
+  "Monterey",      5,
+  "San Benito",    5,
+  "San Luis Obispo", 5,
+  "Santa Barbara", 5,
+  "Santa Cruz",    5,
+  "Ventura",       5,
+  # Region 6
+  "Fresno",        6,
+  "Inyo",          6,
+  "Kern",          6,
+  "Kings",         6,
+  "Tulare",        6,
+  # Region 7
+  "Riverside",     7,
+  "San Bernardino",7,
+  # Region 8
+  "Los Angeles",   8,
+  # Region 9
+  "Orange",        9,
+  # Region 10
+  "Imperial",      10,
+  "San Diego",     10
+)
+
+#join to counties
+ca_counties_region <- ca_counties %>%
+  mutate(
+    county = str_remove(NAME, " County$")  # NAME from TIGER is like "Alameda County"
+  ) %>%
+  left_join(region_lookup, by = "county")
+
+#make regional polygons
+ca_census_regions <- ca_counties_region %>%
+  group_by(region) %>%
+  summarise(geometry = sf::st_union(geometry), .groups = "drop") %>%
+  arrange(region)
+
+#plot to make sure it's right
+ca_census_regions %>% 
+ggplot() +
+  geom_sf(aes(fill = factor(region)), color = "white", linewidth = 0.3) +
+  scale_fill_viridis_d(name = "Region") +
+  theme_minimal() +
+  labs(title = "California Census Regions (1–10)")
+
+#now merge with outcomes data
+ca_census_regions <- ca_census_regions %>% 
+  mutate(region = as.character(region))
+
+region_success <- region_success %>% 
+  mutate(region = as.character(region))
+
+ca_regions_data <- ca_census_regions %>% 
+  left_join(region_success, by = "region")
+
+clients_by_region <- demo_spss %>%
+  group_by(region) %>%
+  summarise(clients_served = n_distinct(client_system_id), .groups = "drop")
+
+ca_regions_demo_data <- ca_regions_data %>%
+  left_join(clients_by_region, by = "region") %>% 
+  mutate(label_color = if_else(clients_served < 2200, "white", "black"))
+
+#make label colors
+ca_regions_data <- ca_regions_data %>%
+  mutate(label_color = if_else(perc_success < 90, "white", "black"))
+
+#plot  
+ggplot(ca_regions_data) +
+  geom_sf(aes(fill = perc_success), color = "white", linewidth = 0.3) +
+  geom_sf_text(
+    aes(label = paste0("Region ", region, "\n", perc_success, "%"),
+    color = label_color
+        ),
+    size = 3,
+    lineheight = 0.9
+  ) +
+  scale_color_identity() +
+   scale_fill_gradientn(
+    colours = c("#003C71", "#8BD3DD", "#BBDB49"),
+    name = "% successful",
+    limits = c(87, 100)
+  ) +
+  labs(
+    title = "% Successful Outcomes by Region",
+    #subtitle = "California Census Regions",
+    fill = "% success"
+  )+
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    panel.grid = element_blank(),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 11)
+  )
+
+#plot demo data
+ggplot(ca_regions_demo_data) +
+  geom_sf(aes(fill = clients_served), color = "white", linewidth = 0.3) +
+  geom_sf_text(
+    aes(
+      label = paste0("Region ", region, "\n", scales::comma(clients_served)),
+      color = label_color
+    ),
+    size = 3,
+    lineheight = 0.9
+  ) +
+  scale_color_identity() +
+  scale_fill_gradientn(
+    colours = c("#003C71", "#8BD3DD", "#BBDB49"),
+    name = "Clients served",
+    limits = c(1200,5500)
+  ) +
+  labs(
+    title = "Clients Served by Region",
+    fill = "Clients"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    panel.grid = element_blank(),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 11)
+  )
+
+ggsave("/Users/cristin/Downloads/map_clients.svg", width = 8, height = 5)
+```
+
+###Mapping by primary county
+```{r}
+library(sf)
+library(tigris)
+options(tigris_use_cache = TRUE)
+
+ca_counties <- counties("CA", cb = TRUE, class = "sf") %>% 
+  janitor::clean_names()
+
+#plot counties
+ggplot(ca_counties) +
+  geom_sf(aes(fill = factor(name)), color = "white", linewidth = 0.3) +
+  scale_fill_viridis_d(name = "Region") +
+  theme_minimal() +
+  labs(title = "California Census Regions (1–10)")
+
+#get % success at county level
+county_success <- data201_spss %>% 
+  rename(primary_county = `8a_primary_county`) %>% 
+  group_by(primary_county) %>% 
+  summarise(
+    total = n(),
+    successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+    perc_success = round(100 * successful / total, 1)
+  )
+
+#now merge with outcomes data
+county_map_data <- ca_counties %>% 
+  left_join(county_success, by = c(name = "primary_county"))
+
+#make labels
+x_push <- diff(st_bbox(county_map_data)[c("xmin","xmax")]) * 0.45  # big push to the right
+
+#plot 
+ggplot(county_map_data) +
+  geom_sf(aes(fill = perc_success), color = "white", linewidth = 0.3) +
+  geom_text_repel(
+    data = county_map_data %>% filter(perc_success < threshold),
+    aes(geometry = geometry,
+        label = paste0(name, "\n", perc_success, "%")
+        ),
+    color = "black",
+    stat = "sf_coordinates",
+    nudge_x = -x_push,
+    direction = "y",
+    hjust = 1,
+    box.padding = 0.6,
+    point.padding = 0.4,
+    #force = 8,
+    max.overlaps = Inf,
+    min.segment.length = 0,
+    segment.size = 0.4,
+    size = 3.2
+  ) +
+  scale_fill_viridis_c(
+    option = "C", 
+    direction = -1,
+    name = "% successful",
+    limits = c(50, 100)
+  ) +
+  labs(
+    title = "% Successful Outcomes by Primary County",
+    subtitle = "Primary counties with <75% successful completion labeled",
+    fill = "% success"
+  )+
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    panel.grid = element_blank(),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 11)
+  ) +
+  coord_sf(clip = "off")
+```
+
+
+## % of those who met Tx goals (% successful completion + improved score) by location"
+```{r}
+table(data201$reason_for_discharge)
+
+data201_txgoals <- data201 %>% 
+  filter(reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)" | reason_for_discharge == "Clinically referred out",
+         positive_outcomes == "Yes")
+
+data201 %>% 
+  filter(positive_outcomes == "Yes") %>% 
+  tabyl(reason_for_discharge) %>% 
+  adorn_pct_formatting(digits = 1) %>% 
+  adorn_totals("row")
+
+# perc_successful_table_pos_outcome <- data201 %>% 
+#   group_by(location) %>% 
+#   summarise(
+#     total = n(),
+#     successful_discharge = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+#     perc_success_discharge = round(100 * successful_discharge / total, 1),
+#     successful_outcome = sum(positive_outcomes %in% c("Yes"), na.rm = TRUE),
+#     perc_success_outcome = round(100 * successful_outcome / total, 1)
+#   )
+#               
+# perc_successful_table_pos_outcome %>% 
+#   knitr::kable() %>% 
+#   clipr::write_clip(allow_non_interactive = TRUE)
+
+xlsx::write.xlsx(perc_successful_table,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.01/perc_successful_table_pos_outcome.xlsx")
+
+#or
+p_yes = function(x) round(x[2]/sum(x), 2) # 1 in this line was doing p_no!
+
+table <- addmargins(xtabs(data=data201, ~location + positive_outcomes, subset = data201$reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)"), FUN = list(p_yes))
+
+table %>% 
+  knitr::kable() %>% 
+  clipr::write_clip(allow_non_interactive = TRUE)
+
+xlsx::write.xlsx(perc_successful_table,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.01/Mutually agreed cessation of treatment (Successful Completion).xlsx")
+
+```
+
+#Question 2.02: Did successful transition rates out of EBP/CDEP services
+differ by subpopulations? look at data201 by demographics
+
+##Race
+
+```{r}
+detailed_race <- data201 %>% 
+  group_by(code_num) %>% 
+  summarise(
+    total = n(),
+    successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+    perc_success = round(100* successful / total, 1)
+  )
+
+detailed_race %>% 
+  knitr::kable() %>% 
+  clipr::write_clip(allow_non_interactive = TRUE)
+  
+chisq.test(data201$positive_outcomes, data201$code_num)
+
+# data201$code_num %>% 
+#   mutate(race_factor = fct_recode(code_num,
+#                                   "Asian" = 1, 
+#               "Black or African American" = 2, 
+#                      "Hispanic or Latino" = 3,
+#         "Middle Eastern or North African" = 4,
+#               "Native American/American Indian or Alaska Native" = 5,
+#               "Native Hawaiian or Pacific Islander" = 6,
+#               "White" = 7,
+#               "2+ selected" = 88
+#               ))
+
+# model <- glm(positive_outcomes ~ factor(code_num), data = data201, family = "binomial")
+# summary(model)
+
+openxlsx::write.xlsx(summary(model)$coefficients,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/detailed race (model).xlsx")
+```
+
+##Race summary Roll detailed race variables, based on first answer, up
+into: - Asian - Black or African American - Don't Know - Hispanic or
+Latino - Middle Eastern or North African - Native American/American
+Indian or Alaska Native - Native Hawaiian or Pacific Islander - Not
+Applicable - Prefer Not to Answer - White
+
+```{r}
+#make new column of only the first race recorded
+data201 <- data201 %>% 
+  separate(race, into = c("first_race", NA), sep = ",", extra = "drop", remove = FALSE)
+
+summary_race <- data201 %>% 
+  group_by(first_race) %>% 
+  summarise(
+    total = n(),
+    successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+    perc_success = round(100* successful / total, 1)
+  )
+
+summary_race %>% 
+  knitr::kable() %>% 
+  clipr::write_clip(allow_non_interactive = TRUE)
+
+openxlsx::write.xlsx(summary_race,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/summary_race.xlsx")
+
+chisq.test(data201$positive_outcomes, data201$first_race)
+
+model <- glm(positive_outcomes ~ first_race, data = data201, family = "binomial")
+summary(model)
+table(data201$first_race)
+
+xlsx::write.xlsx(summary(model)$coefficients,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/summary race (model).xlsx")
+
+```
+
+##Ethnicity
+codebook_eth <- c("Chinese" = 1, "Asian Indian" = 2, "Filipino" = 3, "Vietnamese" = 4, "Korean" = 5,"Japanese" = 6, "African American" = 7,"Jamaican" = 8, "Haitian" = 9, "Nigerian" = 10, "Somali" = 11, "Mexican" = 12, "Puerto Rican" = 13, "Salvadoran" = 14, "Cuban" = 15, "Dominican" = 16, "Guatemalan" = 17, "Native Hawaiian" = 18, "Samoan" = 19, "Chamorro" = 20, "English" = 21, "German" = 22, "Irish" = 23, "Italian" = 24, "Polish" = 25, "Scottish" = 26, "2+ ethnicities selected" = 88)
+```{r}
+detailed_ethnicity <- data201 %>% 
+  group_by(ethn_num) %>% 
+  summarise(
+    total = n(),
+    successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+    perc_success = round(100* successful / total, 1)
+  )
+
+detailed_ethnicity %>% 
+  knitr::kable() %>% 
+  clipr::write_clip(allow_non_interactive = TRUE)
+
+xlsx::write.xlsx(detailed_ethnicity,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/detailed_ethnicity.xlsx")
+
+chisq.test(data201$positive_outcomes, data201$ethnicity)
+```
+
+##Gender Identity
+
+```{r}
+gender_identity <- data201 %>% 
+  group_by(gender_identity) %>% 
+  summarise(
+    total = n(),
+    successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+    perc_success = round(100* successful / total, 1)
+  )
+
+gender_identity %>% 
+  knitr::kable() %>% 
+  clipr::write_clip(allow_non_interactive = TRUE)
+
+openxlsx::write.xlsx(gender_identity,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/gender_identity.xlsx")
+
+chisq.test(data201$gender_identity, data201$positive_outcomes)
+
+data201$gender_identity <- relevel(as.factor(data201$gender_identity),ref="Woman/girl")
+
+model <- glm(positive_outcomes ~ gender_identity, data = data201, family = "binomial")
+
+summary(model)
+
+openxlsx::write.xlsx(summary(model)$coefficients,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/gender_identity(model).xlsx")
+```
+
+##Sexual orientation
+
+```{r}
+sex_orientation <- data201 %>% 
+  group_by(sexual_orientation) %>% 
+  summarise(
+    total = n(),
+    successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+    perc_success = round(100* successful / total, 1)
+  )
+
+sex_orientation %>% 
+  knitr::kable() %>% 
+  clipr::write_clip(allow_non_interactive = TRUE)
+
+openxlsx::write.xlsx(sex_orientation,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/sex_orientation.xlsx")
+
+chisq.test(data201$positive_outcomes, data201$sexual_orientation)
+
+model <- glm(positive_outcomes ~ sexual_orientation, data = data201, family = "binomial")
+
+summary(model)
+
+```
+
+##Insurance status
+
+```{r}
+insurance <- data201 %>% 
+  group_by(insurance_status) %>% 
+  summarise(
+    total = n(),
+    successful = sum(reason_for_discharge %in% c("Mutually agreed cessation of treatment (Successful Completion)","Clinically referred out"), na.rm = TRUE),
+    perc_success = round(100* successful / total, 1)
+  )
+
+insurance %>% 
+  knitr::kable() %>% 
+  clipr::write_clip(allow_non_interactive = TRUE)
+
+openxlsx::write.xlsx(insurance,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/insurance.xlsx")
+
+chisq.test(data201$positive_outcomes, data201$insurance_status)
+
+model <- glm(positive_outcomes ~ insurance_status, data = data201, family = "binomial")
+summary(model)
+
+openxlsx::write.xlsx(summary(model)$coefficients,"/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/Annual Report Development/Results Tables/Q2.02/insurance(model).xlsx")
+
+```

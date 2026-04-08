@@ -1,0 +1,228 @@
+---
+title: "Discharge_QuarterlyReport"
+author: "Rebecca Heilman"
+date: "2025-07-14"
+output: html_document:
+    df_print: paged
+  pdf_document: default
+  html_notebook: default
+---
+
+This notebook cleans up discharge data and provides counts, percentage with positive outcomes and average scores at pre/post for each assessment tool.
+
+
+#Read in data
+```{r}
+library(tidyverse)
+library(janitor)
+library(gt)
+
+discharge_data <- readxl::read_xlsx("C:/Users/heilm/Dropbox/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/July13_Report_Data/Dishcharge_Report.xlsx", na = c("-", "", "NA"))
+demographic_data_updated <- readxl::read_xlsx("C:/Users/heilm/Dropbox/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/July13_Report_Data/Client_Demographics.xlsx", na = c("-", "", "NA"))
+
+# discharge_data <- readxl::read_xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Dishcharge_Report.xlsx", na = c("-", "", "NA"))
+# demographic_data <- readxl::read_xlsx("/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/Exports - Raw/May13_Report_Data/Client_Demographics.xlsx", na = c("-", "", "NA"))
+
+length(discharge_data$`Client ID`)
+length(demographic_data_updated$`Client ID`)
+```
+
+#Clean up demographic data
+```{r}
+#get rid of demo data
+demographic_data_filtered <- demographic_data_updated %>%
+  filter(!if_any(c(`Provider ID`, `Client ID`), ~ str_detect(as.character(.x), "DEMO"))) %>% 
+  clean_names()
+
+demographic_data_filtered_updated <- demographic_data_updated %>%
+  filter(!if_any(c(`Provider ID`, `Client ID`), ~ str_detect(as.character(.x), "DEMO"))) %>% 
+  clean_names()
+
+#are there unique client IDs? 
+length(unique(demographic_data_filtered_updated$client_id)) == nrow(demographic_data_filtered_updated)
+
+#which IDs have been repeated and how many times? 
+duplicates <- demographic_data_filtered_updated %>% 
+  group_by(client_id) %>% 
+   filter(n() > 1) %>%
+  tally() 
+
+#how many rows are duplicated?
+duplicates %>% 
+  summarise(total_duplicated = sum(n))
+
+#what data is repeating for each client?
+demographic_data_filtered_updated %>%
+  group_by(client_id) %>%
+  filter(n() > 1) %>%
+  summarise(across(everything(), ~ {
+    u <- unique(.x)
+    if(length(u) > 1) paste(u, collapse = ", ") else NA_character_
+  }), .groups = "drop") %>%
+  select(client_id, where(~ any(!is.na(.))))
+
+duplicate_list <- demographic_data_filtered_updated %>% 
+  filter(client_id %in% duplicates$client_id)
+
+write_csv(duplicate_list, "C:/Users/heilm/Dropbox/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/duplicate_list_July13.csv")
+
+#for now, drop the 317 clients (1285 rows)
+demographic_data_filtered <- demographic_data_filtered %>% 
+  filter(!(client_id %in% duplicates$client_id))
+
+#check again for duplicate ids, just in case
+length(unique(demographic_data_filtered$client_id)) == nrow(demographic_data_filtered)
+```
+
+#Clean up discharge data
+```{r}
+#get rid of demo data
+discharge_data_filtered <- discharge_data %>%
+  filter(!if_any(c(`Provider ID`, `Client ID`), ~ str_detect(as.character(.x), "DEMO"))) %>% 
+  clean_names()
+
+#are there unique client IDs? 
+length(unique(discharge_data_filtered$client_id)) == nrow(discharge_data_filtered)
+
+#which IDs have been repeated and how many times? 
+discharge_data_filtered %>% 
+  group_by(client_id) %>% 
+  summarise(n=n()) %>% 
+  filter(n>1)
+
+#what data is repeating for each client?
+discharge_data_filtered %>%
+  group_by(client_id) %>%
+  filter(n() > 1) %>%
+  summarise(across(everything(), ~ {
+    u <- unique(.x)
+    if(length(u) > 1) paste(u, collapse = ", ") else NA_character_
+  }), .groups = "drop") %>%
+  select(client_id, where(~ any(!is.na(.))))
+
+unique(discharge_data_filtered$pre_measure_s)
+unique(discharge_data_filtered$post_measure_s)
+
+#clean up pre/post-measure names
+discharge_data_filtered <- discharge_data_filtered %>%
+  mutate(
+    pre_time_point = str_extract(
+      pre_measure_s, "(Initial|(?i)follow up \\d+)"),
+    pre_assessment_name = str_remove(
+      pre_measure_s, "(Initial|(?i)follow up \\d+)") %>% 
+      str_trim()
+  ) %>% 
+  mutate(
+    post_time_point = str_extract(
+      post_measure_s, "(Initial|(?i)follow up \\d+)"),
+    post_assessment_name = str_remove(
+      post_measure_s, "(Initial|(?i)follow up \\d+)") %>% 
+      str_trim()
+  )
+
+#see if pre/post assessment names match yet
+discharge_data_filtered <- discharge_data_filtered %>% 
+mutate(MatchDistinct = pre_assessment_name == post_assessment_name)
+
+#not everyone uses the correct name for pre vs post assessment, so clean further
+discharge_data_filtered <- discharge_data_filtered %>% 
+  mutate(
+    trimmed_pre_assessment_name = word(pre_assessment_name, 1),
+    trimmed_post_assessment_name = word(post_assessment_name, 1)
+  )
+
+#are they all the same now? 
+discharge_data_filtered <- discharge_data_filtered %>% 
+mutate(trimmed_match = trimmed_pre_assessment_name == trimmed_post_assessment_name)
+
+#this is the same thing - they just wrote out SDQ for post
+discharge_data_filtered %>% 
+  filter(trimmed_match == FALSE)
+```
+
+#look at clients with >1 intervention
+```{r}
+dup_client_id <- discharge_data_filtered %>%
+  filter(!is.na(pre_measure_s) & !is.na(post_measure_s)) 
+
+dup_client_id <- dup_client_id %>% 
+  group_by(client_id) %>%
+  filter(n() > 1) %>%
+  summarise(across(everything(), ~ {
+    u <- unique(.x)
+    if(length(u) > 1) paste(u, collapse = ", ") else NA_character_
+  }), .groups = "drop") %>%
+  select(client_id, where(~ any(!is.na(.))))
+
+#filter discharge data to only clients with duplicate rows AND ones that hove both pre and post data
+dup_clients <- discharge_data_filtered %>% 
+  filter(client_id %in% dup_client_id$client_id,
+        !is.na(pre_measure_s) & !is.na(post_measure_s))
+
+length(unique(dup_clients$client_id)) #171 clients with more than one complete intervention 
+#nrow(dup_clients_diff_time_data) + nrow(dup_clients_same_time_data)
+```
+
+##find clients that had >1 DIFFERENT interventions AT THE SAME TIME
+versus clients that had more than one of the same intervention
+```{r}
+dup_clients_same_time <- dup_clients %>% 
+  group_by(client_id, intervention_start) %>% 
+  summarise(across(pre_assessment_name, ~ {
+    u <- unique(.x)
+    if(length(u) > 1) paste(u, collapse = ", ") else NA_character_
+  }), .groups = "drop") %>% 
+  filter(!is.na(pre_assessment_name))
+
+#this is the data for the clients that had different intervention at the SAME time
+dup_clients_same_time_data <- discharge_data_filtered %>% 
+  filter(client_id %in% dup_clients_same_time$client_id)
+```
+
+##find clients that had SAME intervention AT DIFFERENT TIMES
+this should be the inverse of dup_clients_same_time (n=34 + n=55 = n=171)
+```{r}
+dup_clients_diff_time <- dup_clients %>% 
+  group_by(client_id) %>% 
+  summarise(across(pre_assessment_name, ~ {
+    u <- unique(.x)
+    if(length(u) == 1) paste(u, collapse = ", ") else NA_character_
+  }), .groups = "drop") %>% 
+  filter(!is.na(pre_assessment_name))
+
+#this is the data for the clients that had same intervention at different times
+dup_clients_diff_time_data <- discharge_data_filtered %>% 
+  filter(client_id %in% dup_clients_diff_time$client_id)
+```
+
+
+#Now join demographic and discharge data by client ID
+```{r}
+#assessment-level data
+all_data <- left_join(discharge_data_filtered, demographic_data_filtered_updated, by = c("client_id", "provider_id"))
+```
+
+#how many unique clients were served?
+```{r}
+n_distinct(demographic_data_filtered$client_id)
+```
+
+#how many clients had outcomes data? 
+```{r}
+n_distinct(all_data$client_id)
+```
+
+#write csvs
+```{r}
+#all data /Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin
+# write_csv(all_data, "/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
+write_csv(all_data, "C:/Users/heilm/Dropbox/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean_July13.csv")
+
+#clean demo data
+# write_csv(demographic_data_filtered, "/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
+write_csv(demographic_data_filtered_updated, "C:/Users/heilm/Dropbox/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean_July13.csv")
+
+#clean dishcarge data
+# write_csv(discharge_data_filtered, "/Users/tristan/CWS Dropbox/Tristan Burgess/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
+write_csv(discharge_data_filtered, "C:/Users/heilm/Dropbox/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean_July13.csv")
+```
