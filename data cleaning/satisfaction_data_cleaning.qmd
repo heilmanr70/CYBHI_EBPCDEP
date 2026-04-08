@@ -1,9 +1,10 @@
 ---
 title: "Satisfaction Survey Data Cleaning"
 author: "Cristin Young"
-date: "2026-03-17"
+date: "`r Sys.Date()`"
 format:
   html:
+    self-contained: true
     df-print: paged
     toc: true
     toc-float: true
@@ -25,7 +26,7 @@ Each file has a two-row header: row 1 contains question text (with merged cells 
 **Outputs:**
 
 | File | Contents |
-|----|----|
+|------------------------------------|------------------------------------|
 | `satisfaction_caregiver_clean.csv` | Cleaned caregiver survey responses |
 | `satisfaction_child_clean.csv` | Cleaned child (13–17) survey responses |
 | `satisfaction_adult_clean.csv` | Cleaned adult (18–59) survey responses |

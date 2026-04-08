@@ -1,9 +1,10 @@
 ---
 title: "PSS Assessment Data Cleaning"
 author: "Cristin Young"
-date: "2026-03-09"
+date: "`r Sys.Date()`"
 format:
   html:
+    self-contained: true
     df-print: paged
     toc: true
     toc-float: true
@@ -28,7 +29,7 @@ This notebook prepares **CYBHI EBP/CDEP** Parenting Stress Scale (PSS) assessmen
 **Output:**
 
 | File | Contents |
-|----|----|
+|------------------------------------|------------------------------------|
 | `pss_paired_clean.csv` | One row per client: initial/follow-up scores, `positive_outcome`, `score_change`, quarter labels |
 
 ------------------------------------------------------------------------

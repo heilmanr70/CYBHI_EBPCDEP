@@ -1,7 +1,7 @@
 ---
 title: "CDEP Report"
 author: "Cristin Young"
-date: "2026-03-18"
+date: "`r Sys.Date()`"
 format:
   html:
     df-print: paged
@@ -9,6 +9,7 @@ format:
     toc-depth: 3
     toc-location: left
     theme: cosmo
+    embed-resources: TRUE
 execute:
   echo: false
   warning: false
@@ -16,12 +17,22 @@ execute:
 ---
 
 ::: {.callout-note title="TO DOs"}
--   
+- get the correct grantee_IDs and double check results match Rikke's hand-curated file from eInsight
+- filter for grantees that have multiple interventions and ONE grant
+- clinical summary: had intervention (should be discharge_data)
 :::
 
 ## CDEPs
 
 81 CDEPs are the focus of this report.
+
+Notes:
+
+- so if it doesn't match, it's because it's NOT A CDEP
+- match by funding round too
+- how many CDEPs have more than one grant? 
+- go SOLELY based on Rikke's crosswalk and not match first. 
+- ok, so the mismatched ones are all ones that have multiple grants and they're putting the wrong thing in the dropdown
 
 ## Setup
 
@@ -32,68 +43,248 @@ library(readr)
 library(tidyverse)
 library(janitor)
 library(haven)
+library(stringr)
 
 knitr::opts_chunk$set(rownames.print = FALSE)
 
-discharge_data    <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
-all_data          <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
-demographic_data  <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
+#discharge_data    <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
+#all_data          <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
+#demographic_data  <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
 
-cdep_sav <- read_sav("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Master Files BHES Internal/Other File Versions/CDEPS_3-18-26.sav")
-
-cdep_lookup <- cdep_sav |>
-  select(provider_id = `@2GranteeProviderID`, sav_name = `@9aEBPCDEP`)
+#cdep_sav <- read_sav("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Master Files BHES Internal/Other File Versions/CDEPS_3-18-26.sav")
 
 # intervention_name_crosswalk <- read_csv(
 #   "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Quant Team File/intervention_name_review_RA_3-19-26.csv",
 #   show_col_types = FALSE
 # )
 
-intervention_name_crosswalk <- read_csv("/Users/cristin/Downloads/intervention_name_crosswalk_updated_RA.xlsx",
-  show_col_types = FALSE
-)
+# intervention_name_crosswalk <- read_csv("/Users/cristin/Downloads/intervention_name_crosswalk_updated_RA.csv",
+#   show_col_types = FALSE
+# )  
+# 
+# # Clean crosswalk: remove data-entry artifacts, coerce provider_id to character
+# crosswalk_clean <- intervention_name_crosswalk |>
+#   filter(
+#     !is.na(discharge_data_intervention_name),
+#     discharge_data_intervention_name != "added this row",
+#     !is.na(cdep_sav_intervention_name)
+#   ) |>
+#   mutate(provider_id = str_pad(as.character(provider_id), width = 3, pad = "0")) |>
+#   distinct(
+#     provider_id,
+#     intervention_name          = discharge_data_intervention_name,
+#     cdep_sav_intervention_name
+#   )
+# 
+# # Step 1: direct matches — discharge intervention_name == cdep_sav @9aEBPCDEP
+# direct_pairs <- discharge_data |>
+#   distinct(provider_id, intervention_name) |>
+#   inner_join(cdep_lookup, by = c("provider_id", "intervention_name" = "sav_name")) |>
+#   distinct(provider_id, intervention_name)
+# 
+# # Step 2: crosswalk-bridged matches for names that don't align
+# crosswalk_pairs <- discharge_data |>
+#   distinct(provider_id, intervention_name) |>
+#   anti_join(direct_pairs, by = c("provider_id", "intervention_name")) |>
+#   inner_join(crosswalk_clean, by = c("provider_id", "intervention_name")) |>
+#   inner_join(cdep_lookup, by = c("provider_id", "cdep_sav_intervention_name" = "sav_name")) |>
+#   distinct(provider_id, intervention_name)
+# 
+# cdep_intervention_pairs <- bind_rows(direct_pairs, crosswalk_pairs)
+# 
+# # Pass 1: unambiguous corrections — one discharge name maps to exactly one correct name
+# name_correction <- intervention_name_crosswalk |>
+#   filter(
+#     !is.na(discharge_data_intervention_name),
+#     discharge_data_intervention_name != "added this row",
+#     !is.na(correct_intervention_name),
+#     correct_intervention_name != ""
+#   ) |>
+#   mutate(provider_id = str_pad(as.character(provider_id), width = 3, pad = "0")) |>
+#   group_by(provider_id, discharge_data_intervention_name) |>
+#   filter(n_distinct(correct_intervention_name) == 1) |>
+#   ungroup() |>
+#   distinct(
+#     provider_id,
+#     intervention_name         = discharge_data_intervention_name,
+#     correct_intervention_name
+#   )
+# 
+# # Pass 2: funding-round-disambiguated corrections for remaining ambiguous cases
+# # (cases where the same discharge name maps to different interventions across funding rounds)
+# ambig_correction_by_round <- intervention_name_crosswalk |>
+#   filter(
+#     !is.na(discharge_data_intervention_name),
+#     discharge_data_intervention_name != "added this row",
+#     !is.na(correct_intervention_name),
+#     correct_intervention_name != ""
+#   ) |>
+#   mutate(provider_id = str_pad(as.character(provider_id), width = 3, pad = "0")) |>
+#   group_by(provider_id, discharge_data_intervention_name) |>
+#   filter(n_distinct(correct_intervention_name) > 1) |>
+#   ungroup() |>
+#   mutate(funding_round = str_extract(spss_grant_id, "(?<=-)(\\d)")) |>
+#   group_by(provider_id, discharge_data_intervention_name, funding_round) |>
+#   filter(n_distinct(correct_intervention_name) == 1) |>
+#   ungroup() |>
+#   distinct(
+#     provider_id,
+#     intervention_name     = discharge_data_intervention_name,
+#     funding_round,
+#     correct_intervention_name
+#   )
+# 
+# apply_name_corrections <- function(df) {
+#   df |>
+#     left_join(name_correction,
+#               by = c("provider_id", "intervention_name")) |>
+#     left_join(ambig_correction_by_round,
+#               by = c("provider_id", "intervention_name", "funding_round"),
+#               suffix = c("_base", "_round")) |>
+#     mutate(intervention_name = coalesce(correct_intervention_name_base,
+#                                         correct_intervention_name_round,
+#                                         intervention_name)) |>
+#     select(-correct_intervention_name_base, -correct_intervention_name_round)
+# }
+# 
+# discharge_cdep <- discharge_data |>
+#   semi_join(cdep_intervention_pairs, by = c("provider_id", "intervention_name")) |>
+#   apply_name_corrections()
+# 
+# # demographic data has no intervention_name — filter by provider_id only
+# demo_cdep <- demographic_data |>
+#   filter(provider_id %in% cdep_lookup$provider_id)
+# 
+# all_data_cdep <- all_data |>
+#   semi_join(cdep_intervention_pairs, by = c("provider_id", "intervention_name")) |>
+#   apply_name_corrections()
 
-write_csv(intervention_name_crosswalk, "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Quant Team File/intervention_name_review_more.csv")
-
-# Clean crosswalk: remove data-entry artifacts, coerce provider_id to character
-crosswalk_clean <- intervention_name_crosswalk |>
-  filter(
-    !is.na(discharge_data_intervention_name),
-    discharge_data_intervention_name != "added this row",
-    !is.na(cdep_sav_intervention_name)
-  ) |>
-  mutate(provider_id = str_pad(as.character(provider_id), width = 3, pad = "0")) |>
-  distinct(
-    provider_id,
-    intervention_name          = discharge_data_intervention_name,
-    cdep_sav_intervention_name
+# using Rikke's files 
+discharge_data_cdep    <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/CDEP Files for Cristin _March 25 2026/Final File/Excel Files/DischargeExport_CDEPs_March 25 2026_Final.csv", na = c("-", "", "NA", "N/A")) |> clean_names() |> 
+    mutate(
+    provider_system_id = as.character(provider_system_id),
+    client_system_id   = as.character(client_system_id),
+    provider_id        = as.character(provider_id)
   )
 
-# Step 1: direct matches — discharge intervention_name == cdep_sav @9aEBPCDEP
-direct_pairs <- discharge_data |>
-  distinct(provider_id, intervention_name) |>
-  inner_join(cdep_lookup, by = c("provider_id", "intervention_name" = "sav_name")) |>
-  distinct(provider_id, intervention_name)
+clinical_summary_cdep  <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/CDEP Files for Cristin _March 25 2026/Final File/Excel Files/ClinicalSummary_CDEPS_File1_March 25, 2026_FINAL.csv", na = c("-", "", "NA", "N/A")) |> clean_names()
 
-# Step 2: crosswalk-bridged matches for names that don't align
-crosswalk_pairs <- discharge_data |>
-  distinct(provider_id, intervention_name) |>
-  anti_join(direct_pairs, by = c("provider_id", "intervention_name")) |>
-  inner_join(crosswalk_clean, by = c("provider_id", "intervention_name")) |>
-  inner_join(cdep_lookup, by = c("provider_id", "cdep_sav_intervention_name" = "sav_name")) |>
-  distinct(provider_id, intervention_name)
+demographic_data_cdep  <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/CDEP Files for Cristin _March 25 2026/Final File/Excel Files/ClientDemographis_CDEPS_March 25_Final.csv", na = c("-", "", "NA", "N/A")) |> clean_names() |> 
+  rename(client_system_id = client_id) |> 
+  mutate(
+    provider_system_id = as.character(provider_system_id),
+    client_system_id   = as.character(client_system_id),
+    provider_id        = as.character(provider_id)
+  )
 
-cdep_intervention_pairs <- bind_rows(direct_pairs, crosswalk_pairs)
+# need to clean demographic and discharge data and recode race, etc. 
+codebook_race <- c(
+  "Asian"                                                = 1,
+  "Black or African American"                            = 2,
+  "Hispanic or Latino"                                   = 3,
+  "Middle Eastern or North African"                      = 4,
+  "Native American/American Indian or Alaska Native"     = 5,
+  "Native Hawaiian or Pacific Islander"                  = 6,
+  "White"                                                = 7
+)
 
-discharge_cdep <- discharge_data |>
-  semi_join(cdep_intervention_pairs, by = c("provider_id", "intervention_name"))
+demographic_data_cdep <- demographic_data_cdep |>
+  mutate(
+    cleaned_race = str_remove_all(
+      race,
+      "\\b(Don't Know|Prefer Not To Answer|Not Applicable)\\b"
+    ) |>
+      str_replace_all(",+", ",") |>       # collapse extra commas left by removal
+      str_replace_all("^,|,$", "") |>     # trim any leading/trailing commas
+      na_if("")                            # empty string → NA
+  ) |>
+  mutate(
+    recoded_race = case_when(
+      is.na(cleaned_race)              ~ NA,   # no valid response
+      str_detect(cleaned_race, ",")    ~ 2L,   # multiracial
+      TRUE                             ~ 1L    # single race
+    ),
+    code_num = case_when(
+      is.na(cleaned_race)              ~ NA,
+      str_detect(cleaned_race, ",")    ~ 88L,  # multiracial code
+      TRUE ~ unname(codebook_race[cleaned_race])
+    )
+  )
 
-# demographic data has no intervention_name — filter by provider_id only
-demo_cdep <- demographic_data |>
-  filter(provider_id %in% cdep_lookup$provider_id)
+codebook_eth <- c(
+  "Chinese" = 1, "Asian Indian" = 2, "Filipino" = 3, "Vietnamese" = 4,
+  "Korean" = 5, "Japanese" = 6, "African American" = 7, "Jamaican" = 8,
+  "Haitian" = 9, "Nigerian" = 10, "Somali" = 11, "Mexican" = 12,
+  "Puerto Rican" = 13, "Salvadoran" = 14, "Cuban" = 15, "Dominican" = 16,
+  "Guatemalan" = 17, "Native Hawaiian" = 18, "Samoan" = 19, "Chamorro" = 20,
+  "English" = 21, "German" = 22, "Irish" = 23, "Italian" = 24, "Polish" = 25,
+  "Scottish" = 26, "2+ ethnicities selected" = 88
+)
 
-all_data_cdep <- all_data |>
-  semi_join(cdep_intervention_pairs, by = c("provider_id", "intervention_name"))
+demographic_data_cdep <- demographic_data_cdep |>
+  mutate(
+    cleaned_ethn = str_remove_all(
+      ethnicity,
+      "\\b(Don't Know|Prefer Not To Answer|Not Applicable)\\b"
+    ) |>
+      str_replace_all(",+", ",") |>
+      str_replace_all("^,|,$", "") |>
+      na_if("")
+  ) |>
+  mutate(
+    recoded_ethn = case_when(
+      is.na(cleaned_ethn)              ~ NA,
+      str_detect(cleaned_ethn, ",")    ~ 2L,
+      TRUE                             ~ 1L
+    ),
+    ethn_num = case_when(
+      is.na(cleaned_ethn)              ~ NA,
+      str_detect(cleaned_ethn, ",")    ~ 88L,
+      TRUE ~ unname(codebook_eth[cleaned_ethn])
+    )
+  )
+
+discharge_data_cdep <- discharge_data_cdep |>
+  mutate(
+    funding_round = case_when(
+      provider_id == "604" & funding_round == "No Funding Round Selected" ~ "2",
+      provider_id == "508" & funding_round == "No Funding Round Selected" ~ "2",
+      provider_id == "607" & funding_round == "No Funding Round Selected" ~ "1",
+      provider_id == "573"                                                 ~ "2",
+      provider_id == "709" & funding_round == "No Funding Round Selected" ~ "1",
+      TRUE ~ funding_round
+    )
+  )
+
+
+discharge_data_cdep <- discharge_data_cdep |>
+  mutate(
+    pre_time_point      = str_extract(pre_measures, "(Initial|(?i)follow up \\d+)"),
+    pre_assessment_name = str_remove(pre_measures, "(Initial|(?i)follow up \\d+)") |>
+      str_trim()
+  ) |>
+  mutate(
+    post_time_point      = str_extract(post_measures, "(Initial|(?i)follow up \\d+)"),
+    post_assessment_name = str_remove(post_measures, "(Initial|(?i)follow up \\d+)") |>
+      str_trim()
+  ) |>
+  mutate(
+    # Exact match check
+    MatchDistinct = pre_assessment_name == post_assessment_name,
+    # First-word match — handles cases where "SDQ" appears as "SDQ Strengths & Difficulties..."
+    trimmed_pre_assessment_name  = word(pre_assessment_name, 1),
+    trimmed_post_assessment_name = word(post_assessment_name, 1),
+    trimmed_match = trimmed_pre_assessment_name == trimmed_post_assessment_name
+  ) 
+
+all_data_cdep <- left_join(discharge_data_cdep, demographic_data_cdep, by = c("client_system_id", "provider_id", "provider_system_id"))
+
+cat("Unique providers (clinical summary):", clinical_summary_cdep |> distinct(provider_id) |> nrow(), "\n")
+cat("Unique providers (discharge data):", discharge_data_cdep |> distinct(provider_id) |> nrow(), "\n")
+cat("Discharge data (distinct by client ID) rows; this is the denominator for most tables below:", discharge_data_cdep |> distinct(client_system_id, .keep_all = TRUE) |> nrow(), "\n")
+cat("Discharge data rows (total):", nrow(discharge_data_cdep), "\n")
+cat("Clinical summary (with collection, distinct by client ID) rows:", clinical_summary_cdep |> filter(!is.na(collection)) |>  distinct(client_system_id, .keep_all = TRUE) |> nrow(), "\n")
+cat("Clients reached (demographic data, distinct by client ID):", demographic_data_cdep |> distinct(client_system_id, .keep_all = TRUE) |> nrow(), "\n")
 ```
 
 ## Results
@@ -101,11 +292,11 @@ all_data_cdep <- all_data |>
 ### Enrollment
 
 #### Grantees by Funding Round
-
+**data used:** discharge_data
 ```{r}
 #| label: tbl-grantees-by-round
 
-discharge_cdep |>
+discharge_data_cdep |>
   distinct(provider, .keep_all = TRUE) |>
   tabyl(funding_round) |>
   adorn_totals("row") |>
@@ -113,11 +304,11 @@ discharge_cdep |>
 ```
 
 #### Clients Enrolled by Funding Round
-
+**Assumptions:** Needed to have an intervention start date; data used: discharge_data
 ```{r}
 #| label: tbl-enrolled-by-round
 
-discharge_cdep |>
+discharge_data_cdep |>
   filter(!is.na(intervention_start)) |>
   tabyl(funding_round) |>
   adorn_totals("row") |>
@@ -125,11 +316,11 @@ discharge_cdep |>
 ```
 
 #### Clients Enrolled by Intervention
-
+**Assumptions:** Needed to have an intervention start date; data used: discharge_data
 ```{r}
 #| label: tbl-enrolled-by-intervention
 
-discharge_cdep |>
+discharge_data_cdep |>
   filter(!is.na(intervention_start)) |>
   tabyl(intervention_name) |>
   adorn_totals("row") |>
@@ -137,11 +328,11 @@ discharge_cdep |>
 ```
 
 #### Clients Enrolled by Intervention and Funding Round
-
+**Assumptions:** Needed to have an intervention start date; data used: discharge_data
 ```{r}
 #| label: tbl-enrolled-by-intervention-round
 
-discharge_cdep |>
+discharge_data_cdep |>
   filter(!is.na(intervention_start)) |>
   tabyl(intervention_name, funding_round) |>
   adorn_totals("row") |>
@@ -153,11 +344,11 @@ discharge_cdep |>
 ### Discharge
 
 #### Discharged by Intervention
-
+**Assumptions:** Needed to have an intervention end date; data used: discharge_data
 ```{r}
 #| label: tbl-discharged-by-intervention
 
-discharge_cdep |>
+discharge_data_cdep |>
   filter(!is.na(intervention_end)) |>
   tabyl(intervention_name) |>
   adorn_totals("row") |>
@@ -165,11 +356,11 @@ discharge_cdep |>
 ```
 
 #### Discharged by Reason
-
+**Assumptions:** Needed to have an intervention end date; data used: discharge; data
 ```{r}
 #| label: tbl-discharged-by-reason
 
-discharge_cdep |>
+discharge_data_cdep |>
   filter(!is.na(intervention_end)) |>
   tabyl(reason_for_discharge) |>
   adorn_totals("row") |>
@@ -177,11 +368,11 @@ discharge_cdep |>
 ```
 
 #### Discharge Reason by Funding Round
-
+**Assumptions:** Needed to have an intervention START date -- this is because the data is broken out by funding round, not the funding round in which the intervention ended; data used: discharge_data
 ```{r}
 #| label: tbl-discharge-reason-by-round
 
-discharge_cdep |>
+discharge_data_cdep |>
   filter(!is.na(intervention_start)) |>
   tabyl(reason_for_discharge, funding_round) |>
   adorn_totals("row") |>
@@ -191,11 +382,11 @@ discharge_cdep |>
 ```
 
 #### Discharge Reason by Intervention
-
+**Assumptions:** Needed to have an intervention start date and a reason for discharge; data used: discharge_data
 ```{r}
 #| label: tbl-discharge-reason-by-intervention
 
-discharge_cdep |>
+discharge_data_cdep |>
   filter(!is.na(intervention_start),
          !is.na(reason_for_discharge)) |>
   tabyl(reason_for_discharge, intervention_name) |>
@@ -208,11 +399,11 @@ discharge_cdep |>
 ### Client Type
 
 #### Client Type Overall
-
+**Assumptions:** Distinct by client system ID; data used: all_data (demo + discharge data); must have intervention name
 ```{r}
 #| label: tbl-client-type
 
-demo_cdep |>
+all_data_cdep |>
   distinct(client_system_id, .keep_all = TRUE) |>
   tabyl(client_type) |>
   adorn_totals("row") |>
@@ -220,12 +411,11 @@ demo_cdep |>
 ```
 
 #### Client Type by Funding Round
-
+**Assumptions:** Distinct by client system ID; data used: all_data (demo + discharge data); must have intervention name
 ```{r}
 #| label: tbl-client-type-by-round
 
 all_data_cdep |>
-  filter(!is.na(intervention_start)) |>
   distinct(client_system_id, .keep_all = TRUE) |>
   tabyl(client_type, funding_round) |>
   adorn_totals("row") |>
@@ -235,12 +425,11 @@ all_data_cdep |>
 ```
 
 #### Client Type by Intervention
-
+**Assumptions:** Distinct by client system ID; data used: all_data (demo + discharge data); must have intervention name
 ```{r}
 #| label: tbl-client-type-by-intervention
 
 all_data_cdep |>
-  filter(!is.na(intervention_start)) |>
   distinct(client_system_id, .keep_all = TRUE) |>
   tabyl(intervention_name, client_type) |>
   adorn_totals("row") |>
@@ -252,16 +441,16 @@ all_data_cdep |>
 ## Client Demographics
 
 ### Primary Language
-
+**Assumptions:** Distinct by client system ID, Don't know, no primary language selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 8105); data used: all_data (demo + discharge data); must have intervention name
 ```{r}
 #| label: tbl-primary-language
 
-demo_cdep |>
+all_data_cdep |>
   filter(
-    housing_status != "Don't Know",
-    housing_status != "No Primary Language Selected",
-    housing_status != "Not Applicable",
-    housing_status != "Prefer Not To Answer",
+    primary_language != "Don't Know",
+    primary_language != "No Primary Language Selected",
+    primary_language != "Not Applicable",
+    primary_language != "Prefer Not To Answer",
     !is.na(primary_language)
   ) |>
   distinct(client_system_id, .keep_all = TRUE) |>
@@ -271,11 +460,11 @@ demo_cdep |>
 ```
 
 ### Housing Status
-
+**Assumptions:** Distinct by client system ID, Don't know, no housing status selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 8105); data used: all_data (demo + discharge data); must have intervention name
 ```{r}
 #| label: tbl-housing-status
 
-demo_cdep |>
+all_data_cdep |>
   filter(
     housing_status != "Don't Know",
     housing_status != "No Housing Status Selected",
@@ -290,25 +479,25 @@ demo_cdep |>
 ```
 
 ### Client Type with Average Age
-
+**Assumptions:** Distinct by client system ID; data used: all_data (demo + discharge data); must have intervention name
 ```{r}
 #| label: tbl-client-type-age
 
-demo_cdep_distinct <- demo_cdep |>
+all_data_cdep_distinct <- all_data_cdep |>
   mutate(
     age_start_tx_num = case_when(
-      age_at_start_of_treatment_in_years %in% c("No Age Provided", "", " ") ~ NA_character_,
-      TRUE ~ age_at_start_of_treatment_in_years
+      ageat_startof_treatmentin_years %in% c("No Age Provided", "", " ") ~ NA_character_,
+      TRUE ~ ageat_startof_treatmentin_years
     ) |> as.numeric()
   ) |>
   distinct(client_system_id, .keep_all = TRUE)
 
-tab_counts <- demo_cdep_distinct |>
+tab_counts <- all_data_cdep_distinct |>
   tabyl(client_type) |>
   adorn_totals("row") |>
   adorn_pct_formatting(digits = 1)
 
-tab_age <- demo_cdep_distinct |>
+tab_age <- all_data_cdep_distinct |>
   group_by(client_type) |>
   summarise(
     mean_age   = round(mean(age_start_tx_num, na.rm = TRUE), 1),
@@ -322,11 +511,11 @@ tab_counts |>
 ```
 
 ### Insurance Status
-
+**Assumptions:** Distinct by client system ID, Don't know, no insurance status selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 8105); data used: all_data (demo + discharge data); must have intervention name
 ```{r}
 #| label: tbl-insurance-status
 
-demo_cdep |>
+all_data_cdep |>
   filter(
     insurance_status != "Don't Know",
     insurance_status != "No Insurance Status Selected",
@@ -341,16 +530,16 @@ demo_cdep |>
 ```
 
 ### Gender Identity
-
+**Assumptions:** Distinct by client system ID, Don't know, no gender identity selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 8105); data used: all_data (demo + discharge data); must have intervention name
 ```{r}
 #| label: tbl-gender-identity
 
-demo_cdep |>
+all_data_cdep |>
    filter(
-    housing_status != "Don't Know",
-    housing_status != "No Gender Identify Selected",
-    housing_status != "Not Applicable",
-    housing_status != "Prefer Not To Answer",
+    gender_identity != "Don't Know",
+    gender_identity != "No Gender Identify Selected",
+    gender_identity != "Not Applicable",
+    gender_identity != "Prefer Not To Answer",
     !is.na(gender_identity)
   ) |>
   distinct(client_system_id, .keep_all = TRUE) |>
@@ -360,20 +549,20 @@ demo_cdep |>
 ```
 
 ### Sexual Orientation
-
+**Assumptions:** Distinct by client system ID, Don't know, no sexual orientation selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 8105); data used: all_data (demo + discharge data); must have intervention name
 ```{r}
 #| label: tbl-sexual-orientation
 
-demo_cdep |>
+all_data_cdep |>
    filter(
-    housing_status != "Don't Know",
-    housing_status != "No Sexual Orientation Selected",
-    housing_status != "Not Applicable",
-    housing_status != "Prefer Not To Answer",
+    sexual_orientation != "Don't Know",
+    sexual_orientation != "No Sexual Orientation Selected",
+    sexual_orientation!= "Not Applicable",
+    sexual_orientation != "Prefer Not To Answer",
     !is.na(sexual_orientation)
   ) |>
   distinct(client_system_id, .keep_all = TRUE) |>
-  tabyl(sexual_orientation) |>
+  tabyl(sexual_orientation, client_type) |> 
   adorn_totals("row") |>
   adorn_pct_formatting(digits = 1)
 ```
@@ -392,17 +581,17 @@ Race is coded numerically as follows:
 | 6    | Native Hawaiian or Pacific Islander                |
 | 7    | White                                              |
 | 88   | 2+ races selected                                  |
-
+**Assumptions:** Distinct by client system ID, Don't know, no race selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 8105); data used: all_data (demo + discharge data); must have intervention name
 ```{r}
 #| label: tbl-race
 
-demo_cdep |>
+all_data_cdep |>
   filter(
     race != "Don't Know",
     race != "No Race Selected",
     race != "Not Applicable",
     race != "Prefer Not To Answer",
-    !is.na(race)
+    !is.na(code_num)
   ) |>
   distinct(client_system_id, .keep_all = TRUE) |>
   tabyl(code_num) |>
@@ -443,7 +632,7 @@ Ethnicity is coded numerically as follows:
 | 25   | Polish                  |
 | 26   | Scottish                |
 | 88   | 2+ ethnicities selected |
-
+**Assumptions:** Distinct by client system ID, Don't know, no ethnicity selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 8105); data used: all_data (demo + discharge data); must have intervention name
 ```{r}
 #| label: tbl-ethnicity
 
@@ -453,7 +642,7 @@ all_data_cdep |>
     race != "No Ethnicity Selected",
     race != "Not Applicable",
     race != "Prefer Not To Answer",
-    !is.na(ethnicity)
+    !is.na(ethn_num)
   ) |>
   distinct(client_system_id, .keep_all = TRUE) |>
   tabyl(ethn_num) |>
@@ -462,7 +651,7 @@ all_data_cdep |>
 ```
 
 ## Satisfaction Surveys
-
+**Assumptions:** Distinct by client system ID and joined to satisfaction survey data; must have an intervention named; data used: satisfaction survey and all data (demo+discharge joined)
 ```{r}
 #| label: setup-satisfaction
 #| include: false
@@ -482,13 +671,8 @@ sat_all <- sat_all |>
     )
   )
 
-# Join with CDEP discharge data to add intervention_name, then filter to CDEPs
 all_data_cdep_distinct <- all_data_cdep |>
-  distinct(client_system_id, .keep_all = TRUE) |>
-  mutate(
-    provider_system_id = as.character(provider_system_id),
-    client_system_id   = as.character(client_system_id)
-  )
+  distinct(client_system_id, .keep_all = TRUE) 
 
 sat_cdep <- sat_all |>
   mutate(
@@ -525,11 +709,11 @@ df2 <- sat_cdep |>
     n_meeting_80pct   = sum(pct_agree >= 0.8, na.rm = TRUE),
     pct_meeting_80pct = round(100 * n_meeting_80pct / n_total, 1)
   )
+
+df2
 ```
 
-Satisfaction is defined two ways below. The first is the percent of individuals who answered question 1 as "Agree" or "Strongly Agree." The second is the percent of individuals who selected "Agree" or "Strongly Agree" on 80% or more of the questions completed.
-
-There are four satisfaction surveys: Caregiver (n=`{r} sum(sat_all$source == "caregiver")`), Child 13–17 (n=`{r} sum(sat_all$source == "child")`), Adult 18–59 (n=`{r} sum(sat_all$source == "adult")`), and Adult 60+ (n=`{r} sum(sat_all$source == "senior")`). High satisfaction on question 1 is defined as a score of 4 or 5.
+Satisfaction is defined two ways below. The first is the percent of individuals who answered question 1 as "Agree" or "Strongly Agree." The second is the percent of individuals who selected "Agree" or "Strongly Agree" on 80% or more of the questions completed. High satisfaction on question 1 is defined as a score of 4 or 5.
 
 ### Question 1 Satisfaction
 
@@ -550,7 +734,7 @@ sat_cdep |>
 ### Combined Survey Satisfaction
 
 Overall, `{r} df2$pct_meeting_80pct`% of survey respondents were highly satisfied, defined as selecting "Agree" or "Strongly Agree" on 80% or more of the questions completed. The following table shows high combined satisfaction by intervention, for clients where both a client ID and intervention name were available:
-
+**Assumptions:** Must have an intervention name; data used: satisfaction survey and all data (demo+discharge joined)
 ```{r}
 #| label: tbl-combined-satisfaction
 
@@ -577,8 +761,9 @@ sat_cdep |>
 
 **Definition:** Clients from the primary evaluation who indicate services received in their preferred language on the satisfaction survey divided by the total number of clients served by the grantees who completed a satisfaction survey after an intervention during the designated time frame.
 
-**Calculation:** The percent of clients that report services received in their preferred language out of the total that completed the satisfaction survey, by period.
+**Calculation:** The percent of clients that report services received in their preferred language out of the total that completed the satisfaction survey.
 
+**Data used:** satisfacation survey and all data (demo+discharge joined)
 ```{r}
 #| label: tbl-preferred-language
 
@@ -612,7 +797,7 @@ assessment_rules <- tibble::tribble(
   "YOQ",       FALSE, 1
 )
 
-discharge_cdep_outcome <- discharge_cdep |>
+discharge_cdep_outcome <- discharge_data_cdep |>
   left_join(assessment_rules, by = "trimmed_pre_assessment_name") |>
   mutate(
     raw_change    = post_score - pre_score,
@@ -629,7 +814,7 @@ discharge_cdep_outcome <- discharge_cdep |>
 ```
 
 #### Outcome Overall
-
+**Assumptions:** Must have an intervention name and an outcome; data used: discharge_data
 ```{r}
 #| label: tbl-outcome-overall
 
@@ -640,12 +825,12 @@ discharge_cdep_outcome |>
 ```
 
 #### Outcome by Intervention
-
+**Assumptions:** Must have an intervention name and an outcome; data used: discharge_data
 ```{r}
 #| label: tbl-outcome-by-intervention
 
 discharge_cdep_outcome |>
-  filter(!is.na(intervention_start), !is.na(outcome)) |>
+  filter(!is.na(intervention_name), !is.na(outcome)) |>
   tabyl(intervention_name, outcome) |>
   adorn_totals("row") |>
   adorn_totals("col") |>
@@ -655,7 +840,7 @@ discharge_cdep_outcome |>
 ```
 
 #### Outcome by Funding Round
-
+**Assumptions:** Must have an intervention name and an outcome; data used: discharge_data
 ```{r}
 #| label: tbl-outcome-by-round
 
@@ -668,7 +853,7 @@ discharge_cdep_outcome |>
 ```
 
 #### Outcome by Assessment Measure
-
+**Assumptions:** Must have an intervention name and an outcome; data used: discharge_data
 ```{r}
 #| label: tbl-outcome-by-measure
 
@@ -684,13 +869,13 @@ discharge_cdep_outcome |>
 
 ### Treatment Goals Met
 
-Two criteria must be met for a client to have met treatment goals: (1) a discharge reason of "Mutually agreed to cessation of treatment" and (2) an improvement according to pre- and post-measures collected (e.g., NOMS sub-scales). A simple positive difference between pre- and post-scores determines improvement.
-
+Two criteria must be met for a client to have met treatment goals: (1) a discharge reason of "Mutually agreed to cessation of treatment" and (2) an improvement according to pre- and post-measures collected (e.g., NOMS sub-scales). Improvement is determined by "improved" in the outcomare variable, compared with "no change" or "worsened."
+**Assumptions:** Must have an intervention name and an outcome; data used: discharge_data
 ```{r}
 #| label: tbl-treatment-goals
 
 discharge_cdep_outcome |>
-  filter(outcome %in% c("no_change", "improved")) |>
+  filter(outcome %in% c("improved")) |>
   tabyl(reason_for_discharge) |>
   adorn_totals("row") |>
   adorn_pct_formatting(digits = 1)
