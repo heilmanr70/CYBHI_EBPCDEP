@@ -1,9 +1,10 @@
 ---
 title: "YOQ Assessment Data Cleaning"
 author: "Cristin Young"
-date: "2026-03-17"
+date: "`r Sys.Date()`"
 format:
   html:
+    self-contained: true
     df-print: paged
     toc: true
     toc-float: true
@@ -20,7 +21,7 @@ This notebook prepares **CYBHI EBP/CDEP** Youth Outcome Questionnaire (YOQ) asse
 - 30 items, each rated 0–4.
 - Total score range: 0–120. Higher scores indicate greater distress.
 - Total score is set to `NA` if 3 or more items are missing.
-- **RCI = initial score − follow-up score.** RCI ≥ 10 = "doing reliably better."
+- **RCI = initial score − follow-up score.** RCI ≥ 10 = "reliably better"; RCI ≤ −10 = "reliably worse"; `meaningful_change` = reliably better OR reliably worse.
 
 **Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 exist) is the follow-up. Clients with only one assessment are excluded.
 
@@ -28,7 +29,7 @@ This notebook prepares **CYBHI EBP/CDEP** Youth Outcome Questionnaire (YOQ) asse
 
 | File | Contents |
 |------|----------|
-| `yoq_caregiver_paired_clean.csv` | One row per client: initial/follow-up scores, `rci`, `reliably_better`, quarter labels |
+| `yoq_caregiver_paired_clean.csv` | One row per client: initial/follow-up scores, `rci`, `reliably_better`, `reliably_worse`, `meaningful_change`, quarter labels |
 | `yoq_self_paired_clean.csv` | Same, self-report version |
 
 ---
@@ -95,6 +96,8 @@ clean_yoq <- function(path) {
       # RCI = baseline − follow-up; positive = doing better (lower distress)
       rci               = initial_score - follow_up_score,
       reliably_better   = rci >= 10,
+      reliably_worse    = rci <= -10,
+      meaningful_change = reliably_better | reliably_worse,
       initial_quarter   = paste0("Q", quarter(initial_date),    " ", year(initial_date)),
       follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))
     )
@@ -115,9 +118,13 @@ cat("YOQ Caregiver paired clients:", nrow(yoq_caregiver_paired), "\n")
 yoq_caregiver_paired |>
   filter(!is.na(reliably_better), rci != 0) |>
   summarise(
-    n          = n(),
-    n_better   = sum(reliably_better),
-    pct_better = round(100 * n_better / n, 1)
+    n                  = n(),
+    n_better           = sum(reliably_better),
+    n_worse            = sum(reliably_worse),
+    n_meaningful       = sum(meaningful_change),
+    pct_better         = round(100 * n_better / n_meaningful, 1),
+    pct_worse          = round(100 * n_worse / n_meaningful, 1),
+    pct_meaningful     = round(100 * n_meaningful / n, 1)
   )
 ```
 
@@ -135,9 +142,13 @@ cat("YOQ Self paired clients:", nrow(yoq_self_paired), "\n")
 yoq_self_paired |>
   filter(!is.na(reliably_better), rci != 0) |>
   summarise(
-    n          = n(),
-    n_better   = sum(reliably_better),
-    pct_better = round(100 * n_better / n, 1)
+    n                  = n(),
+    n_better           = sum(reliably_better),
+    n_worse            = sum(reliably_worse),
+    n_meaningful       = sum(meaningful_change),
+    pct_better         = round(100 * n_better / n_meaningful, 1),
+    pct_worse          = round(100 * n_worse / n_meaningful, 1),
+    pct_meaningful     = round(100 * n_meaningful / n, 1)
   )
 ```
 

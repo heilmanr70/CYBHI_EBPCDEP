@@ -1,9 +1,10 @@
 ---
 title: "Report Data Cleaning"
 author: "Cristin Young"
-date: "2026-03-09"
+date: "`r Sys.Date()`"
 output:
   html_document:
+    self-contained: true
     df_print: paged
     toc: true
     toc_float: true
@@ -56,17 +57,32 @@ Both files are pulled from the eInsight export folder in the shared Dropbox. The
 
 ```{r read-data}
 discharge_data <- read_xlsx(
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Discharge Report Export/2026-02-10-discharge_report.xlsx",
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Discharge Report Export/2026-04-07-discharge_report.xlsx",
   na = c("-", "", "NA", "N/A")
 ) |>
   janitor::clean_names()
 
 # These date columns come in as Excel serial numbers and must be converted
+discharge_data <- discharge_data |>
+  mutate(
+    pre_completion_date = case_when(
+      grepl("^[0-9]+\\.?[0-9]*$", pre_completion_date) ~
+        janitor::convert_to_date(as.numeric(pre_completion_date)),
+      TRUE ~ mdy(pre_completion_date)
+    ),
+    # Fix 2-digit years parsed as e.g. year 25 instead of 2025
+    pre_completion_date = if_else(
+      year(pre_completion_date) < 100,
+      pre_completion_date + years(2000),
+      pre_completion_date
+    )
+  )
+
 discharge_data$pre_completion_date  <- janitor::convert_to_date(discharge_data$pre_completion_date)
 discharge_data$post_completion_date <- janitor::convert_to_date(discharge_data$post_completion_date)
 
 demographic_data <- readxl::read_xlsx(
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Admin Report Exports/2026-02-10-client_demographics.xlsx",
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Admin Report Exports/2026-04-07-client_demographics.xlsx",
   na = c("-", "", "NA", "N/A")
 ) |>
   janitor::clean_names()

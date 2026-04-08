@@ -4,6 +4,7 @@ author: "Cristin Young"
 date: "2026-03-09"
 format:
   html:
+    self-contained: true
     df-print: paged
     toc: true
     toc-float: true
@@ -36,7 +37,7 @@ This notebook prepares **CYBHI EBP/CDEP** Child PTSD Symptom Scale, 5th Edition 
 **Outputs:**
 
 | File | Contents |
-|----|----|
+|------------------------------------|------------------------------------|
 | `cpss_i_paired_clean.csv` | One row per client: initial/follow-up scores, `positive_outcome`, `score_change`, quarter labels — interviewer version |
 | `cpss_s_paired_clean.csv` | Same, self-report version |
 

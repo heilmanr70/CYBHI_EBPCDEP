@@ -1,9 +1,10 @@
 ---
 title: "SDQ Assessment Data Cleaning"
 author: "Cristin Young"
-date: "2026-03-17"
+date: "`r Sys.Date()`"
 format:
   html:
+    self-contained: true
     df-print: paged
     toc: true
     toc-float: true

@@ -1,9 +1,10 @@
 ---
 title: "PHQ-9 Assessment Data Cleaning"
 author: "Cristin Young"
-date: "2026-03-17"
+date: "`r Sys.Date()`"
 format:
   html:
+    self-contained: true
     df-print: paged
     toc: true
     toc-float: true
@@ -29,7 +30,7 @@ This notebook prepares **CYBHI EBP/CDEP** Patient Health Questionnaire-9 (PHQ-9)
 **Output:**
 
 | File | Contents |
-|----|----|
+|------------------------------------|------------------------------------|
 | `phq9_paired_clean.csv` | One row per client: initial/follow-up scores and bands, `positive_outcome`, `score_change`, quarter labels |
 
 ------------------------------------------------------------------------
