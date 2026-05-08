@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Cristin Young">
-<meta name="dcterms.date" content="2026-04-07">
+<meta name="dcterms.date" content="2026-05-07">
 
 <title>Satisfaction Survey Data Cleaning</title>
 <style>
@@ -3518,7 +3518,7 @@ window.onload = function() {
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">April 7, 2026</p>
+      <p class="date">May 7, 2026</p>
     </div>
   </div>
   
@@ -3634,7 +3634,7 @@ window.onload = function() {
 <span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Caregiver rows:&quot;</span>, <span class="fu">nrow</span>(caregiver), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>Caregiver rows: 1489 </code></pre>
+<pre><code>Caregiver rows: 1788 </code></pre>
 </div>
 </div>
 </section>
@@ -3647,7 +3647,7 @@ window.onload = function() {
 <span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Child rows:&quot;</span>, <span class="fu">nrow</span>(child), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>Child rows: 5588 </code></pre>
+<pre><code>Child rows: 6018 </code></pre>
 </div>
 </div>
 </section>
@@ -3660,7 +3660,7 @@ window.onload = function() {
 <span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Adult rows:&quot;</span>, <span class="fu">nrow</span>(adult), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>Adult rows: 2956 </code></pre>
+<pre><code>Adult rows: 3295 </code></pre>
 </div>
 </div>
 </section>
@@ -3673,7 +3673,7 @@ window.onload = function() {
 <span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Senior rows:&quot;</span>, <span class="fu">nrow</span>(senior), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>Senior rows: 56 </code></pre>
+<pre><code>Senior rows: 58 </code></pre>
 </div>
 </div>
 <hr>
@@ -3696,7 +3696,7 @@ window.onload = function() {
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["survey"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n_rows"],"name":[2],"type":["int"],"align":["right"]},{"label":["n_demo"],"name":[3],"type":["int"],"align":["right"]},{"label":["n_missing_id"],"name":[4],"type":["int"],"align":["right"]}],"data":[{"1":"caregiver","2":"1489","3":"0","4":"0"},{"1":"child","2":"5588","3":"0","4":"0"},{"1":"adult","2":"2956","3":"0","4":"0"},{"1":"senior","2":"56","3":"0","4":"0"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["survey"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n_rows"],"name":[2],"type":["int"],"align":["right"]},{"label":["n_demo"],"name":[3],"type":["int"],"align":["right"]},{"label":["n_missing_id"],"name":[4],"type":["int"],"align":["right"]}],"data":[{"1":"caregiver","2":"1788","3":"0","4":"0"},{"1":"child","2":"6018","3":"0","4":"0"},{"1":"adult","2":"3295","3":"0","4":"0"},{"1":"senior","2":"58","3":"0","4":"0"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -3734,12 +3734,12 @@ window.onload = function() {
 <span id="cb12-23"><a href="#cb12-23" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb12-24"><a href="#cb12-24" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Combined rows:&quot;</span>, <span class="fu">nrow</span>(combined_all), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>Combined rows: 9122 </code></pre>
+<pre><code>Combined rows: 10194 </code></pre>
 </div>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Date range:   &quot;</span>, <span class="fu">format</span>(<span class="fu">min</span>(combined_all<span class="sc">$</span>date_clean, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)), <span class="st">&quot;to&quot;</span>,</span>
 <span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>                      <span class="fu">format</span>(<span class="fu">max</span>(combined_all<span class="sc">$</span>date_clean, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>Date range:    2024-01-02 to 2026-04-07 </code></pre>
+<pre><code>Date range:    2024-01-02 to 2026-05-07 </code></pre>
 </div>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Missing dates:&quot;</span>, <span class="fu">sum</span>(<span class="fu">is.na</span>(combined_all<span class="sc">$</span>date_clean)), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">

@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Cristin Young">
-<meta name="dcterms.date" content="2026-04-07">
+<meta name="dcterms.date" content="2026-04-21">
 
 <title>Quarterly Report Results</title>
 <style>
@@ -3450,6 +3450,7 @@ window.onload = function() {
   <li><a href="#outcomes-data-by-round" id="toc-outcomes-data-by-round" class="nav-link" data-scroll-target="#outcomes-data-by-round">Outcomes Data by Round</a>
   <ul class="collapse">
   <li><a href="#participants-served" id="toc-participants-served" class="nav-link" data-scroll-target="#participants-served">Participants Served</a></li>
+  <li><a href="#participants-with-end-dates" id="toc-participants-with-end-dates" class="nav-link" data-scroll-target="#participants-with-end-dates">Participants with end dates</a></li>
   <li><a href="#improved-outcomes" id="toc-improved-outcomes" class="nav-link" data-scroll-target="#improved-outcomes">Improved outcomes</a></li>
   </ul></li>
   <li><a href="#satisfaction-surveys" id="toc-satisfaction-surveys" class="nav-link" data-scroll-target="#satisfaction-surveys">Satisfaction Surveys</a>
@@ -3507,7 +3508,7 @@ window.onload = function() {
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">April 7, 2026</p>
+      <p class="date">April 21, 2026</p>
     </div>
   </div>
   
@@ -3534,19 +3535,19 @@ window.onload = function() {
 </div>
 <section id="period" class="level2">
 <h2 class="anchored" data-anchor-id="period">Period</h2>
-<p>2024-01-01 - 2026-03-31</p>
+<p>2023-07-01 - Sys.Date()</p>
 </section>
 <section id="setup" class="level2">
 <h2 class="anchored" data-anchor-id="setup">Setup</h2>
 <div class="cell">
 <div class="cell-output cell-output-stdout">
-<pre><code>Unique providers (discharge data): 289 </code></pre>
+<pre><code>Unique providers (discharge data): 291 </code></pre>
 </div>
 <div class="cell-output cell-output-stdout">
-<pre><code>Discharge data (distinct by client ID) rows; this is the denominator for most tables below: 40477 </code></pre>
+<pre><code>Discharge data (distinct by client ID) rows; this is the denominator for most tables below: 41365 </code></pre>
 </div>
 <div class="cell-output cell-output-stdout">
-<pre><code>Discharge data rows (total): 43366 </code></pre>
+<pre><code>Discharge data rows (total): 44375 </code></pre>
 </div>
 </div>
 </section>
@@ -3555,7 +3556,7 @@ window.onload = function() {
 <section id="participants-served" class="level3">
 <h3 class="anchored" data-anchor-id="participants-served">Participants Served</h3>
 <p><strong>Data used</strong>: Discharge data, which includes 382 clients that had more than one complete intervention.</p>
-<p><strong>Nitty gritty cleaning</strong>: took out DEMO data; checked to see which <code>client_ids</code> had <code>pre_measure_s</code> AND <code>post_measure_s</code> per row (i.e., had a complete intervention); left those in; filtered only for <code>intervention_start &gt;= &quot;2024-01-01&quot; &amp; &lt;= &quot;2026-03-31&quot;</code></p>
+<p><strong>Nitty gritty cleaning</strong>: took out DEMO data; checked to see which <code>client_ids</code> had <code>pre_measure_s</code> AND <code>post_measure_s</code> per row (i.e., had a complete intervention); left those in; filtered only for <code>intervention_start &gt;= &quot;2023-07-01&quot; &amp; &lt;= Sys.Date()</code></p>
 <div class="cell">
 <div id="tbl-participants-served-by-round" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
@@ -3566,7 +3567,30 @@ Table 1
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["funding_round"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"1","2":"6182","3":"14.3%"},{"1":"2","2":"8498","3":"19.6%"},{"1":"3","2":"1518","3":"3.5%"},{"1":"4","2":"20530","3":"47.3%"},{"1":"5","2":"6322","3":"14.6%"},{"1":"No Funding Round Selected","2":"316","3":"0.7%"},{"1":"Total","2":"43366","3":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["funding_round"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"1","2":"5696","3":"12.8%"},{"1":"2","2":"9144","3":"20.6%"},{"1":"3","2":"1495","3":"3.4%"},{"1":"4","2":"20735","3":"46.7%"},{"1":"5","2":"7131","3":"16.1%"},{"1":"No Funding Round Selected","2":"174","3":"0.4%"},{"1":"Total","2":"44375","3":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+  </script>
+</div>
+</div>
+</div>
+</figure>
+</div>
+</div>
+</section>
+<section id="participants-with-end-dates" class="level3">
+<h3 class="anchored" data-anchor-id="participants-with-end-dates">Participants with end dates</h3>
+<p><strong>Data used</strong>: Discharge data, which includes 382 clients that had more than one complete intervention.</p>
+<p><strong>Nitty gritty cleaning</strong>: took out DEMO data; checked to see which <code>client_ids</code> had <code>pre_measure_s</code> AND <code>post_measure_s</code> per row (i.e., had a complete intervention); left those in; filtered only for <code>intervention_start &gt;= &quot;2023-07-01&quot; &amp; &lt;= Sys.Date()</code></p>
+<div class="cell">
+<div id="tbl-participants-with-end-date-by-round" class="cell quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-tbl figure">
+<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-participants-with-end-date-by-round-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table 2
+</figcaption>
+<div aria-describedby="tbl-participants-with-end-date-by-round-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="cell-output-display">
+<div data-pagedtable="false">
+  <script data-pagedtable-source type="application/json">
+{"columns":[{"label":["funding_round"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"1","2":"3374","3":"10.3%"},{"1":"2","2":"5539","3":"16.9%"},{"1":"3","2":"409","3":"1.2%"},{"1":"4","2":"18148","3":"55.4%"},{"1":"5","2":"5219","3":"15.9%"},{"1":"No Funding Round Selected","2":"63","3":"0.2%"},{"1":"Total","2":"32752","3":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -3578,15 +3602,15 @@ Table 1
 <section id="improved-outcomes" class="level3">
 <h3 class="anchored" data-anchor-id="improved-outcomes">Improved outcomes</h3>
 <p><strong>Data used</strong>: Discharge data</p>
-<p><strong>Nitty gritty cleaning</strong>: took out DEMO data; checked to see which <code>client_ids</code> had <code>pre_measure_s</code> AND <code>post_measure_s</code> per row (i.e., had a complete intervention); left those in; filtered only for <code>intervention_start &gt;= &quot;2024-01-01&quot; &amp; &lt;= &quot;2026-03-31&quot;</code></p>
+<p><strong>Nitty gritty cleaning</strong>: took out DEMO data; checked to see which <code>client_ids</code> had <code>pre_measure_s</code> AND <code>post_measure_s</code> per row (i.e., had a complete intervention); left those in; filtered only for <code>intervention_start &gt;= &quot;2023-07-01&quot; &amp; &lt;= Sys.Date()</code></p>
 <div id="tbl-count-outcomes" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-count-outcomes-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table 2
+Table 3
 </figcaption>
 <div aria-describedby="tbl-count-outcomes-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output cell-output-stdout">
-<pre><code>[1] 11535</code></pre>
+<pre><code>[1] 12051</code></pre>
 </div>
 </div>
 </figure>
@@ -3598,13 +3622,13 @@ Table 2
 <div id="tbl-improved-outcomes" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-improved-outcomes-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table 3
+Table 4
 </figcaption>
 <div aria-describedby="tbl-improved-outcomes-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["positive_outcomes"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]},{"label":["valid_percent"],"name":[4],"type":["chr"],"align":["left"]}],"data":[{"1":"No","2":"3862","3":"12.1%","4":"39.4%"},{"1":"Yes","2":"5929","3":"18.6%","4":"60.6%"},{"1":"NA","2":"22126","3":"69.3%","4":"-"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["positive_outcomes"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]},{"label":["valid_percent"],"name":[4],"type":["chr"],"align":["left"]}],"data":[{"1":"No","2":"3982","3":"12.2%","4":"39.1%"},{"1":"Yes","2":"6201","3":"18.9%","4":"60.9%"},{"1":"NA","2":"22569","3":"68.9%","4":"-"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -3620,13 +3644,13 @@ Table 3
 <div id="tbl-positive-outcomes-by-round" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-positive-outcomes-by-round-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table 4
+Table 5
 </figcaption>
 <div aria-describedby="tbl-positive-outcomes-by-round-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["positive_outcomes"],"name":[1],"type":["chr"],"align":["left"]},{"label":["1"],"name":[2],"type":["chr"],"align":["left"]},{"label":["2"],"name":[3],"type":["chr"],"align":["left"]},{"label":["3"],"name":[4],"type":["chr"],"align":["left"]},{"label":["4"],"name":[5],"type":["chr"],"align":["left"]},{"label":["5"],"name":[6],"type":["chr"],"align":["left"]},{"label":["No Funding Round Selected"],"name":[7],"type":["chr"],"align":["left"]}],"data":[{"1":"No","2":"32%   (642)","3":"40% (1,343)","4":"40%  (68)","5":"51% (1,350)","6":"39% (1,268)","7":"47% (28)"},{"1":"Yes","2":"68% (1,377)","3":"60% (2,055)","4":"60% (101)","5":"49% (1,284)","6":"61% (1,987)","7":"53% (32)"},{"1":"Total","2":"100% (2,019)","3":"100% (3,398)","4":"100% (169)","5":"100% (2,634)","6":"100% (3,255)","7":"100% (60)"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["positive_outcomes"],"name":[1],"type":["chr"],"align":["left"]},{"label":["1"],"name":[2],"type":["chr"],"align":["left"]},{"label":["2"],"name":[3],"type":["chr"],"align":["left"]},{"label":["3"],"name":[4],"type":["chr"],"align":["left"]},{"label":["4"],"name":[5],"type":["chr"],"align":["left"]},{"label":["5"],"name":[6],"type":["chr"],"align":["left"]},{"label":["No Funding Round Selected"],"name":[7],"type":["chr"],"align":["left"]}],"data":[{"1":"No","2":"31%   (627)","3":"39% (1,468)","4":"33%  (45)","5":"52% (1,370)","6":"39% (1,340)","7":"29% (11)"},{"1":"Yes","2":"69% (1,370)","3":"61% (2,299)","4":"67%  (90)","5":"48% (1,272)","6":"61% (2,132)","7":"71% (27)"},{"1":"Total","2":"100% (1,997)","3":"100% (3,767)","4":"100% (135)","5":"100% (2,642)","6":"100% (3,472)","7":"100% (38)"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -3643,18 +3667,18 @@ Table 4
 <p><strong>Assumptions:</strong> Distinct by client system ID and joined to satisfaction survey data; must have an intervention named; data used: satisfaction survey and all data (demo+discharge joined)</p>
 <section id="question-1-satisfaction" class="level3">
 <h3 class="anchored" data-anchor-id="question-1-satisfaction">Question 1 Satisfaction</h3>
-<p>Overall, 78.4% of survey respondents were highly satisfied based on question 1. The following table shows high satisfaction by round:</p>
+<p>Overall, 78.9% of survey respondents were highly satisfied based on question 1. The following table shows high satisfaction by round:</p>
 <div class="cell">
 <div id="tbl-q1-satisfaction-round" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-q1-satisfaction-round-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table 5
+Table 6
 </figcaption>
 <div aria-describedby="tbl-q1-satisfaction-round-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["funding_round"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n_surveys"],"name":[2],"type":["int"],"align":["right"]},{"label":["pct_4_5"],"name":[3],"type":["dbl"],"align":["right"]}],"data":[{"1":"1","2":"1340","3":"94.0"},{"1":"2","2":"1661","3":"95.0"},{"1":"3","2":"145","3":"95.8"},{"1":"4","2":"3441","3":"58.1"},{"1":"5","2":"1712","3":"88.9"},{"1":"No Funding Round Selected","2":"57","3":"100.0"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["funding_round"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n_surveys"],"name":[2],"type":["int"],"align":["right"]},{"label":["pct_4_5"],"name":[3],"type":["dbl"],"align":["right"]}],"data":[{"1":"1","2":"1333","3":"94.0"},{"1":"2","2":"1825","3":"94.5"},{"1":"3","2":"179","3":"97.2"},{"1":"4","2":"3471","3":"58.4"},{"1":"5","2":"1808","3":"89.3"},{"1":"No Funding Round Selected","2":"13","3":"100.0"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -3665,19 +3689,19 @@ Table 5
 </section>
 <section id="combined-survey-satisfaction" class="level3">
 <h3 class="anchored" data-anchor-id="combined-survey-satisfaction">Combined Survey Satisfaction</h3>
-<p>Overall, 56.6% of survey respondents were highly satisfied, defined as selecting “Agree” or “Strongly Agree” on 80% or more of the questions completed. The following table shows high combined satisfaction by round, for clients where both a client ID and intervention name were available:</p>
+<p>Overall, 57.4% of survey respondents were highly satisfied, defined as selecting “Agree” or “Strongly Agree” on 80% or more of the questions completed. The following table shows high combined satisfaction by round, for clients where both a client ID and intervention name were available:</p>
 <p><strong>Assumptions:</strong> Must have an intervention name; data used: satisfaction survey and all data (demo+discharge joined)</p>
 <div class="cell">
 <div id="tbl-combined-satisfaction-round" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-combined-satisfaction-round-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table 6
+Table 7
 </figcaption>
 <div aria-describedby="tbl-combined-satisfaction-round-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["funding_round"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n_total"],"name":[2],"type":["int"],"align":["right"]},{"label":["n_meeting_80pct"],"name":[3],"type":["int"],"align":["right"]},{"label":["pct_meeting_80pct"],"name":[4],"type":["dbl"],"align":["right"]}],"data":[{"1":"1","2":"1340","3":"1183","4":"88.3"},{"1":"2","2":"1661","3":"1355","4":"81.6"},{"1":"3","2":"145","3":"122","4":"84.1"},{"1":"4","2":"3441","3":"819","4":"23.8"},{"1":"5","2":"1712","3":"1190","4":"69.5"},{"1":"No Funding Round Selected","2":"57","3":"54","4":"94.7"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["funding_round"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n_total"],"name":[2],"type":["int"],"align":["right"]},{"label":["n_meeting_80pct"],"name":[3],"type":["int"],"align":["right"]},{"label":["pct_meeting_80pct"],"name":[4],"type":["dbl"],"align":["right"]}],"data":[{"1":"1","2":"1333","3":"1183","4":"88.7"},{"1":"2","2":"1825","3":"1488","4":"81.5"},{"1":"3","2":"179","3":"157","4":"87.7"},{"1":"4","2":"3471","3":"836","4":"24.1"},{"1":"5","2":"1808","3":"1269","4":"70.2"},{"1":"No Funding Round Selected","2":"13","3":"11","4":"84.6"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -3696,13 +3720,13 @@ Table 6
 <div id="tbl-reason-for-discharge" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-reason-for-discharge-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table 7
+Table 8
 </figcaption>
 <div aria-describedby="tbl-reason-for-discharge-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["reason_for_discharge"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"Clinically referred out","2":"473","3":"1.6%"},{"1":"Death","2":"3","3":"0.0%"},{"1":"Mutually agreed cessation of treatment (Successful Completion)","2":"25523","3":"83.8%"},{"1":"No contact within 90 days of last session","2":"1055","3":"3.5%"},{"1":"Other","2":"1658","3":"5.4%"},{"1":"Withdrew from/refused treatment","2":"1727","3":"5.7%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["reason_for_discharge"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"Clinically referred out","2":"490","3":"1.6%"},{"1":"Death","2":"3","3":"0.0%"},{"1":"Mutually agreed cessation of treatment (Successful Completion)","2":"25934","3":"83.0%"},{"1":"No contact within 90 days of last session","2":"1136","3":"3.6%"},{"1":"Other","2":"1896","3":"6.1%"},{"1":"Withdrew from/refused treatment","2":"1801","3":"5.8%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -3719,13 +3743,13 @@ Table 7
 <div id="tbl-discharged-by-reason" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-discharged-by-reason-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table 8
+Table 9
 </figcaption>
 <div aria-describedby="tbl-discharged-by-reason-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["reason_for_discharge"],"name":[1],"type":["chr"],"align":["left"]},{"label":["1"],"name":[2],"type":["chr"],"align":["left"]},{"label":["2"],"name":[3],"type":["chr"],"align":["left"]},{"label":["3"],"name":[4],"type":["chr"],"align":["left"]},{"label":["4"],"name":[5],"type":["chr"],"align":["left"]},{"label":["5"],"name":[6],"type":["chr"],"align":["left"]},{"label":["No Funding Round Selected"],"name":[7],"type":["chr"],"align":["left"]}],"data":[{"1":"Clinically referred out","2":"3.6%   (127)","3":"4.4%   (219)","4":"2.5%  (12)","5":"0.1%     (18)","6":"2.0%    (95)","7":"1.7%   (2)"},{"1":"Death","2":"0.0%     (0)","3":"0.0%     (1)","4":"0.0%   (0)","5":"0.0%      (2)","6":"0.0%     (0)","7":"0.0%   (0)"},{"1":"Mutually agreed cessation of treatment (Successful Completion)","2":"74.8% (2,635)","3":"61.0% (3,047)","4":"63.8% (301)","5":"87.4% (15,762)","6":"78.0% (3,717)","7":"52.6%  (61)"},{"1":"No contact within 90 days of last session","2":"3.3%   (116)","3":"5.8%   (291)","4":"5.9%  (28)","5":"2.7%    (479)","6":"3.0%   (141)","7":"0.0%   (0)"},{"1":"No Reason Selected","2":"0.4%    (15)","3":"2.3%   (115)","4":"0.2%   (1)","5":"6.8%  (1,229)","6":"2.4%   (113)","7":"4.3%   (5)"},{"1":"Other","2":"6.9%   (244)","3":"13.6%   (677)","4":"5.1%  (24)","5":"1.9%    (350)","6":"6.8%   (325)","7":"32.8%  (38)"},{"1":"Withdrew from/refused treatment","2":"10.9%   (385)","3":"12.9%   (646)","4":"22.5% (106)","5":"1.1%    (203)","6":"7.9%   (377)","7":"8.6%  (10)"},{"1":"Total","2":"100.0% (3,522)","3":"100.0% (4,996)","4":"100.0% (472)","5":"100.0% (18,043)","6":"100.0% (4,768)","7":"100.0% (116)"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["reason_for_discharge"],"name":[1],"type":["chr"],"align":["left"]},{"label":["1"],"name":[2],"type":["chr"],"align":["left"]},{"label":["2"],"name":[3],"type":["chr"],"align":["left"]},{"label":["3"],"name":[4],"type":["chr"],"align":["left"]},{"label":["4"],"name":[5],"type":["chr"],"align":["left"]},{"label":["5"],"name":[6],"type":["chr"],"align":["left"]},{"label":["No Funding Round Selected"],"name":[7],"type":["chr"],"align":["left"]}],"data":[{"1":"Clinically referred out","2":"3.0%   (100)","3":"4.4%   (246)","4":"2.9%  (12)","5":"0.1%     (17)","6":"2.2%   (114)","7":"1.6%  (1)"},{"1":"Death","2":"0.0%     (0)","3":"0.0%     (1)","4":"0.0%   (0)","5":"0.0%      (2)","6":"0.0%     (0)","7":"0.0%  (0)"},{"1":"Mutually agreed cessation of treatment (Successful Completion)","2":"71.7% (2,420)","3":"62.0% (3,434)","4":"55.0% (225)","5":"86.9% (15,765)","6":"77.9% (4,067)","7":"36.5% (23)"},{"1":"No contact within 90 days of last session","2":"3.3%   (111)","3":"5.9%   (328)","4":"8.3%  (34)","5":"2.9%    (518)","6":"2.8%   (145)","7":"0.0%  (0)"},{"1":"No Reason Selected","2":"0.1%     (2)","3":"2.0%   (113)","4":"0.2%   (1)","5":"7.0%  (1,263)","6":"2.2%   (113)","7":"0.0%  (0)"},{"1":"Other","2":"10.8%   (366)","3":"12.7%   (702)","4":"8.1%  (33)","5":"2.1%    (388)","6":"7.2%   (375)","7":"50.8% (32)"},{"1":"Withdrew from/refused treatment","2":"11.1%   (375)","3":"12.9%   (715)","4":"25.4% (104)","5":"1.1%    (195)","6":"7.8%   (405)","7":"11.1%  (7)"},{"1":"Total","2":"100.0% (3,374)","3":"100.0% (5,539)","4":"100.0% (409)","5":"100.0% (18,148)","6":"100.0% (5,219)","7":"100.0% (63)"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -3741,13 +3765,13 @@ Table 8
 <div id="tbl-discharge-reason-by-round" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-discharge-reason-by-round-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table 9
+Table 10
 </figcaption>
 <div aria-describedby="tbl-discharge-reason-by-round-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["reason_for_discharge"],"name":[1],"type":["chr"],"align":["left"]},{"label":["1"],"name":[2],"type":["chr"],"align":["left"]},{"label":["2"],"name":[3],"type":["chr"],"align":["left"]},{"label":["3"],"name":[4],"type":["chr"],"align":["left"]},{"label":["4"],"name":[5],"type":["chr"],"align":["left"]},{"label":["5"],"name":[6],"type":["chr"],"align":["left"]},{"label":["No Funding Round Selected"],"name":[7],"type":["chr"],"align":["left"]}],"data":[{"1":"Clinically referred out","2":"2.1%   (127)","3":"2.6%   (219)","4":"0.8%    (12)","5":"0.1%     (18)","6":"1.5%    (95)","7":"0.6%   (2)"},{"1":"Death","2":"0.0%     (0)","3":"0.0%     (1)","4":"0.0%     (0)","5":"0.0%      (2)","6":"0.0%     (0)","7":"0.0%   (0)"},{"1":"Mutually agreed cessation of treatment (Successful Completion)","2":"42.6% (2,635)","3":"35.9% (3,047)","4":"19.8%   (301)","5":"76.8% (15,762)","6":"58.8% (3,717)","7":"19.3%  (61)"},{"1":"No contact within 90 days of last session","2":"1.9%   (116)","3":"3.4%   (291)","4":"1.8%    (28)","5":"2.3%    (479)","6":"2.2%   (141)","7":"0.0%   (0)"},{"1":"No Reason Selected","2":"0.2%    (15)","3":"1.4%   (115)","4":"0.1%     (1)","5":"6.0%  (1,229)","6":"1.8%   (113)","7":"1.6%   (5)"},{"1":"Other","2":"3.9%   (244)","3":"8.0%   (677)","4":"1.6%    (24)","5":"1.7%    (350)","6":"5.1%   (325)","7":"12.0%  (38)"},{"1":"Withdrew from/refused treatment","2":"6.2%   (385)","3":"7.6%   (646)","4":"7.0%   (106)","5":"1.0%    (203)","6":"6.0%   (377)","7":"3.2%  (10)"},{"1":"NA","2":"43.0% (2,660)","3":"41.2% (3,502)","4":"68.9% (1,046)","5":"12.1%  (2,487)","6":"24.6% (1,554)","7":"63.3% (200)"},{"1":"Total","2":"100.0% (6,182)","3":"100.0% (8,498)","4":"100.0% (1,518)","5":"100.0% (20,530)","6":"100.0% (6,322)","7":"100.0% (316)"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["reason_for_discharge"],"name":[1],"type":["chr"],"align":["left"]},{"label":["1"],"name":[2],"type":["chr"],"align":["left"]},{"label":["2"],"name":[3],"type":["chr"],"align":["left"]},{"label":["3"],"name":[4],"type":["chr"],"align":["left"]},{"label":["4"],"name":[5],"type":["chr"],"align":["left"]},{"label":["5"],"name":[6],"type":["chr"],"align":["left"]},{"label":["No Funding Round Selected"],"name":[7],"type":["chr"],"align":["left"]}],"data":[{"1":"Clinically referred out","2":"1.8%   (100)","3":"2.7%   (246)","4":"0.8%    (12)","5":"0.1%     (17)","6":"1.6%   (114)","7":"0.6%   (1)"},{"1":"Death","2":"0.0%     (0)","3":"0.0%     (1)","4":"0.0%     (0)","5":"0.0%      (2)","6":"0.0%     (0)","7":"0.0%   (0)"},{"1":"Mutually agreed cessation of treatment (Successful Completion)","2":"42.5% (2,420)","3":"37.6% (3,434)","4":"15.1%   (225)","5":"76.0% (15,765)","6":"57.0% (4,067)","7":"13.2%  (23)"},{"1":"No contact within 90 days of last session","2":"1.9%   (111)","3":"3.6%   (328)","4":"2.3%    (34)","5":"2.5%    (518)","6":"2.0%   (145)","7":"0.0%   (0)"},{"1":"No Reason Selected","2":"0.0%     (2)","3":"1.2%   (113)","4":"0.1%     (1)","5":"6.1%  (1,263)","6":"1.6%   (113)","7":"0.0%   (0)"},{"1":"Other","2":"6.4%   (366)","3":"7.7%   (702)","4":"2.2%    (33)","5":"1.9%    (388)","6":"5.3%   (375)","7":"18.4%  (32)"},{"1":"Withdrew from/refused treatment","2":"6.6%   (375)","3":"7.8%   (715)","4":"7.0%   (104)","5":"0.9%    (195)","6":"5.7%   (405)","7":"4.0%   (7)"},{"1":"NA","2":"40.8% (2,322)","3":"39.4% (3,605)","4":"72.6% (1,086)","5":"12.5%  (2,587)","6":"26.8% (1,912)","7":"63.8% (111)"},{"1":"Total","2":"100.0% (5,696)","3":"100.0% (9,144)","4":"100.0% (1,495)","5":"100.0% (20,735)","6":"100.0% (7,131)","7":"100.0% (174)"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -3769,13 +3793,13 @@ Table 9
 <div id="tbl-client-type" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-client-type-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table 10
+Table 11
 </figcaption>
 <div aria-describedby="tbl-client-type-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["client_type"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"Child (0-15)","2":"21996","3":"57.6%"},{"1":"No Client Type Selected","2":"11","3":"0.0%"},{"1":"Parent/Caregiver","2":"5027","3":"13.2%"},{"1":"Youth (16-25)","2":"11138","3":"29.2%"},{"1":"Total","2":"38172","3":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["client_type"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"Child (0-15)","2":"22441","3":"57.5%"},{"1":"No Client Type Selected","2":"11","3":"0.0%"},{"1":"Parent/Caregiver","2":"5245","3":"13.4%"},{"1":"Youth (16-25)","2":"11316","3":"29.0%"},{"1":"Total","2":"39013","3":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -3794,13 +3818,13 @@ Table 10
 <div id="tbl-client-type-by-round" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-client-type-by-round-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table 11
+Table 12
 </figcaption>
 <div aria-describedby="tbl-client-type-by-round-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["client_type"],"name":[1],"type":["chr"],"align":["left"]},{"label":["1"],"name":[2],"type":["chr"],"align":["left"]},{"label":["2"],"name":[3],"type":["chr"],"align":["left"]},{"label":["3"],"name":[4],"type":["chr"],"align":["left"]},{"label":["4"],"name":[5],"type":["chr"],"align":["left"]},{"label":["5"],"name":[6],"type":["chr"],"align":["left"]},{"label":["No Funding Round Selected"],"name":[7],"type":["chr"],"align":["left"]}],"data":[{"1":"Child (0-15)","2":"35.5% (1,920)","3":"69.2% (4,904)","4":"44.4%   (551)","5":"61.6% (11,841)","6":"53.3% (2,637)","7":"53.4% (143)"},{"1":"No Client Type Selected","2":"0.0%     (0)","3":"0.0%     (0)","4":"0.0%     (0)","5":"0.0%      (9)","6":"0.0%     (2)","7":"0.0%   (0)"},{"1":"Parent/Caregiver","2":"53.9% (2,912)","3":"10.5%   (747)","4":"53.9%   (670)","5":"0.3%     (60)","6":"11.4%   (565)","7":"27.2%  (73)"},{"1":"Youth (16-25)","2":"10.6%   (570)","3":"20.3% (1,436)","4":"1.7%    (21)","5":"38.1%  (7,317)","6":"35.2% (1,742)","7":"19.4%  (52)"},{"1":"Total","2":"100.0% (5,402)","3":"100.0% (7,087)","4":"100.0% (1,242)","5":"100.0% (19,227)","6":"100.0% (4,946)","7":"100.0% (268)"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["client_type"],"name":[1],"type":["chr"],"align":["left"]},{"label":["1"],"name":[2],"type":["chr"],"align":["left"]},{"label":["2"],"name":[3],"type":["chr"],"align":["left"]},{"label":["3"],"name":[4],"type":["chr"],"align":["left"]},{"label":["4"],"name":[5],"type":["chr"],"align":["left"]},{"label":["5"],"name":[6],"type":["chr"],"align":["left"]},{"label":["No Funding Round Selected"],"name":[7],"type":["chr"],"align":["left"]}],"data":[{"1":"Child (0-15)","2":"37.2% (1,848)","3":"68.9% (5,197)","4":"43.3%   (561)","5":"61.3% (11,859)","6":"50.7% (2,887)","7":"57.8%  (89)"},{"1":"No Client Type Selected","2":"0.0%     (0)","3":"0.0%     (0)","4":"0.0%     (0)","5":"0.0%      (9)","6":"0.0%     (2)","7":"0.0%   (0)"},{"1":"Parent/Caregiver","2":"59.5% (2,954)","3":"10.7%   (808)","4":"55.2%   (716)","5":"0.4%     (72)","6":"11.7%   (664)","7":"20.1%  (31)"},{"1":"Youth (16-25)","2":"3.3%   (165)","3":"20.4% (1,537)","4":"1.5%    (20)","5":"38.3%  (7,421)","6":"37.6% (2,139)","7":"22.1%  (34)"},{"1":"Total","2":"100.0% (4,967)","3":"100.0% (7,542)","4":"100.0% (1,297)","5":"100.0% (19,361)","6":"100.0% (5,692)","7":"100.0% (154)"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -3817,18 +3841,18 @@ Table 11
 <p><strong>Assumptions:</strong> Distinct by client system ID, Don’t know, no primary language selected, not applicable, and prefer not to answer all grouped as NA; data used: all_data (demo + discharge data)</p>
 <div class="cell">
 <div class="cell-output cell-output-stdout">
-<pre><code>83.2% of clients have this data</code></pre>
+<pre><code>83.4% of clients have this data</code></pre>
 </div>
 <div id="tbl-primary-language" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-primary-language-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table 12
+Table 13
 </figcaption>
 <div aria-describedby="tbl-primary-language-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["primary_language"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"Arabic","2":"1789","3":"5.3%"},{"1":"Armenian","2":"346","3":"1.0%"},{"1":"Cambodian","2":"19","3":"0.1%"},{"1":"Chinese","2":"271","3":"0.8%"},{"1":"English","2":"23829","3":"70.8%"},{"1":"Farsi","2":"148","3":"0.4%"},{"1":"Hindi","2":"109","3":"0.3%"},{"1":"Hmong","2":"71","3":"0.2%"},{"1":"Japanese","2":"50","3":"0.1%"},{"1":"Korean","2":"345","3":"1.0%"},{"1":"Laotian","2":"6","3":"0.0%"},{"1":"Other","2":"604","3":"1.8%"},{"1":"Punjabi","2":"49","3":"0.1%"},{"1":"Russian","2":"143","3":"0.4%"},{"1":"Spanish","2":"5629","3":"16.7%"},{"1":"Tagalog","2":"76","3":"0.2%"},{"1":"Thai","2":"9","3":"0.0%"},{"1":"Vietnamese","2":"186","3":"0.6%"},{"1":"Total","2":"33679","3":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["primary_language"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"Arabic","2":"134","3":"0.4%"},{"1":"Armenian","2":"346","3":"1.0%"},{"1":"Cambodian","2":"19","3":"0.1%"},{"1":"Chinese","2":"273","3":"0.8%"},{"1":"English","2":"26165","3":"75.8%"},{"1":"Farsi","2":"150","3":"0.4%"},{"1":"Hindi","2":"109","3":"0.3%"},{"1":"Hmong","2":"71","3":"0.2%"},{"1":"Japanese","2":"50","3":"0.1%"},{"1":"Korean","2":"346","3":"1.0%"},{"1":"Laotian","2":"6","3":"0.0%"},{"1":"Other","2":"604","3":"1.8%"},{"1":"Punjabi","2":"55","3":"0.2%"},{"1":"Russian","2":"147","3":"0.4%"},{"1":"Spanish","2":"5759","3":"16.7%"},{"1":"Tagalog","2":"77","3":"0.2%"},{"1":"Thai","2":"9","3":"0.0%"},{"1":"Vietnamese","2":"188","3":"0.5%"},{"1":"Total","2":"34508","3":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -3842,18 +3866,18 @@ Table 12
 <p><strong>Assumptions:</strong> Distinct by client system ID, Don’t know, no housing status selected, not applicable, and prefer not to answer all grouped as NA; data used: all_data (demo + discharge data)</p>
 <div class="cell">
 <div class="cell-output cell-output-stdout">
-<pre><code>49.0% of clients have this data</code></pre>
+<pre><code>45.7% of clients have this data</code></pre>
 </div>
 <div id="tbl-housing-status" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-housing-status-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table 13
+Table 14
 </figcaption>
 <div aria-describedby="tbl-housing-status-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["housing_status"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"Housed","2":"18338","3":"92.5%"},{"1":"Other (i.e. treatment facility)","2":"530","3":"2.7%"},{"1":"Unhoused","2":"953","3":"4.8%"},{"1":"Total","2":"19821","3":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["housing_status"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"Housed","2":"17312","3":"91.6%"},{"1":"Other (i.e. treatment facility)","2":"561","3":"3.0%"},{"1":"Unhoused","2":"1026","3":"5.4%"},{"1":"Total","2":"18899","3":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -3869,13 +3893,13 @@ Table 13
 <div id="tbl-client-type-age" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-client-type-age-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table 14
+Table 15
 </figcaption>
 <div aria-describedby="tbl-client-type-age-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["client_type"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]},{"label":["mean_age"],"name":[4],"type":["dbl"],"align":["right"]},{"label":["n_with_age"],"name":[5],"type":["int"],"align":["right"]}],"data":[{"1":"Child (0-15)","2":"21996","3":"54.3%","4":"10.5","5":"4106"},{"1":"No Client Type Selected","2":"11","3":"0.0%","4":"NaN","5":"0"},{"1":"Parent/Caregiver","2":"5027","3":"12.4%","4":"37.4","5":"2597"},{"1":"Youth (16-25)","2":"11138","3":"27.5%","4":"18.2","5":"3359"},{"1":"NA","2":"2305","3":"5.7%","4":"4.0","5":"1"},{"1":"Total","2":"40477","3":"100.0%","4":"NA","5":"NA"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["client_type"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]},{"label":["mean_age"],"name":[4],"type":["dbl"],"align":["right"]},{"label":["n_with_age"],"name":[5],"type":["int"],"align":["right"]}],"data":[{"1":"Child (0-15)","2":"22441","3":"54.3%","4":"10.5","5":"4355"},{"1":"No Client Type Selected","2":"11","3":"0.0%","4":"NaN","5":"0"},{"1":"Parent/Caregiver","2":"5245","3":"12.7%","4":"37.3","5":"2704"},{"1":"Youth (16-25)","2":"11316","3":"27.4%","4":"18.2","5":"3442"},{"1":"NA","2":"2352","3":"5.7%","4":"4.0","5":"1"},{"1":"Total","2":"41365","3":"100.0%","4":"NA","5":"NA"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -3889,18 +3913,18 @@ Table 14
 <p><strong>Assumptions:</strong> Distinct by client system ID, Don’t know, no insurance status selected, not applicable, and prefer not to answer all grouped as NA; data used: all_data (demo + discharge data)</p>
 <div class="cell">
 <div class="cell-output cell-output-stdout">
-<pre><code>31.3% of clients have this data</code></pre>
+<pre><code>31.9% of clients have this data</code></pre>
 </div>
 <div id="tbl-insurance-status" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-insurance-status-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table 15
+Table 16
 </figcaption>
 <div aria-describedby="tbl-insurance-status-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["insurance_status"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"Medi-Cal/Medi-Care","2":"9483","3":"74.7%"},{"1":"No insurance/Indigent","2":"788","3":"6.2%"},{"1":"Other","2":"888","3":"7.0%"},{"1":"Private Insurance","2":"1476","3":"11.6%"},{"1":"Veterans Benefits","2":"54","3":"0.4%"},{"1":"Total","2":"12689","3":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["insurance_status"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"Medi-Cal/Medi-Care","2":"9880","3":"74.8%"},{"1":"No insurance/Indigent","2":"809","3":"6.1%"},{"1":"Other","2":"896","3":"6.8%"},{"1":"Private Insurance","2":"1563","3":"11.8%"},{"1":"Veterans Benefits","2":"55","3":"0.4%"},{"1":"Total","2":"13203","3":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -3914,18 +3938,18 @@ Table 15
 <p><strong>Assumptions:</strong> Distinct by client system ID, Don’t know, no gender identity selected, not applicable, and prefer not to answer all grouped as NA; data used: all_data (demo + discharge data)</p>
 <div class="cell">
 <div class="cell-output cell-output-stdout">
-<pre><code>35.0% of clients have this data</code></pre>
+<pre><code>36.0% of clients have this data</code></pre>
 </div>
 <div id="tbl-gender-identity" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-gender-identity-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table 16
+Table 17
 </figcaption>
 <div aria-describedby="tbl-gender-identity-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["gender_identity"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"Genderqueer","2":"35","3":"0.2%"},{"1":"Man/boy","2":"5480","3":"38.7%"},{"1":"Non-binary","2":"124","3":"0.9%"},{"1":"Transgender man/boy","2":"96","3":"0.7%"},{"1":"Transgender woman/girl","2":"57","3":"0.4%"},{"1":"Two-spirit","2":"12","3":"0.1%"},{"1":"Woman/girl","2":"8373","3":"59.1%"},{"1":"Total","2":"14177","3":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["gender_identity"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"Genderqueer","2":"35","3":"0.2%"},{"1":"Man/boy","2":"5733","3":"38.5%"},{"1":"Non-binary","2":"128","3":"0.9%"},{"1":"Transgender man/boy","2":"99","3":"0.7%"},{"1":"Transgender woman/girl","2":"57","3":"0.4%"},{"1":"Two-spirit","2":"13","3":"0.1%"},{"1":"Woman/girl","2":"8829","3":"59.3%"},{"1":"Total","2":"14894","3":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -3939,18 +3963,18 @@ Table 16
 <p><strong>Assumptions:</strong> Distinct by client system ID, Don’t know, no sexual orientation selected, not applicable, and prefer not to answer all grouped as NA; data used: all_data (demo + discharge data)</p>
 <div class="cell">
 <div class="cell-output cell-output-stdout">
-<pre><code>29.8% of clients have this data</code></pre>
+<pre><code>30.5% of clients have this data</code></pre>
 </div>
 <div id="tbl-sexual-orientation" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-sexual-orientation-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table 17
+Table 18
 </figcaption>
 <div aria-describedby="tbl-sexual-orientation-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["sexual_orientation"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"Asexual","2":"54","3":"0.4%"},{"1":"Bisexual","2":"570","3":"4.7%"},{"1":"Lesbian/Gay","2":"423","3":"3.5%"},{"1":"Other","2":"203","3":"1.7%"},{"1":"Pansexual","2":"168","3":"1.4%"},{"1":"Same Gender Loving","2":"17","3":"0.1%"},{"1":"Straight","2":"10616","3":"88.1%"},{"1":"Total","2":"12051","3":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["sexual_orientation"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"Asexual","2":"54","3":"0.4%"},{"1":"Bisexual","2":"590","3":"4.7%"},{"1":"Lesbian/Gay","2":"438","3":"3.5%"},{"1":"Other","2":"209","3":"1.7%"},{"1":"Pansexual","2":"173","3":"1.4%"},{"1":"Same Gender Loving","2":"18","3":"0.1%"},{"1":"Straight","2":"11122","3":"88.2%"},{"1":"Total","2":"12604","3":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -4007,18 +4031,18 @@ Table 17
 <p><strong>Assumptions:</strong> Distinct by client system ID, Don’t know, no race selected, not applicable, and prefer not to answer all grouped as NA; data used: all_data (demo + discharge data)</p>
 <div class="cell">
 <div class="cell-output cell-output-stdout">
-<pre><code>79.2% of clients have this data</code></pre>
+<pre><code>79.3% of clients have this data</code></pre>
 </div>
 <div id="tbl-race" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-race-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table 18
+Table 19
 </figcaption>
 <div aria-describedby="tbl-race-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["code_num"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"1","2":"3455","3":"10.8%"},{"1":"2","2":"4321","3":"13.5%"},{"1":"3","2":"11947","3":"37.3%"},{"1":"4","2":"123","3":"0.4%"},{"1":"5","2":"428","3":"1.3%"},{"1":"6","2":"112","3":"0.3%"},{"1":"7","2":"8700","3":"27.1%"},{"1":"88","2":"2962","3":"9.2%"},{"1":"Total","2":"32048","3":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["code_num"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"1","2":"3501","3":"10.7%"},{"1":"2","2":"4403","3":"13.4%"},{"1":"3","2":"12269","3":"37.4%"},{"1":"4","2":"130","3":"0.4%"},{"1":"5","2":"452","3":"1.4%"},{"1":"6","2":"114","3":"0.3%"},{"1":"7","2":"8919","3":"27.2%"},{"1":"88","2":"3021","3":"9.2%"},{"1":"Total","2":"32809","3":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -4151,18 +4175,18 @@ Table 18
 <p><strong>Assumptions:</strong> Distinct by client system ID, Don’t know, no ethnicity selected, not applicable, and prefer not to answer all grouped as NA; data used: all_data (demo + discharge data)</p>
 <div class="cell">
 <div class="cell-output cell-output-stdout">
-<pre><code>26.8% of clients have this data</code></pre>
+<pre><code>26.7% of clients have this data</code></pre>
 </div>
 <div id="tbl-ethnicity" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-ethnicity-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table 19
+Table 20
 </figcaption>
 <div aria-describedby="tbl-ethnicity-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["ethn_num"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"1","2":"436","3":"4.0%"},{"1":"2","2":"835","3":"7.7%"},{"1":"3","2":"419","3":"3.9%"},{"1":"4","2":"371","3":"3.4%"},{"1":"5","2":"546","3":"5.0%"},{"1":"6","2":"116","3":"1.1%"},{"1":"7","2":"2750","3":"25.3%"},{"1":"8","2":"9","3":"0.1%"},{"1":"9","2":"6","3":"0.1%"},{"1":"10","2":"15","3":"0.1%"},{"1":"11","2":"4","3":"0.0%"},{"1":"12","2":"4264","3":"39.3%"},{"1":"13","2":"37","3":"0.3%"},{"1":"14","2":"86","3":"0.8%"},{"1":"15","2":"10","3":"0.1%"},{"1":"16","2":"5","3":"0.0%"},{"1":"17","2":"105","3":"1.0%"},{"1":"18","2":"18","3":"0.2%"},{"1":"19","2":"23","3":"0.2%"},{"1":"20","2":"4","3":"0.0%"},{"1":"21","2":"346","3":"3.2%"},{"1":"22","2":"19","3":"0.2%"},{"1":"23","2":"24","3":"0.2%"},{"1":"24","2":"19","3":"0.2%"},{"1":"25","2":"4","3":"0.0%"},{"1":"26","2":"3","3":"0.0%"},{"1":"88","2":"375","3":"3.5%"},{"1":"Total","2":"10849","3":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["ethn_num"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"1","2":"442","3":"4.0%"},{"1":"2","2":"836","3":"7.6%"},{"1":"3","2":"423","3":"3.8%"},{"1":"4","2":"379","3":"3.4%"},{"1":"5","2":"548","3":"5.0%"},{"1":"6","2":"116","3":"1.0%"},{"1":"7","2":"2818","3":"25.5%"},{"1":"8","2":"9","3":"0.1%"},{"1":"9","2":"6","3":"0.1%"},{"1":"10","2":"15","3":"0.1%"},{"1":"11","2":"4","3":"0.0%"},{"1":"12","2":"4348","3":"39.3%"},{"1":"13","2":"41","3":"0.4%"},{"1":"14","2":"88","3":"0.8%"},{"1":"15","2":"10","3":"0.1%"},{"1":"16","2":"5","3":"0.0%"},{"1":"17","2":"108","3":"1.0%"},{"1":"18","2":"18","3":"0.2%"},{"1":"19","2":"23","3":"0.2%"},{"1":"20","2":"4","3":"0.0%"},{"1":"21","2":"362","3":"3.3%"},{"1":"22","2":"20","3":"0.2%"},{"1":"23","2":"25","3":"0.2%"},{"1":"24","2":"19","3":"0.2%"},{"1":"25","2":"4","3":"0.0%"},{"1":"26","2":"3","3":"0.0%"},{"1":"88","2":"387","3":"3.5%"},{"1":"Total","2":"11061","3":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -4180,13 +4204,13 @@ Table 19
 <div id="tbl-preferred-language" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-preferred-language-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table 20
+Table 21
 </figcaption>
 <div aria-describedby="tbl-preferred-language-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["preferred_lang_response"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]},{"label":["valid_percent"],"name":[4],"type":["chr"],"align":["left"]}],"data":[{"1":"No","2":"21","3":"0.3%","4":"0.3%"},{"1":"Yes","2":"7826","3":"93.7%","4":"99.7%"},{"1":"NA","2":"509","3":"6.1%","4":"-"},{"1":"Total","2":"8356","3":"100.0%","4":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["preferred_lang_response"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]},{"label":["valid_percent"],"name":[4],"type":["chr"],"align":["left"]}],"data":[{"1":"No","2":"22","3":"0.3%","4":"0.3%"},{"1":"Yes","2":"8092","3":"93.8%","4":"99.7%"},{"1":"NA","2":"515","3":"6.0%","4":"-"},{"1":"Total","2":"8629","3":"100.0%","4":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -4200,18 +4224,18 @@ Table 20
 <p><strong>Assumptions:</strong> Distinct by client system ID; must have highest level of education information available</p>
 <div class="cell">
 <div class="cell-output cell-output-stdout">
-<pre><code>5.9% of clients have this data</code></pre>
+<pre><code>6.1% of clients have this data</code></pre>
 </div>
 <div id="tbl-highest-caregiver-education" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl quarto-uncaptioned" id="tbl-highest-caregiver-education-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table 21
+Table 22
 </figcaption>
 <div aria-describedby="tbl-highest-caregiver-education-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["highest_caregiver_education_level"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"< High school","2":"521","3":"21.7%"},{"1":"> College","2":"228","3":"9.5%"},{"1":"College","2":"613","3":"25.5%"},{"1":"High school","2":"1038","3":"43.2%"},{"1":"Total","2":"2400","3":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["highest_caregiver_education_level"],"name":[1],"type":["chr"],"align":["left"]},{"label":["n"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["percent"],"name":[3],"type":["chr"],"align":["left"]}],"data":[{"1":"< High school","2":"555","3":"21.9%"},{"1":"> College","2":"240","3":"9.5%"},{"1":"College","2":"650","3":"25.6%"},{"1":"High school","2":"1093","3":"43.1%"},{"1":"Total","2":"2538","3":"100.0%"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>

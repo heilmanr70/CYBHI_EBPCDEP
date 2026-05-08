@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Cristin Young">
-<meta name="dcterms.date" content="2026-04-07">
+<meta name="dcterms.date" content="2026-04-21">
 
 <title>PHQ-9 Assessment Data Cleaning</title>
 <style>
@@ -3512,7 +3512,7 @@ window.onload = function() {
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">April 7, 2026</p>
+      <p class="date">April 21, 2026</p>
     </div>
   </div>
   
@@ -3650,11 +3650,11 @@ window.onload = function() {
 <span id="cb3-45"><a href="#cb3-45" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb3-46"><a href="#cb3-46" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;PHQ-9 rows after scoring:&quot;</span>, <span class="fu">nrow</span>(phq9_scores), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>PHQ-9 rows after scoring: 1767 </code></pre>
+<pre><code>PHQ-9 rows after scoring: 1805 </code></pre>
 </div>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Unique clients:          &quot;</span>, <span class="fu">n_distinct</span>(phq9_scores<span class="sc">$</span>client_system_id), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>Unique clients:           1093 </code></pre>
+<pre><code>Unique clients:           1114 </code></pre>
 </div>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Missing total_score:     &quot;</span>, <span class="fu">sum</span>(<span class="fu">is.na</span>(phq9_scores<span class="sc">$</span>total_score)), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
@@ -3696,7 +3696,7 @@ window.onload = function() {
 <span id="cb9-28"><a href="#cb9-28" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb9-29"><a href="#cb9-29" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;PHQ-9 paired clients:&quot;</span>, <span class="fu">nrow</span>(phq9_paired), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>PHQ-9 paired clients: 464 </code></pre>
+<pre><code>PHQ-9 paired clients: 476 </code></pre>
 </div>
 </div>
 <hr>
@@ -3716,7 +3716,7 @@ window.onload = function() {
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["n_paired"],"name":[1],"type":["int"],"align":["right"]},{"label":["n_improved"],"name":[2],"type":["int"],"align":["right"]},{"label":["n_no_change"],"name":[3],"type":["int"],"align":["right"]},{"label":["n_worsened"],"name":[4],"type":["int"],"align":["right"]},{"label":["pct_improved"],"name":[5],"type":["dbl"],"align":["right"]},{"label":["n_missing_outcome"],"name":[6],"type":["int"],"align":["right"]}],"data":[{"1":"464","2":"313","3":"65","4":"69","5":"67.5","6":"17"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["n_paired"],"name":[1],"type":["int"],"align":["right"]},{"label":["n_improved"],"name":[2],"type":["int"],"align":["right"]},{"label":["n_no_change"],"name":[3],"type":["int"],"align":["right"]},{"label":["n_worsened"],"name":[4],"type":["int"],"align":["right"]},{"label":["pct_improved"],"name":[5],"type":["dbl"],"align":["right"]},{"label":["n_missing_outcome"],"name":[6],"type":["int"],"align":["right"]}],"data":[{"1":"476","2":"319","3":"70","4":"70","5":"67","6":"17"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>

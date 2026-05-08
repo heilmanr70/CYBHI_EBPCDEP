@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Cristin Young">
-<meta name="dcterms.date" content="2026-04-07">
+<meta name="dcterms.date" content="2026-04-21">
 
 <title>YOQ Assessment Data Cleaning</title>
 <style>
@@ -3511,7 +3511,7 @@ window.onload = function() {
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">April 7, 2026</p>
+      <p class="date">April 21, 2026</p>
     </div>
   </div>
   
@@ -3639,7 +3639,7 @@ window.onload = function() {
 <span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;YOQ Caregiver paired clients:&quot;</span>, <span class="fu">nrow</span>(yoq_caregiver_paired), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>YOQ Caregiver paired clients: 243 </code></pre>
+<pre><code>YOQ Caregiver paired clients: 273 </code></pre>
 </div>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>yoq_caregiver_paired <span class="sc">|&gt;</span></span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(<span class="sc">!</span><span class="fu">is.na</span>(reliably_better), rci <span class="sc">!=</span> <span class="dv">0</span>) <span class="sc">|&gt;</span></span>
@@ -3655,7 +3655,7 @@ window.onload = function() {
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["n"],"name":[1],"type":["int"],"align":["right"]},{"label":["n_better"],"name":[2],"type":["int"],"align":["right"]},{"label":["n_worse"],"name":[3],"type":["int"],"align":["right"]},{"label":["n_meaningful"],"name":[4],"type":["int"],"align":["right"]},{"label":["pct_better"],"name":[5],"type":["dbl"],"align":["right"]},{"label":["pct_worse"],"name":[6],"type":["dbl"],"align":["right"]},{"label":["pct_meaningful"],"name":[7],"type":["dbl"],"align":["right"]}],"data":[{"1":"223","2":"103","3":"29","4":"132","5":"78","6":"22","7":"59.2"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["n"],"name":[1],"type":["int"],"align":["right"]},{"label":["n_better"],"name":[2],"type":["int"],"align":["right"]},{"label":["n_worse"],"name":[3],"type":["int"],"align":["right"]},{"label":["n_meaningful"],"name":[4],"type":["int"],"align":["right"]},{"label":["pct_better"],"name":[5],"type":["dbl"],"align":["right"]},{"label":["pct_worse"],"name":[6],"type":["dbl"],"align":["right"]},{"label":["pct_meaningful"],"name":[7],"type":["dbl"],"align":["right"]}],"data":[{"1":"253","2":"115","3":"33","4":"148","5":"77.7","6":"22.3","7":"58.5"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -3671,7 +3671,7 @@ window.onload = function() {
 <span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;YOQ Self paired clients:&quot;</span>, <span class="fu">nrow</span>(yoq_self_paired), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>YOQ Self paired clients: 680 </code></pre>
+<pre><code>YOQ Self paired clients: 705 </code></pre>
 </div>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>yoq_self_paired <span class="sc">|&gt;</span></span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(<span class="sc">!</span><span class="fu">is.na</span>(reliably_better), rci <span class="sc">!=</span> <span class="dv">0</span>) <span class="sc">|&gt;</span></span>
@@ -3687,7 +3687,7 @@ window.onload = function() {
 <div class="cell-output-display">
 <div data-pagedtable="false">
   <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["n"],"name":[1],"type":["int"],"align":["right"]},{"label":["n_better"],"name":[2],"type":["int"],"align":["right"]},{"label":["n_worse"],"name":[3],"type":["int"],"align":["right"]},{"label":["n_meaningful"],"name":[4],"type":["int"],"align":["right"]},{"label":["pct_better"],"name":[5],"type":["dbl"],"align":["right"]},{"label":["pct_worse"],"name":[6],"type":["dbl"],"align":["right"]},{"label":["pct_meaningful"],"name":[7],"type":["dbl"],"align":["right"]}],"data":[{"1":"600","2":"240","3":"74","4":"314","5":"76.4","6":"23.6","7":"52.3"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":["n"],"name":[1],"type":["int"],"align":["right"]},{"label":["n_better"],"name":[2],"type":["int"],"align":["right"]},{"label":["n_worse"],"name":[3],"type":["int"],"align":["right"]},{"label":["n_meaningful"],"name":[4],"type":["int"],"align":["right"]},{"label":["pct_better"],"name":[5],"type":["dbl"],"align":["right"]},{"label":["pct_worse"],"name":[6],"type":["dbl"],"align":["right"]},{"label":["pct_meaningful"],"name":[7],"type":["dbl"],"align":["right"]}],"data":[{"1":"624","2":"247","3":"79","4":"326","5":"75.8","6":"24.2","7":"52.2"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>

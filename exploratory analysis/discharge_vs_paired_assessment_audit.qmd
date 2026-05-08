@@ -146,7 +146,7 @@ For clients that match on `client_system_id`, we compare `pre_score`/`post_score
 ```{r score-agreement}
 score_summary <- imap_dfr(paired_list, \(spec, label) {
   dis <- discharge_data |>
-    filter(str_detect(pre_measure_s, spec$pattern), !is.na(post_completion_date)) |>
+    filter(str_detect(pre_measure_s, spec$pattern), !is.na(pre_completion_date)) |>
     distinct(client_system_id, .keep_all = TRUE) |>
     select(client_system_id, pre_score, post_score)
 
@@ -198,7 +198,7 @@ has_po <- names(paired_list)[
 
 crosstab <- imap_dfr(paired_list[has_po], \(spec, label) {
   dis <- discharge_data |>
-    filter(str_detect(pre_measure_s, spec$pattern), !is.na(post_completion_date),
+    filter(str_detect(pre_measure_s, spec$pattern), !is.na(pre_completion_date),
            !is.na(positive_outcomes)) |>
     distinct(client_system_id, .keep_all = TRUE) |>
     select(client_system_id, positive_outcomes)
