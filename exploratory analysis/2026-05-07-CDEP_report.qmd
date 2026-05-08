@@ -17,22 +17,14 @@ execute:
 ---
 
 ::: {.callout-note title="TO DOs"}
-- get the correct grantee_IDs and double check results match Rikke's hand-curated file from eInsight
-- filter for grantees that have multiple interventions and ONE grant
-- clinical summary: had intervention (should be discharge_data)
+[ ] suppress data with n<11 
+
+[ ] if there's only one cell in the row/column suppressed, also suppress the total so back calculation isn't possible
 :::
 
 ## CDEPs
 
 82 CDEPs are the focus of this report.
-
-Notes:
-
-- so if it doesn't match, it's because it's NOT A CDEP
-- match by funding round too
-- how many CDEPs have more than one grant? 
-- go SOLELY based on Rikke's crosswalk and not match first. 
-- ok, so the mismatched ones are all ones that have multiple grants and they're putting the wrong thing in the dropdown
 
 ## Setup
 
@@ -47,130 +39,15 @@ library(stringr)
 
 knitr::opts_chunk$set(rownames.print = FALSE)
 
-#discharge_data    <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
-#all_data          <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv")
-#demographic_data  <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv")
-
-#cdep_sav <- read_sav("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Master Files BHES Internal/Other File Versions/CDEPS_3-18-26.sav")
-
-# intervention_name_crosswalk <- read_csv(
-#   "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Quant Team File/intervention_name_review_RA_3-19-26.csv",
-#   show_col_types = FALSE
-# )
-
-# intervention_name_crosswalk <- read_csv("/Users/cristin/Downloads/intervention_name_crosswalk_updated_RA.csv",
-#   show_col_types = FALSE
-# )  
-# 
-# # Clean crosswalk: remove data-entry artifacts, coerce provider_id to character
-# crosswalk_clean <- intervention_name_crosswalk |>
-#   filter(
-#     !is.na(discharge_data_intervention_name),
-#     discharge_data_intervention_name != "added this row",
-#     !is.na(cdep_sav_intervention_name)
-#   ) |>
-#   mutate(provider_id = str_pad(as.character(provider_id), width = 3, pad = "0")) |>
-#   distinct(
-#     provider_id,
-#     intervention_name          = discharge_data_intervention_name,
-#     cdep_sav_intervention_name
-#   )
-# 
-# # Step 1: direct matches — discharge intervention_name == cdep_sav @9aEBPCDEP
-# direct_pairs <- discharge_data |>
-#   distinct(provider_id, intervention_name) |>
-#   inner_join(cdep_lookup, by = c("provider_id", "intervention_name" = "sav_name")) |>
-#   distinct(provider_id, intervention_name)
-# 
-# # Step 2: crosswalk-bridged matches for names that don't align
-# crosswalk_pairs <- discharge_data |>
-#   distinct(provider_id, intervention_name) |>
-#   anti_join(direct_pairs, by = c("provider_id", "intervention_name")) |>
-#   inner_join(crosswalk_clean, by = c("provider_id", "intervention_name")) |>
-#   inner_join(cdep_lookup, by = c("provider_id", "cdep_sav_intervention_name" = "sav_name")) |>
-#   distinct(provider_id, intervention_name)
-# 
-# cdep_intervention_pairs <- bind_rows(direct_pairs, crosswalk_pairs)
-# 
-# # Pass 1: unambiguous corrections — one discharge name maps to exactly one correct name
-# name_correction <- intervention_name_crosswalk |>
-#   filter(
-#     !is.na(discharge_data_intervention_name),
-#     discharge_data_intervention_name != "added this row",
-#     !is.na(correct_intervention_name),
-#     correct_intervention_name != ""
-#   ) |>
-#   mutate(provider_id = str_pad(as.character(provider_id), width = 3, pad = "0")) |>
-#   group_by(provider_id, discharge_data_intervention_name) |>
-#   filter(n_distinct(correct_intervention_name) == 1) |>
-#   ungroup() |>
-#   distinct(
-#     provider_id,
-#     intervention_name         = discharge_data_intervention_name,
-#     correct_intervention_name
-#   )
-# 
-# # Pass 2: funding-round-disambiguated corrections for remaining ambiguous cases
-# # (cases where the same discharge name maps to different interventions across funding rounds)
-# ambig_correction_by_round <- intervention_name_crosswalk |>
-#   filter(
-#     !is.na(discharge_data_intervention_name),
-#     discharge_data_intervention_name != "added this row",
-#     !is.na(correct_intervention_name),
-#     correct_intervention_name != ""
-#   ) |>
-#   mutate(provider_id = str_pad(as.character(provider_id), width = 3, pad = "0")) |>
-#   group_by(provider_id, discharge_data_intervention_name) |>
-#   filter(n_distinct(correct_intervention_name) > 1) |>
-#   ungroup() |>
-#   mutate(funding_round = str_extract(spss_grant_id, "(?<=-)(\\d)")) |>
-#   group_by(provider_id, discharge_data_intervention_name, funding_round) |>
-#   filter(n_distinct(correct_intervention_name) == 1) |>
-#   ungroup() |>
-#   distinct(
-#     provider_id,
-#     intervention_name     = discharge_data_intervention_name,
-#     funding_round,
-#     correct_intervention_name
-#   )
-# 
-# apply_name_corrections <- function(df) {
-#   df |>
-#     left_join(name_correction,
-#               by = c("provider_id", "intervention_name")) |>
-#     left_join(ambig_correction_by_round,
-#               by = c("provider_id", "intervention_name", "funding_round"),
-#               suffix = c("_base", "_round")) |>
-#     mutate(intervention_name = coalesce(correct_intervention_name_base,
-#                                         correct_intervention_name_round,
-#                                         intervention_name)) |>
-#     select(-correct_intervention_name_base, -correct_intervention_name_round)
-# }
-# 
-# discharge_cdep <- discharge_data |>
-#   semi_join(cdep_intervention_pairs, by = c("provider_id", "intervention_name")) |>
-#   apply_name_corrections()
-# 
-# # demographic data has no intervention_name — filter by provider_id only
-# demo_cdep <- demographic_data |>
-#   filter(provider_id %in% cdep_lookup$provider_id)
-# 
-# all_data_cdep <- all_data |>
-#   semi_join(cdep_intervention_pairs, by = c("provider_id", "intervention_name")) |>
-#   apply_name_corrections()
-
 # using Rikke's files 
-discharge_data_cdep    <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/CDEP Files for Cristin _March 25 2026/Final File/Excel Files/DischargeExport_CDEPs_March 25 2026_Final.csv", na = c("-", "", "NA", "N/A")) |> clean_names() |> 
-    mutate(
+discharge_data    <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv") |> 
+  mutate(
     provider_system_id = as.character(provider_system_id),
     client_system_id   = as.character(client_system_id),
     provider_id        = as.character(provider_id)
   )
 
-clinical_summary_cdep  <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/CDEP Files for Cristin _March 25 2026/Final File/Excel Files/ClinicalSummary_CDEPS_File1_March 25, 2026_FINAL.csv", na = c("-", "", "NA", "N/A")) |> clean_names()
-
-demographic_data_cdep  <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/CDEP Files for Cristin _March 25 2026/Final File/Excel Files/ClientDemographis_CDEPS_March 25_Final.csv", na = c("-", "", "NA", "N/A")) |> clean_names() |> 
-  rename(client_system_id = client_id) |> 
+demographic_data_cdep  <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/CDEPS Data Analysis_May2026/CDEP Data May  2026/Master Files/Demographics - CDEPS- All CDEPs - May 7, 2026.csv", na = c("-", "", "NA", "N/A")) |> janitor::clean_names() |> 
   mutate(
     provider_system_id = as.character(provider_system_id),
     client_system_id   = as.character(client_system_id),
@@ -244,48 +121,20 @@ demographic_data_cdep <- demographic_data_cdep |>
     )
   )
 
-discharge_data_cdep <- discharge_data_cdep |>
-  mutate(
-    funding_round = case_when(
-      provider_id == "604" & funding_round == "No Funding Round Selected" ~ "2",
-      provider_id == "508" & funding_round == "No Funding Round Selected" ~ "2",
-      provider_id == "607" & funding_round == "No Funding Round Selected" ~ "1",
-      provider_id == "573"                                                 ~ "2",
-      provider_id == "709" & funding_round == "No Funding Round Selected" ~ "1",
-      TRUE ~ funding_round
-    )
-  )
+# make demographic data distinct
+demographic_data_cdep <- demographic_data_cdep |> 
+  distinct(client_system_id, .keep_all = TRUE)
 
+# join discharge data to demographic data, which has client_ids needed
+discharge_data_cdep <- discharge_data |> 
+  semi_join(demographic_data_cdep, by = c("client_system_id", "provider_id", "provider_system_id"))
 
-discharge_data_cdep <- discharge_data_cdep |>
-  mutate(
-    pre_time_point      = str_extract(pre_measures, "(Initial|(?i)follow up \\d+)"),
-    pre_assessment_name = str_remove(pre_measures, "(Initial|(?i)follow up \\d+)") |>
-      str_trim()
-  ) |>
-  mutate(
-    post_time_point      = str_extract(post_measures, "(Initial|(?i)follow up \\d+)"),
-    post_assessment_name = str_remove(post_measures, "(Initial|(?i)follow up \\d+)") |>
-      str_trim()
-  ) |>
-  mutate(
-    # Exact match check
-    MatchDistinct = pre_assessment_name == post_assessment_name,
-    # First-word match — handles cases where "SDQ" appears as "SDQ Strengths & Difficulties..."
-    trimmed_pre_assessment_name  = word(pre_assessment_name, 1),
-    trimmed_post_assessment_name = word(post_assessment_name, 1),
-    trimmed_match = trimmed_pre_assessment_name == trimmed_post_assessment_name
-  ) 
+# join discharge data to demographic data, which has client_ids needed
+all_data_cdep <- left_join(demographic_data_cdep, discharge_data_cdep, by = c("provider_id", "client_system_id", "provider_system_id"))
 
-# join to demographic data, which has client_ids needed
-
-all_data_cdep <- left_join(discharge_data_cdep, demographic_data_cdep, by = c("client_system_id", "provider_id", "provider_system_id"))
-
-cat("Unique providers (clinical summary):", clinical_summary_cdep |> distinct(provider_id) |> nrow(), "\n")
 cat("Unique providers (discharge data):", discharge_data_cdep |> distinct(provider_id) |> nrow(), "\n")
-cat("Discharge data (distinct by client ID) rows; this is the denominator for most tables below:", discharge_data_cdep |> distinct(client_system_id, .keep_all = TRUE) |> nrow(), "\n")
-cat("Discharge data rows (total):", nrow(discharge_data_cdep), "\n")
-cat("Clinical summary (with collection, distinct by client ID) rows:", clinical_summary_cdep |> filter(!is.na(collection)) |>  distinct(client_system_id, .keep_all = TRUE) |> nrow(), "\n")
+cat("Discharge data (distinct by client ID) rows; this is the denominator for most tables below:", all_data_cdep |> distinct(client_system_id, .keep_all = TRUE) |> nrow(), "\n")
+cat("Discharge data rows (total):", nrow(all_data_cdep), "\n")
 cat("Clients reached (demographic data, distinct by client ID):", demographic_data_cdep |> distinct(client_system_id, .keep_all = TRUE) |> nrow(), "\n")
 ```
 
@@ -488,8 +337,8 @@ all_data_cdep |>
 all_data_cdep_distinct <- all_data_cdep |>
   mutate(
     age_start_tx_num = case_when(
-      ageat_startof_treatmentin_years %in% c("No Age Provided", "", " ") ~ NA_character_,
-      TRUE ~ ageat_startof_treatmentin_years
+      age_at_start_of_treatment_in_years %in% c("No Age Provided", "", " ") ~ NA_character_,
+      TRUE ~ age_at_start_of_treatment_in_years
     ) |> as.numeric()
   ) |>
   distinct(client_system_id, .keep_all = TRUE)
@@ -732,6 +581,21 @@ sat_cdep |>
     pct_4_5 = round(100 * n_4_5 / n_total, 1)
   )
 ```
+
+### Question 1 Satisfaction by Funding Round
+The following table shows high satisfaction by funding round:
+```{r}
+#| label: tbl-q1-satisfaction-by-round
+
+sat_cdep |>
+  group_by(funding_round) |>
+  summarise(
+    n_total = sum(!is.na(q1_score)),
+    n_4_5   = sum(q1_score %in% c(4, 5), na.rm = TRUE),
+    pct_4_5 = round(100 * n_4_5 / n_total, 1)
+  )
+```
+
 
 ### Combined Survey Satisfaction
 
