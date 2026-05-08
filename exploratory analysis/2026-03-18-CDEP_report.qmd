@@ -24,7 +24,7 @@ execute:
 
 ## CDEPs
 
-81 CDEPs are the focus of this report.
+82 CDEPs are the focus of this report.
 
 Notes:
 
@@ -276,6 +276,8 @@ discharge_data_cdep <- discharge_data_cdep |>
     trimmed_post_assessment_name = word(post_assessment_name, 1),
     trimmed_match = trimmed_pre_assessment_name == trimmed_post_assessment_name
   ) 
+
+# join to demographic data, which has client_ids needed
 
 all_data_cdep <- left_join(discharge_data_cdep, demographic_data_cdep, by = c("client_system_id", "provider_id", "provider_system_id"))
 
