@@ -66,6 +66,20 @@ cat("Discharge data rows (total):", nrow(discharge_data), "\n")
 #| label: tbl-participants-served-by-round
 
 discharge_data %>% 
+  filter(!is.na(intervention_start)) |> 
+  tabyl(funding_round) %>% 
+  adorn_totals("row") %>% 
+  adorn_pct_formatting(digits = 1)
+```
+### Participants with end dates
+**Data used**: Discharge data, which includes 382 clients that had more than one complete intervention.
+
+**Nitty gritty cleaning**: took out DEMO data; checked to see which `client_ids` had `pre_measure_s` AND `post_measure_s` per row (i.e., had a complete intervention); left those in; filtered only for `intervention_start >= "2024-01-01" & <= "2026-03-31"`
+```{r}
+#| label: tbl-participants-with-end-date-by-round
+
+discharge_data %>% 
+  filter(!is.na(intervention_end)) |> 
   tabyl(funding_round) %>% 
   adorn_totals("row") %>% 
   adorn_pct_formatting(digits = 1)

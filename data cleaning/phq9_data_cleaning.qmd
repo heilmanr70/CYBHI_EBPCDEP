@@ -30,7 +30,7 @@ This notebook prepares **CYBHI EBP/CDEP** Patient Health Questionnaire-9 (PHQ-9)
 **Output:**
 
 | File | Contents |
-|------------------------------------|------------------------------------|
+|----|----|
 | `phq9_paired_clean.csv` | One row per client: initial/follow-up scores and bands, `positive_outcome`, `score_change`, quarter labels |
 
 ------------------------------------------------------------------------

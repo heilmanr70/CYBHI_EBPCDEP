@@ -763,7 +763,12 @@ client_lang_all <- left_join(client_lang_all, all_data_cdep_distinct, by = c("pr
 client_lang_all <- client_lang_all %>% 
   filter(!is.na(intervention_name))
 
-table(client_lang_all$were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response, useNA = "ifany")
+table(sat_all$were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response, useNA = "ifany")
+
+sat_all |> 
+  tabyl(were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response)
+
+
 ```
 
 ## Participant outcomes
@@ -863,7 +868,7 @@ Two criteria must be met for a client/individual to have â€˜met treatment goalsâ
 #| warning: false
 #| message: false
 #| 
-discharge_cdep_outcome %>% 
+discharge_outcome %>% 
     filter(outcome == "no_change" | outcome == "improved") %>% 
   tabyl(reason_for_discharge) %>% 
   adorn_totals("row") %>% 
