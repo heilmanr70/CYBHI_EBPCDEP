@@ -15,7 +15,6 @@
 *.doc
 *.docx
 *.htm
-*.html
 *.ppt
 *.pptx
 *.pdf
@@ -53,3 +52,4 @@
 .DS_Store
 .DS_Store
 .DS_Store
+.positai
