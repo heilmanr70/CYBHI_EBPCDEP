@@ -1,0 +1,557 @@
+
+---
+title: "Appendix: Investigation of 'No Response' urban/rural classification and positive outcome gap"
+author: "Cristin Young"
+date: "2026-03-02"
+format:
+  html:
+    code-fold: true
+    code-summary: "Show code"
+    embed-resources: true
+    toc: true
+    toc-depth: 2
+execute:
+  warning: false
+  message: false
+---
+
+::: {.callout-note}
+This report was generated using AI under general human direction. At the time of generation, the contents have not been comprehensively reviewed by a human analyst.
+
+<!--
+To indicate human review: Delete the line above about contents not being reviewed, and replace this comment with:
+The contents have been reviewed and validated by [Your Name], [Your Role] on [Date].
+-->
+:::
+
+# Background
+
+The `urban_rural` field in the EInsight data captures whether a client's service location is classified as urban or rural. In addition to "Urban" and "Rural," a large share of records carry the value "No Response for Urban Or Rural Selected" (referred to throughout as **No Response**). This appendix documents a systematic investigation of whether excluding No Response clients from urban/rural comparisons is defensible, and what the No Response group represents.
+
+The motivating observation was a meaningful gap in positive outcome rates: No Response clients achieved positive outcomes at a lower rate than either Urban or Rural clients. This appendix traces what was and was not ruled out as an explanation for that gap.
+
+# Data and setup
+
+```{r}
+#| label: load-packages
+library(tidyverse)
+library(haven)
+library(janitor)
+library(broom)
+library(ggrepel)
+```
+
+```{r}
+#| label: load-data
+all_data <- read_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv",
+  show_col_types = FALSE
+)
+
+discharge_data <- read_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv",
+  show_col_types = FALSE
+)
+```
+
+```{r}
+#| label: build-data201
+data201 <- all_data |>
+  filter(
+    !is.na(location),
+    !is.na(pre_score),
+    !is.na(post_score),
+    !is.na(reason_for_discharge)
+  ) |>
+  mutate(positive_outcomes = factor(positive_outcomes, levels = c("No", "Yes"))) |>
+  filter(intervention_start <= "2025-11-30")
+```
+
+```{r}
+#| label: build-data201-spss
+spss <- read_spss(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Quant Team File/MasterGranteeSpreadsheet_forBHESQuantTeam_1-20-26_NEW!.sav"
+) |>
+  zap_missing() |>
+  mutate(across(where(is.labelled), as.character)) |>
+  mutate(across(where(is.character), ~ na_if(str_trim(.x), ""))) |>
+  rename_with(~ gsub("^@", "", .x)) |>
+  clean_names() |>
+  rename_with(~ gsub("^x", "", .x))
+
+data201_spss <- left_join(
+  data201, spss,
+  by = c("provider" = "1a_grantee_provider_name", "provider_id" = "2grantee_provider_id")
+) |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  rename(region = `8c_regions`)
+```
+
+```{r}
+#| label: build-analysis-subsets
+# Subset to Urban, Rural, and No Response
+nr_vs_other <- data201_spss |>
+  filter(!is.na(positive_outcomes)) |>
+  mutate(
+    ur_group = case_when(
+      urban_rural == "No Response for Urban Or Rural Selected" ~ "No Response",
+      urban_rural %in% c("Urban", "Rural")                    ~ urban_rural,
+      TRUE                                                     ~ NA_character_
+    )
+  ) |>
+  filter(!is.na(ur_group))
+
+# Assessment tools with >= 50 total records
+tools_to_keep <- nr_vs_other |>
+  filter(!is.na(trimmed_pre_assessment_name)) |>
+  count(trimmed_pre_assessment_name) |>
+  filter(n >= 50) |>
+  pull(trimmed_pre_assessment_name)
+
+# Providers with a mix of No Response and Urban/Rural records (n >= 10)
+provider_response <- nr_vs_other |>
+  group_by(provider) |>
+  summarise(
+    total           = n(),
+    n_no_response   = sum(ur_group == "No Response"),
+    pct_no_response = n_no_response / total,
+    .groups = "drop"
+  ) |>
+  filter(total >= 10)
+
+mixed_providers <- provider_response |>
+  filter(pct_no_response > 0, pct_no_response < 1) |>
+  pull(provider)
+```
+
+# Overall outcome rates by urban/rural group
+
+The first step was to establish the size of the outcome gap across the three groups, restricted to clients with valid outcome data.
+
+```{r}
+#| label: tbl-overall-rates
+nr_vs_other |>
+  group_by(ur_group) |>
+  summarise(
+    n            = n(),
+    pct_positive = round(100 * mean(positive_outcomes == "Yes"), 1),
+    .groups = "drop"
+  ) |>
+  arrange(desc(n)) |>
+  rename(
+    `Urban/rural group`  = ur_group,
+    `N`                  = n,
+    `% positive outcome` = pct_positive
+  ) |>
+  knitr::kable(caption = "Positive outcome rates by urban/rural classification")
+```
+
+No Response clients (n = `{r} nr_vs_other |> filter(ur_group == "No Response") |> nrow()`) had a notably lower positive outcome rate than Urban or Rural clients. The gap between No Response and Urban is approximately `{r} local({ rates <- nr_vs_other |> group_by(ur_group) |> summarise(p = round(mean(positive_outcomes == "Yes") * 100, 1)); round(rates$p[rates$ur_group == "Urban"] - rates$p[rates$ur_group == "No Response"], 1) })` percentage points.
+
+# Is No Response a data collection artifact?
+
+Before interpreting the outcome gap substantively, it was important to establish whether No Response is a meaningful population category or simply a reflection of inconsistent data entry.
+
+```{r}
+#| label: tbl-provider-response-pattern
+provider_response |>
+  mutate(pattern = case_when(
+    pct_no_response == 1 ~ "100% No Response",
+    pct_no_response == 0 ~ "0% No Response (all Urban/Rural)",
+    TRUE                 ~ "Mixed"
+  )) |>
+  count(pattern) |>
+  rename(`Response pattern` = pattern, `Number of providers` = n) |>
+  knitr::kable(caption = "Provider-level urban/rural response patterns (providers with n ≥ 10)")
+```
+
+Roughly a quarter of qualifying providers (n = `{r} provider_response |> filter(pct_no_response == 1) |> nrow()`) have 100% No Response — they never completed the urban/rural field. An equal number reported Urban or Rural for every client. The remaining `{r} provider_response |> filter(pct_no_response > 0, pct_no_response < 1) |> nrow()` providers are mixed, enabling within-provider comparisons.
+
+Additionally, the "Statewide" primary county accounts for the majority of No Response records: these are grantees operating across the state without a fixed county location, for whom urban/rural designation is inherently inapplicable.
+
+**Conclusion:** No Response is partly a data collection artifact. However, because nearly half of providers show mixed patterns, the outcome gap cannot be dismissed as purely a reporting issue. Subsequent analyses focus on the mixed-provider subset where within-provider comparison is possible.
+
+# Ruling out dropout
+
+One straightforward explanation for lower positive outcomes is higher dropout — clients who never complete treatment cannot show score improvement. Discharge reason distributions were compared across urban/rural groups within mixed providers.
+
+```{r}
+#| label: tbl-discharge-reason
+nr_vs_other |>
+  filter(provider %in% mixed_providers) |>
+  group_by(ur_group, reason_for_discharge) |>
+  summarise(n = n(), .groups = "drop") |>
+  group_by(ur_group) |>
+  mutate(pct = round(100 * n / sum(n), 1)) |>
+  ungroup() |>
+  select(ur_group, reason_for_discharge, pct) |>
+  pivot_wider(names_from = ur_group, values_from = pct) |>
+  rename(`Reason for discharge` = reason_for_discharge) |>
+  knitr::kable(caption = "Discharge reason distribution by urban/rural group (mixed providers, %)")
+```
+
+Dropout rates (withdrawal, no contact) are similar across groups. Mutually agreed cessation — the successful completion category — is slightly lower for No Response (92%) than Urban (95%) or Rural (97%), but the difference is modest.
+
+To confirm that the outcome gap persists even among successful completers, positive outcome rates were compared within the mutually agreed cessation group:
+
+```{r}
+#| label: tbl-completers-only
+nr_vs_other |>
+  filter(
+    provider %in% mixed_providers,
+    reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)"
+  ) |>
+  group_by(ur_group) |>
+  summarise(
+    n            = n(),
+    pct_positive = round(100 * mean(positive_outcomes == "Yes"), 1),
+    .groups = "drop"
+  ) |>
+  rename(
+    `Urban/rural group`  = ur_group,
+    `N`                  = n,
+    `% positive outcome` = pct_positive
+  ) |>
+  knitr::kable(caption = "Positive outcome rates among successful completers (mixed providers)")
+```
+
+**Conclusion:** The outcome gap is not driven by differential dropout. No Response clients who complete treatment still show a lower rate of score improvement than Urban completers (~59% vs. ~64%). Subsequent analyses focus on this score improvement gap.
+
+# Outcome gap by assessment tool
+
+The score improvement gap may not be uniform across assessment tools. Among successful completers in mixed providers, positive outcome rates were compared by tool.
+
+```{r}
+#| label: fig-tool-gap
+#| fig-cap: "% positive outcomes by assessment tool: No Response vs. Urban (successful completers, mixed providers)"
+#| fig-height: 5
+
+tool_gap <- nr_vs_other |>
+  filter(
+    provider %in% mixed_providers,
+    reason_for_discharge == "Mutually agreed cessation of treatment (Successful Completion)",
+    trimmed_pre_assessment_name %in% tools_to_keep
+  ) |>
+  group_by(trimmed_pre_assessment_name, ur_group) |>
+  summarise(
+    n            = n(),
+    pct_positive = round(100 * mean(positive_outcomes == "Yes"), 1),
+    .groups = "drop"
+  ) |>
+  pivot_wider(names_from = ur_group, values_from = c(n, pct_positive)) |>
+  clean_names() |>
+  filter(!is.na(pct_positive_no_response), !is.na(pct_positive_urban)) |>
+  mutate(
+    gap  = pct_positive_no_response - pct_positive_urban,
+    tool = fct_reorder(trimmed_pre_assessment_name, gap)
+  )
+
+tool_gap |>
+  mutate(
+    label_nr    = paste0(pct_positive_no_response, "%\n(n=", n_no_response, ")"),
+    label_urban = paste0(pct_positive_urban,        "%\n(n=", n_urban,       ")")
+  ) |>
+  pivot_longer(
+    cols      = c(pct_positive_no_response, pct_positive_urban),
+    names_to  = "group",
+    values_to = "pct_positive"
+  ) |>
+  mutate(
+    group = if_else(group == "pct_positive_no_response", "No Response", "Urban"),
+    label = if_else(group == "No Response", label_nr, label_urban)
+  ) |>
+  ggplot(aes(x = pct_positive, y = tool, color = group, group = tool)) +
+  geom_line(color = "grey70", linewidth = 1) +
+  geom_point(size = 4) +
+  geom_text(
+    aes(label = label),
+    size = 2.8, lineheight = 0.85, vjust = -0.9, show.legend = FALSE
+  ) +
+  scale_color_manual(
+    values = c("No Response" = "#4A90D9", "Urban" = "#BBDB49"),
+    name   = NULL
+  ) +
+  scale_x_continuous(limits = c(0, 110), labels = \(x) paste0(x, "%")) +
+  labs(x = "% Positive outcomes", y = NULL) +
+  theme_minimal() +
+  theme(
+    panel.grid.minor   = element_blank(),
+    panel.grid.major.y = element_blank(),
+    legend.position    = "top"
+  )
+```
+
+**Conclusion:** The gap is concentrated in PHQ-9 (No Response 39% vs. Urban 67%, −28 pp) and YOQ (60% vs. 82%, −22 pp). SDQ and PSS show near-zero gaps. Because PHQ-9 and YOQ are self-report symptom measures while SDQ and PSS are caregiver-report or parenting stress instruments, this pattern suggested the gap might reflect higher symptom severity at intake for No Response clients — which was tested in @sec-baseline.
+
+# Demographic profile of No Response clients
+
+To assess whether No Response clients are a harder-to-reach population, demographic variables were compared across urban/rural groups within mixed providers.
+
+```{r}
+#| label: tbl-demographics
+compare_demo <- function(var) {
+  nr_vs_other |>
+    filter(provider %in% mixed_providers) |>
+    group_by(ur_group, value = .data[[var]]) |>
+    summarise(n = n(), .groups = "drop") |>
+    group_by(ur_group) |>
+    mutate(pct = round(100 * n / sum(n), 1)) |>
+    ungroup() |>
+    mutate(variable = var)
+}
+
+map(c("insurance_status", "primary_language", "housing_status"), compare_demo) |>
+  list_rbind() |>
+  select(variable, ur_group, value, pct) |>
+  pivot_wider(names_from = ur_group, values_from = pct) |>
+  mutate(gap_nr_vs_urban = round(`No Response` - Urban, 1)) |>
+  arrange(variable, desc(abs(gap_nr_vs_urban))) |>
+  filter(!is.na(gap_nr_vs_urban)) |>
+  rename(
+    Variable      = variable,
+    Category      = value,
+    `Gap (NR − Urban)` = gap_nr_vs_urban
+  ) |>
+  knitr::kable(caption = "Demographic distribution by urban/rural group (mixed providers, %)")
+```
+
+Notable differences:
+
+- **Housing:** No Response clients have a much higher rate of "Not Applicable" (21% vs. 1% Urban), suggesting a distinct program type rather than housing instability.
+- **Insurance:** No Response clients have lower Medi-Cal rates (30% vs. 49% Urban) and higher "Not Applicable" and "Don't Know" rates, again pointing to program-type differences rather than economic disadvantage.
+- **Language:** No Response clients are *less* likely to be Spanish-speaking (18% vs. 35% Urban) and more likely to speak English (74% vs. 61%), inconsistent with a harder-to-reach immigrant population explanation.
+
+**Conclusion:** The demographic profile does not support the hypothesis that No Response clients are a more disadvantaged or harder-to-reach population. The pattern of elevated "Not Applicable" responses on both housing and insurance suggests that No Response providers serve structurally different client types.
+
+# Client type and age
+
+The "Not Applicable" pattern raised the question of whether No Response clients differ in client type (primary client vs. family member/caregiver reporter).
+
+```{r}
+#| label: tbl-client-type
+nr_vs_other |>
+  filter(provider %in% mixed_providers) |>
+  mutate(age = as.numeric(age_at_start_of_treatment_in_years)) |>
+  group_by(ur_group) |>
+  summarise(
+    n                  = n(),
+    median_age         = median(age, na.rm = TRUE),
+    pct_family_member  = round(100 * mean(primary_family_client == "Family Member", na.rm = TRUE), 1),
+    .groups = "drop"
+  ) |>
+  rename(
+    `Urban/rural group` = ur_group,
+    `N`                 = n,
+    `Median age (years)` = median_age,
+    `% Family Member reporters` = pct_family_member
+  ) |>
+  knitr::kable(caption = "Age and client type by urban/rural group (mixed providers)")
+```
+
+Urban clients are substantially more likely to be Family Member (caregiver) reporters (19%) compared to No Response (4%) and Rural (4%) clients. Age distributions are similar across groups.
+
+# Logistic regression: independent predictors of positive outcomes {#sec-regression}
+
+To assess whether client type independently predicts outcomes after accounting for urban/rural group, a logistic regression was fitted on the full dataset (not restricted to mixed providers).
+
+```{r}
+#| label: tbl-logistic
+model_data <- data201_spss |>
+  filter(
+    !is.na(positive_outcomes),
+    !is.na(primary_family_client),
+    urban_rural %in% c("Urban", "Rural", "No Response for Urban Or Rural Selected")
+  ) |>
+  mutate(
+    outcome_bin = as.integer(positive_outcomes == "Yes"),
+    ur_group    = if_else(
+      urban_rural == "No Response for Urban Or Rural Selected",
+      "No Response", urban_rural
+    ),
+    ur_group    = factor(ur_group, levels = c("Urban", "Rural", "No Response")),
+    client_type = factor(primary_family_client, levels = c("Primary Client", "Family Member"))
+  )
+
+fit <- glm(outcome_bin ~ client_type + ur_group, data = model_data, family = binomial)
+
+tidy(fit, exponentiate = TRUE, conf.int = TRUE) |>
+  filter(term != "(Intercept)") |>
+  mutate(across(c(estimate, conf.low, conf.high), \(x) round(x, 2)),
+         p.value = round(p.value, 3)) |>
+  rename(
+    Term        = term,
+    OR          = estimate,
+    `95% CI low`  = conf.low,
+    `95% CI high` = conf.high,
+    `p-value`   = p.value
+  ) |>
+  select(-statistic, -std.error) |>
+  knitr::kable(caption = "Logistic regression: positive outcomes predicted by client type and urban/rural group")
+```
+
+```{r}
+#| label: extract-model-values
+#| echo: false
+model_ors <- tidy(fit, exponentiate = TRUE, conf.int = TRUE)
+
+fm_or    <- round(model_ors$estimate[model_ors$term == "client_typeFamily Member"], 2)
+fm_ci_lo <- round(model_ors$conf.low[model_ors$term == "client_typeFamily Member"], 2)
+fm_ci_hi <- round(model_ors$conf.high[model_ors$term == "client_typeFamily Member"], 2)
+fm_p     <- round(model_ors$p.value[model_ors$term == "client_typeFamily Member"], 3)
+rural_or <- round(model_ors$estimate[model_ors$term == "ur_groupRural"], 2)
+nr_or    <- round(model_ors$estimate[model_ors$term == "ur_groupNo Response"], 2)
+```
+
+Both predictors are independently significant. Family Member reporters have `{r} fm_or`× the odds of a positive outcome compared to Primary Clients (95% CI: `{r} fm_ci_lo`–`{r} fm_ci_hi`, p = `{r} fm_p`). However, the Rural advantage (OR = `{r} rural_or`) and No Response disadvantage (OR = `{r} nr_or`) both persist after adjustment, indicating that client type alone does not fully explain the urban/rural gaps.
+
+# Baseline severity on PHQ-9 and YOQ {#sec-baseline}
+
+Given that the outcome gap was concentrated in PHQ-9 and YOQ (see above), a plausible explanation was that No Response clients present with higher symptom severity at intake, leaving less room for detectable improvement.
+
+```{r}
+#| label: tbl-baseline-scores
+nr_vs_other |>
+  filter(
+    provider %in% mixed_providers,
+    trimmed_pre_assessment_name %in% c("PHQ-9", "YOQ"),
+    ur_group %in% c("No Response", "Urban")
+  ) |>
+  mutate(pre_score = as.numeric(pre_score)) |>
+  group_by(trimmed_pre_assessment_name, ur_group) |>
+  summarise(
+    n          = n(),
+    mean_pre   = round(mean(pre_score, na.rm = TRUE), 1),
+    median_pre = round(median(pre_score, na.rm = TRUE), 1),
+    sd_pre     = round(sd(pre_score, na.rm = TRUE), 1),
+    .groups    = "drop"
+  ) |>
+  rename(
+    Tool       = trimmed_pre_assessment_name,
+    Group      = ur_group,
+    N          = n,
+    Mean       = mean_pre,
+    Median     = median_pre,
+    SD         = sd_pre
+  ) |>
+  knitr::kable(caption = "Baseline (pre) score summary for PHQ-9 and YOQ by urban/rural group (mixed providers)")
+```
+
+```{r}
+#| label: fig-baseline-distributions
+#| fig-cap: "Baseline score distributions for PHQ-9 and YOQ: No Response vs. Urban (mixed providers)"
+nr_vs_other |>
+  filter(
+    provider %in% mixed_providers,
+    trimmed_pre_assessment_name %in% c("PHQ-9", "YOQ"),
+    ur_group %in% c("No Response", "Urban")
+  ) |>
+  mutate(pre_score = as.numeric(pre_score)) |>
+  ggplot(aes(x = pre_score, fill = ur_group)) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~ trimmed_pre_assessment_name, scales = "free") +
+  scale_fill_manual(
+    values = c("No Response" = "#4A90D9", "Urban" = "#BBDB49"),
+    name   = NULL
+  ) +
+  labs(x = "Pre-score", y = "Density") +
+  theme_minimal() +
+  theme(
+    panel.grid.minor = element_blank(),
+    legend.position  = "top"
+  )
+```
+
+```{r}
+#| label: extract-baseline-values
+#| echo: false
+phq9_pre <- nr_vs_other |>
+  filter(provider %in% mixed_providers, trimmed_pre_assessment_name == "PHQ-9") |>
+  mutate(s = as.numeric(pre_score)) |>
+  group_by(ur_group) |>
+  summarise(m = round(mean(s, na.rm = TRUE), 1), .groups = "drop")
+
+phq9_nr_mean    <- phq9_pre$m[phq9_pre$ur_group == "No Response"]
+phq9_urban_mean <- phq9_pre$m[phq9_pre$ur_group == "Urban"]
+```
+
+**Conclusion:** The baseline severity hypothesis is not supported. For PHQ-9, No Response clients have *lower* average pre-scores than Urban clients (mean `{r} phq9_nr_mean` vs. `{r} phq9_urban_mean`), suggesting a potential floor effect — clients starting near the minimum of the scale have less room to achieve a qualifying improvement. For YOQ, distributions are nearly identical. High baseline severity does not explain the gap.
+
+# Intervention type as underlying driver
+
+Given that SDQ and YOQ are used almost exclusively with Family Member reporters, intervention type could be a confound — certain interventions may both attract Family Member reporters and produce better outcomes. To test this, outcome rates and Family Member proportions were examined across the most common interventions.
+
+```{r}
+#| label: fig-intervention-scatter
+#| fig-cap: "% Family Member reporters vs. % positive outcomes by intervention type (n ≥ 50)"
+#| fig-height: 6
+
+top_interventions <- data201_spss |>
+  filter(!is.na(positive_outcomes), !is.na(intervention_name)) |>
+  count(intervention_name) |>
+  filter(n >= 50) |>
+  pull(intervention_name)
+
+intervention_summary <- data201_spss |>
+  filter(
+    !is.na(positive_outcomes),
+    intervention_name %in% top_interventions,
+    trimmed_pre_assessment_name %in% tools_to_keep
+  ) |>
+  group_by(intervention_name) |>
+  summarise(
+    n              = n(),
+    pct_family_mbr = round(100 * mean(primary_family_client == "Family Member", na.rm = TRUE), 1),
+    pct_positive   = round(100 * mean(positive_outcomes == "Yes"), 1),
+    top_tool       = names(sort(table(trimmed_pre_assessment_name), decreasing = TRUE))[1],
+    .groups = "drop"
+  )
+
+ggplot(intervention_summary,
+       aes(x = pct_family_mbr, y = pct_positive, color = top_tool, size = n)) +
+  geom_point(alpha = 0.85) +
+  geom_text_repel(
+    aes(label = str_wrap(intervention_name, 25)),
+    size = 2.5, color = "grey30", lineheight = 0.85, max.overlaps = 15
+  ) +
+  scale_size_continuous(range = c(3, 10), name = "n") +
+  scale_color_brewer(palette = "Set2", name = "Primary tool") +
+  scale_x_continuous(labels = \(x) paste0(x, "%")) +
+  scale_y_continuous(labels = \(x) paste0(x, "%")) +
+  labs(
+    x = "% Family Member reporters",
+    y = "% Positive outcomes"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.grid.minor = element_blank()
+  )
+```
+
+NOMS is the primary tool for nearly all interventions, so tool selection does not vary meaningfully by intervention type. There is no consistent positive relationship between Family Member reporter rate and positive outcomes across interventions. The Promotora Peer Support Model (74% Family Members, 91% outcomes) is an outlier attributable to that intervention's specific model rather than reporter type in general.
+
+**Conclusion:** Intervention type does not appear to drive the Family Member advantage through tool or reporter-type selection. The individual-level Family Member effect identified in @sec-regression appears to reflect something about reporter engagement or family responsiveness rather than which intervention was delivered.
+
+# Summary of findings
+
+The table below summarises each candidate explanation for the No Response outcome gap and its evidential status.
+
+| Candidate explanation | Verdict | Key evidence |
+|---|---|---|
+| Data collection artifact (systematic non-reporters) | **Partial** | 24 providers (100% No Response); Statewide county drives ~1,800 records |
+| Higher dropout / disengagement | **Ruled out** | Discharge reason distributions similar; gap persists among completers |
+| Greater demographic hardship | **Ruled out** | No Response clients are less likely to be Spanish-speaking; lower Medi-Cal; more "Not Applicable" |
+| Higher baseline symptom severity | **Ruled out** | PHQ-9 No Response clients start *lower*, not higher; YOQ distributions nearly identical |
+| Client type (Family Member vs. Primary Client) | **Partial contributor** | Family Members have OR = 1.32 for positive outcomes; Urban clients have more Family Members (19% vs. 4%). Does not fully explain gap. |
+| Intervention or tool type | **Ruled out** | NOMS dominates across interventions; no clean intervention-level pattern |
+| Floor effect on PHQ-9 | **Plausible, untested** | No Response PHQ-9 clients start at lower scores with less room to improve |
+| Provider-level factors | **Plausible, untested** | Within mixed providers, gap is consistent but origin unclear |
+
+# Open questions
+
+The following questions were not resolved by this analysis and represent natural next steps:
+
+1. **Floor effect on PHQ-9:** If No Response clients start near the minimum of the PHQ-9 scale, the positive outcome threshold (requiring a qualifying score *decrease*) may rarely be met regardless of clinical progress. Examining the distribution of pre-scores relative to the scoring threshold would clarify this.
+
+2. **Provider-level factors:** Even within mixed providers, No Response clients have systematically worse outcomes. Understanding what distinguishes these clients within a provider — whether it is a specific program strand, referral pathway, or intake process — would require provider-level consultation.
+
+3. **Analytic treatment:** Given the findings above, we recommend against pooling No Response clients with Urban or Rural in location-based analyses. The most defensible approach is either (a) to exclude No Response clients from urban/rural comparisons entirely, with a note about the systematic non-reporters, or (b) to treat No Response as a separate category with appropriate caveats about its composition.

@@ -1,0 +1,5048 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.26">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="author" content="Cristin Young">
+<meta name="dcterms.date" content="2026-03-17">
+
+<title>Discharge data vs.&nbsp;paired assessment audit</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="discharge_vs_paired_assessment_audit_files/libs/clipboard/clipboard.min.js"></script>
+<script src="discharge_vs_paired_assessment_audit_files/libs/quarto-html/quarto.js" type="module"></script>
+<script src="discharge_vs_paired_assessment_audit_files/libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="discharge_vs_paired_assessment_audit_files/libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="discharge_vs_paired_assessment_audit_files/libs/quarto-html/popper.min.js"></script>
+<script src="discharge_vs_paired_assessment_audit_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="discharge_vs_paired_assessment_audit_files/libs/quarto-html/anchor.min.js"></script>
+<link href="discharge_vs_paired_assessment_audit_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="discharge_vs_paired_assessment_audit_files/libs/quarto-html/quarto-syntax-highlighting-587c61ba64f3a5504c4d52d930310e48.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="discharge_vs_paired_assessment_audit_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="discharge_vs_paired_assessment_audit_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="discharge_vs_paired_assessment_audit_files/libs/bootstrap/bootstrap-d6a003b94517c951b2d65075d42fb01b.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="discharge_vs_paired_assessment_audit_files/libs/pagedtable-1.1/css/pagedtable.css" rel="stylesheet">
+<script src="discharge_vs_paired_assessment_audit_files/libs/pagedtable-1.1/js/pagedtable.js"></script>
+
+
+</head>
+
+<body class="quarto-light">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+<div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+  <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">Table of contents</h2>
+   
+  <ul>
+  <li><a href="#background" id="toc-background" class="nav-link active" data-scroll-target="#background">Background</a></li>
+  <li><a href="#section-1-match-rates" id="toc-section-1-match-rates" class="nav-link" data-scroll-target="#section-1-match-rates">Section 1: Match rates</a></li>
+  <li><a href="#section-2-score-agreement" id="toc-section-2-score-agreement" class="nav-link" data-scroll-target="#section-2-score-agreement">Section 2: Score agreement</a></li>
+  <li><a href="#section-3-positive_outcomes-vs.-positive_outcome" id="toc-section-3-positive_outcomes-vs.-positive_outcome" class="nav-link" data-scroll-target="#section-3-positive_outcomes-vs.-positive_outcome">Section 3: <code>positive_outcomes</code> vs.&nbsp;<code>positive_outcome</code></a></li>
+  <li><a href="#section-4-gad-7-deep-dive" id="toc-section-4-gad-7-deep-dive" class="nav-link" data-scroll-target="#section-4-gad-7-deep-dive">Section 4: GAD-7 deep dive</a></li>
+  <li><a href="#section-5-cpss-5-s-deep-dive" id="toc-section-5-cpss-5-s-deep-dive" class="nav-link" data-scroll-target="#section-5-cpss-5-s-deep-dive">Section 5: CPSS-5-S deep dive</a></li>
+  <li><a href="#section-6-summary-and-implications" id="toc-section-6-summary-and-implications" class="nav-link" data-scroll-target="#section-6-summary-and-implications">Section 6: Summary and implications</a></li>
+  </ul>
+</nav>
+</div>
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Discharge data vs.&nbsp;paired assessment audit</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    <div>
+    <div class="quarto-title-meta-heading">Author</div>
+    <div class="quarto-title-meta-contents">
+             <p>Cristin Young </p>
+          </div>
+  </div>
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">March 17, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>This report was generated using AI under general human direction. The contents have been reviewed and validated by Cristin Young on March 17, 2026.</p>
+</div>
+</div>
+<section id="background" class="level2">
+<h2 class="anchored" data-anchor-id="background">Background</h2>
+<p>This report compares two sources of outcome data for CYBHI EBP/CDEP clients:</p>
+<ol type="1">
+<li><p><strong><code>discharge_data</code></strong> — produced by <code>report_data_cleaning.Rmd</code> from eInsight’s raw Discharge Report export. One row per client per assessment. Contains <code>positive_outcomes</code> (“Yes”/“No”), which is <strong>eInsight’s own built-in outcome flag</strong> — it is not computed by the team’s code.</p></li>
+<li><p><strong>Cleaned paired assessment files</strong> — produced by the individual <code>*_data_cleaning.qmd</code> scripts (one per instrument). One row per client with a matched initial and follow-up assessment. Contains <code>positive_outcome</code> (“better”/“no change”/“worse”), computed by the team as a three-level variable based on first and last assessment scores.</p></li>
+</ol>
+<p>The key question is: <strong>do these two outcome definitions agree, and where they diverge, why?</strong></p>
+<hr>
+<hr>
+</section>
+<section id="section-1-match-rates" class="level2">
+<h2 class="anchored" data-anchor-id="section-1-match-rates">Section 1: Match rates</h2>
+<p>For each instrument, we compare the number of clients in <code>discharge_data</code> to the number in the cleaned paired file, and report how many match on <code>client_system_id</code>.</p>
+<p>We also separate out how many discharge rows have a post-assessment recorded — clients with no post cannot appear in the paired file by definition, so the share of discharge clients <em>with</em> a post is the more meaningful denominator for evaluating match rates.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>paired_list <span class="ot">&lt;-</span> <span class="fu">list</span>(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">PSS        =</span> <span class="fu">list</span>(<span class="at">pattern =</span> <span class="st">"PSS"</span>,                   <span class="at">paired =</span> pss_paired),</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="st">`</span><span class="at">BASIS-24</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">list</span>(<span class="at">pattern =</span> <span class="st">"Basis-24"</span>,              <span class="at">paired =</span> basis24_paired),</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  <span class="st">`</span><span class="at">PHQ-9</span><span class="st">`</span>    <span class="ot">=</span> <span class="fu">list</span>(<span class="at">pattern =</span> <span class="st">"PHQ-9"</span>,                 <span class="at">paired =</span> phq9_paired),</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="st">`</span><span class="at">GAD-7</span><span class="st">`</span>    <span class="ot">=</span> <span class="fu">list</span>(<span class="at">pattern =</span> <span class="st">"GAD-7"</span>,                 <span class="at">paired =</span> gad7_paired),</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>  <span class="st">`</span><span class="at">CPSS-5-I</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">list</span>(<span class="at">pattern =</span> <span class="st">"CPSS 5 - Interviewer"</span>,  <span class="at">paired =</span> cpss_i_paired),</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>  <span class="st">`</span><span class="at">CPSS-5-S</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">list</span>(<span class="at">pattern =</span> <span class="st">"CPSS-5"</span>,                <span class="at">paired =</span> cpss_s_paired),</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>  <span class="st">`</span><span class="at">YOQ-C</span><span class="st">`</span>    <span class="ot">=</span> <span class="fu">list</span>(<span class="at">pattern =</span> <span class="st">"YOQ.*Caregiver"</span>,        <span class="at">paired =</span> yoq_c_paired),</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>  <span class="st">`</span><span class="at">YOQ-S</span><span class="st">`</span>    <span class="ot">=</span> <span class="fu">list</span>(<span class="at">pattern =</span> <span class="st">"YOQ.*Self"</span>,             <span class="at">paired =</span> yoq_s_paired)</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>match_summary <span class="ot">&lt;-</span> <span class="fu">imap_dfr</span>(paired_list, \(spec, label) {</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>  dis <span class="ot">&lt;-</span> discharge_data <span class="sc">|&gt;</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    <span class="fu">filter</span>(<span class="fu">str_detect</span>(pre_measure_s, spec<span class="sc">$</span>pattern))</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>  dis_with_post <span class="ot">&lt;-</span> dis <span class="sc">|&gt;</span> <span class="fu">filter</span>(<span class="sc">!</span><span class="fu">is.na</span>(post_completion_date))</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tibble</span>(</span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">Instrument              =</span> label,</span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    <span class="st">`</span><span class="at">Discharge rows</span><span class="st">`</span>        <span class="ot">=</span> <span class="fu">n_distinct</span>(dis<span class="sc">$</span>client_system_id),</span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    <span class="st">`</span><span class="at">With post-assessment</span><span class="st">`</span>  <span class="ot">=</span> <span class="fu">n_distinct</span>(dis_with_post<span class="sc">$</span>client_system_id),</span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    <span class="st">`</span><span class="at">In paired file</span><span class="st">`</span>        <span class="ot">=</span> <span class="fu">n_distinct</span>(spec<span class="sc">$</span>paired<span class="sc">$</span>client_system_id),</span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>    <span class="st">`</span><span class="at">Matched (ID overlap)</span><span class="st">`</span>  <span class="ot">=</span> <span class="fu">length</span>(<span class="fu">intersect</span>(dis<span class="sc">$</span>client_system_id,</span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>                                                spec<span class="sc">$</span>paired<span class="sc">$</span>client_system_id)),</span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>    <span class="st">`</span><span class="at">% discharge matched</span><span class="st">`</span>   <span class="ot">=</span> <span class="fu">round</span>(<span class="dv">100</span> <span class="sc">*</span> <span class="st">`</span><span class="at">Matched (ID overlap)</span><span class="st">`</span> <span class="sc">/</span> <span class="st">`</span><span class="at">Discharge rows</span><span class="st">`</span>)</span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>})</span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a>match_summary <span class="sc">|&gt;</span></span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">gt</span>() <span class="sc">|&gt;</span></span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_header</span>(<span class="at">title =</span> <span class="st">"Client ID match rates: discharge_data vs. paired assessment files"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_style</span>(</span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a>    <span class="at">style =</span> <span class="fu">cell_fill</span>(<span class="at">color =</span> <span class="st">"#fff3cd"</span>),</span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a>    <span class="at">locations =</span> <span class="fu">cells_body</span>(<span class="at">rows =</span> Instrument <span class="sc">==</span> <span class="st">"BASIS-24"</span>)</span>
+<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="abvnlxraef" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<style>#abvnlxraef table {
+  font-family: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#abvnlxraef thead, #abvnlxraef tbody, #abvnlxraef tfoot, #abvnlxraef tr, #abvnlxraef td, #abvnlxraef th {
+  border-style: none;
+}
+
+#abvnlxraef p {
+  margin: 0;
+  padding: 0;
+}
+
+#abvnlxraef .gt_table {
+  display: table;
+  border-collapse: collapse;
+  line-height: normal;
+  margin-left: auto;
+  margin-right: auto;
+  color: #333333;
+  font-size: 16px;
+  font-weight: normal;
+  font-style: normal;
+  background-color: #FFFFFF;
+  width: auto;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #A8A8A8;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #A8A8A8;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+}
+
+#abvnlxraef .gt_caption {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+#abvnlxraef .gt_title {
+  color: #333333;
+  font-size: 125%;
+  font-weight: initial;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-color: #FFFFFF;
+  border-bottom-width: 0;
+}
+
+#abvnlxraef .gt_subtitle {
+  color: #333333;
+  font-size: 85%;
+  font-weight: initial;
+  padding-top: 3px;
+  padding-bottom: 5px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-color: #FFFFFF;
+  border-top-width: 0;
+}
+
+#abvnlxraef .gt_heading {
+  background-color: #FFFFFF;
+  text-align: center;
+  border-bottom-color: #FFFFFF;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#abvnlxraef .gt_bottom_border {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#abvnlxraef .gt_col_headings {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#abvnlxraef .gt_col_heading {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  padding-left: 5px;
+  padding-right: 5px;
+  overflow-x: hidden;
+}
+
+#abvnlxraef .gt_column_spanner_outer {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+#abvnlxraef .gt_column_spanner_outer:first-child {
+  padding-left: 0;
+}
+
+#abvnlxraef .gt_column_spanner_outer:last-child {
+  padding-right: 0;
+}
+
+#abvnlxraef .gt_column_spanner {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  overflow-x: hidden;
+  display: inline-block;
+  width: 100%;
+}
+
+#abvnlxraef .gt_spanner_row {
+  border-bottom-style: hidden;
+}
+
+#abvnlxraef .gt_group_heading {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  text-align: left;
+}
+
+#abvnlxraef .gt_empty_group_heading {
+  padding: 0.5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#abvnlxraef .gt_from_md > :first-child {
+  margin-top: 0;
+}
+
+#abvnlxraef .gt_from_md > :last-child {
+  margin-bottom: 0;
+}
+
+#abvnlxraef .gt_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  margin: 10px;
+  border-top-style: solid;
+  border-top-width: 1px;
+  border-top-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  overflow-x: hidden;
+}
+
+#abvnlxraef .gt_stub {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#abvnlxraef .gt_stub_row_group {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+  vertical-align: top;
+}
+
+#abvnlxraef .gt_row_group_first td {
+  border-top-width: 2px;
+}
+
+#abvnlxraef .gt_row_group_first th {
+  border-top-width: 2px;
+}
+
+#abvnlxraef .gt_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#abvnlxraef .gt_first_summary_row {
+  border-top-style: solid;
+  border-top-color: #D3D3D3;
+}
+
+#abvnlxraef .gt_first_summary_row.thick {
+  border-top-width: 2px;
+}
+
+#abvnlxraef .gt_last_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#abvnlxraef .gt_grand_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#abvnlxraef .gt_first_grand_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: double;
+  border-top-width: 6px;
+  border-top-color: #D3D3D3;
+}
+
+#abvnlxraef .gt_last_grand_summary_row_top {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: double;
+  border-bottom-width: 6px;
+  border-bottom-color: #D3D3D3;
+}
+
+#abvnlxraef .gt_striped {
+  background-color: rgba(128, 128, 128, 0.05);
+}
+
+#abvnlxraef .gt_table_body {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#abvnlxraef .gt_footnotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#abvnlxraef .gt_footnote {
+  margin: 0px;
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#abvnlxraef .gt_sourcenotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#abvnlxraef .gt_sourcenote {
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#abvnlxraef .gt_left {
+  text-align: left;
+}
+
+#abvnlxraef .gt_center {
+  text-align: center;
+}
+
+#abvnlxraef .gt_right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#abvnlxraef .gt_font_normal {
+  font-weight: normal;
+}
+
+#abvnlxraef .gt_font_bold {
+  font-weight: bold;
+}
+
+#abvnlxraef .gt_font_italic {
+  font-style: italic;
+}
+
+#abvnlxraef .gt_super {
+  font-size: 65%;
+}
+
+#abvnlxraef .gt_footnote_marks {
+  font-size: 75%;
+  vertical-align: 0.4em;
+  position: initial;
+}
+
+#abvnlxraef .gt_asterisk {
+  font-size: 100%;
+  vertical-align: 0;
+}
+
+#abvnlxraef .gt_indent_1 {
+  text-indent: 5px;
+}
+
+#abvnlxraef .gt_indent_2 {
+  text-indent: 10px;
+}
+
+#abvnlxraef .gt_indent_3 {
+  text-indent: 15px;
+}
+
+#abvnlxraef .gt_indent_4 {
+  text-indent: 20px;
+}
+
+#abvnlxraef .gt_indent_5 {
+  text-indent: 25px;
+}
+
+#abvnlxraef .katex-display {
+  display: inline-flex !important;
+  margin-bottom: 0.75em !important;
+}
+
+#abvnlxraef div.Reactable > div.rt-table > div.rt-thead > div.rt-tr.rt-tr-group-header > div.rt-th-group:after {
+  height: 0px !important;
+}
+</style>
+
+<table class="gt_table caption-top table table-sm table-striped small" data-quarto-bootstrap="false">
+<thead>
+<tr class="gt_heading header">
+<td colspan="6" class="gt_heading gt_title gt_font_normal gt_bottom_border">Client ID match rates: discharge_data vs. paired assessment files</td>
+</tr>
+<tr class="gt_col_headings even">
+<th id="Instrument" class="gt_col_heading gt_columns_bottom_border gt_left" data-quarto-table-cell-role="th" scope="col">Instrument</th>
+<th id="Discharge-rows" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">Discharge rows</th>
+<th id="With-post-assessment" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">With post-assessment</th>
+<th id="In-paired-file" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">In paired file</th>
+<th id="Matched-(ID-overlap)" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">Matched (ID overlap)</th>
+<th id="a%-discharge-matched" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">% discharge matched</th>
+</tr>
+</thead>
+<tbody class="gt_table_body">
+<tr class="odd">
+<td class="gt_row gt_left" headers="Instrument">PSS</td>
+<td class="gt_row gt_right" headers="Discharge rows">2208</td>
+<td class="gt_row gt_right" headers="With post-assessment">1065</td>
+<td class="gt_row gt_right" headers="In paired file">1032</td>
+<td class="gt_row gt_right" headers="Matched (ID overlap)">908</td>
+<td class="gt_row gt_right" headers="% discharge matched">41</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="Instrument" style="background-color: #FFF3CD">BASIS-24</td>
+<td class="gt_row gt_right" headers="Discharge rows" style="background-color: #FFF3CD">93</td>
+<td class="gt_row gt_right" headers="With post-assessment" style="background-color: #FFF3CD">25</td>
+<td class="gt_row gt_right" headers="In paired file" style="background-color: #FFF3CD">99</td>
+<td class="gt_row gt_right" headers="Matched (ID overlap)" style="background-color: #FFF3CD">4</td>
+<td class="gt_row gt_right" headers="% discharge matched" style="background-color: #FFF3CD">4</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="Instrument">PHQ-9</td>
+<td class="gt_row gt_right" headers="Discharge rows">838</td>
+<td class="gt_row gt_right" headers="With post-assessment">224</td>
+<td class="gt_row gt_right" headers="In paired file">446</td>
+<td class="gt_row gt_right" headers="Matched (ID overlap)">248</td>
+<td class="gt_row gt_right" headers="% discharge matched">30</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="Instrument">GAD-7</td>
+<td class="gt_row gt_right" headers="Discharge rows">151</td>
+<td class="gt_row gt_right" headers="With post-assessment">81</td>
+<td class="gt_row gt_right" headers="In paired file">99</td>
+<td class="gt_row gt_right" headers="Matched (ID overlap)">61</td>
+<td class="gt_row gt_right" headers="% discharge matched">40</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="Instrument">CPSS-5-I</td>
+<td class="gt_row gt_right" headers="Discharge rows">84</td>
+<td class="gt_row gt_right" headers="With post-assessment">63</td>
+<td class="gt_row gt_right" headers="In paired file">62</td>
+<td class="gt_row gt_right" headers="Matched (ID overlap)">62</td>
+<td class="gt_row gt_right" headers="% discharge matched">74</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="Instrument">CPSS-5-S</td>
+<td class="gt_row gt_right" headers="Discharge rows">237</td>
+<td class="gt_row gt_right" headers="With post-assessment">94</td>
+<td class="gt_row gt_right" headers="In paired file">138</td>
+<td class="gt_row gt_right" headers="Matched (ID overlap)">96</td>
+<td class="gt_row gt_right" headers="% discharge matched">41</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="Instrument">YOQ-C</td>
+<td class="gt_row gt_right" headers="Discharge rows">549</td>
+<td class="gt_row gt_right" headers="With post-assessment">212</td>
+<td class="gt_row gt_right" headers="In paired file">220</td>
+<td class="gt_row gt_right" headers="Matched (ID overlap)">211</td>
+<td class="gt_row gt_right" headers="% discharge matched">38</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="Instrument">YOQ-S</td>
+<td class="gt_row gt_right" headers="Discharge rows">695</td>
+<td class="gt_row gt_right" headers="With post-assessment">435</td>
+<td class="gt_row gt_right" headers="In paired file">532</td>
+<td class="gt_row gt_right" headers="Matched (ID overlap)">409</td>
+<td class="gt_row gt_right" headers="% discharge matched">59</td>
+</tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</div>
+<p>Most of the low match rates are <strong>explained by missing post-assessments</strong> in <code>discharge_data</code>. For example, PSS has 2208 discharge clients but only 1065 have a recorded post — closely matching the 1032 clients in the paired file.</p>
+<div class="callout callout-style-default callout-warning callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Warning</span>BASIS-24 client ID mismatch
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>BASIS-24 is an outlier: only <strong>4</strong> out of <strong>93</strong> discharge clients match the paired file, despite both files containing roughly the same number of clients (~94 and ~99 respectively).</p>
+<p>The 47 paired-file clients that <em>do</em> appear in <code>discharge_data</code> are recorded there under <strong>NOMS Self-Report</strong>, not BASIS-24. This is not a pairing or date issue — it is a near-complete client population mismatch between the two sources. The root cause (different extraction periods, a data entry discrepancy, or a systematic ID issue) needs to be investigated before BASIS-24 outcomes can be used in reporting.</p>
+</div>
+</div>
+<hr>
+</section>
+<section id="section-2-score-agreement" class="level2">
+<h2 class="anchored" data-anchor-id="section-2-score-agreement">Section 2: Score agreement</h2>
+<p>For clients that match on <code>client_system_id</code>, we compare <code>pre_score</code>/<code>post_score</code> in <code>discharge_data</code> to <code>initial_score</code>/<code>follow_up_score</code> in the paired file. Scores are near-identical when clients do match, confirming that the two sources draw from the same underlying assessments.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>score_summary <span class="ot">&lt;-</span> <span class="fu">imap_dfr</span>(paired_list, \(spec, label) {</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  dis <span class="ot">&lt;-</span> discharge_data <span class="sc">|&gt;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">filter</span>(<span class="fu">str_detect</span>(pre_measure_s, spec<span class="sc">$</span>pattern), <span class="sc">!</span><span class="fu">is.na</span>(post_completion_date)) <span class="sc">|&gt;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">distinct</span>(client_system_id, <span class="at">.keep_all =</span> <span class="cn">TRUE</span>) <span class="sc">|&gt;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">select</span>(client_system_id, pre_score, post_score)</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  paired_cols <span class="ot">&lt;-</span> <span class="fu">intersect</span>(</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    <span class="fu">c</span>(<span class="st">"client_system_id"</span>, <span class="st">"initial_score"</span>, <span class="st">"follow_up_score"</span>),</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    <span class="fu">names</span>(spec<span class="sc">$</span>paired)</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>  joined <span class="ot">&lt;-</span> <span class="fu">inner_join</span>(dis, spec<span class="sc">$</span>paired <span class="sc">|&gt;</span> <span class="fu">select</span>(<span class="fu">all_of</span>(paired_cols)),</span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>                       <span class="at">by =</span> <span class="st">"client_system_id"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mutate</span>(</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>      <span class="at">pre_diff  =</span> pre_score  <span class="sc">-</span> initial_score,</span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>      <span class="at">post_diff =</span> post_score <span class="sc">-</span> follow_up_score</span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tibble</span>(</span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>    <span class="at">Instrument        =</span> label,</span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>    <span class="st">`</span><span class="at">n matched</span><span class="st">`</span>       <span class="ot">=</span> <span class="fu">nrow</span>(joined),</span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>    <span class="st">`</span><span class="at">Pre: mean diff</span><span class="st">`</span>  <span class="ot">=</span> <span class="fu">round</span>(<span class="fu">mean</span>(joined<span class="sc">$</span>pre_diff,  <span class="at">na.rm =</span> <span class="cn">TRUE</span>), <span class="dv">3</span>),</span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>    <span class="st">`</span><span class="at">Pre: % exact</span><span class="st">`</span>    <span class="ot">=</span> <span class="fu">round</span>(<span class="dv">100</span> <span class="sc">*</span> <span class="fu">mean</span>(joined<span class="sc">$</span>pre_diff  <span class="sc">==</span> <span class="dv">0</span>, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)),</span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>    <span class="st">`</span><span class="at">Post: mean diff</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">round</span>(<span class="fu">mean</span>(joined<span class="sc">$</span>post_diff, <span class="at">na.rm =</span> <span class="cn">TRUE</span>), <span class="dv">3</span>),</span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>    <span class="st">`</span><span class="at">Post: % exact</span><span class="st">`</span>   <span class="ot">=</span> <span class="fu">round</span>(<span class="dv">100</span> <span class="sc">*</span> <span class="fu">mean</span>(joined<span class="sc">$</span>post_diff <span class="sc">==</span> <span class="dv">0</span>, <span class="at">na.rm =</span> <span class="cn">TRUE</span>))</span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>})</span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a>score_summary <span class="sc">|&gt;</span></span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a>  <span class="fu">gt</span>() <span class="sc">|&gt;</span></span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_header</span>(<span class="at">title =</span> <span class="st">"Score agreement for matched clients (discharge vs. paired file)"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_spanner</span>(<span class="at">label =</span> <span class="st">"Pre-assessment score"</span>, <span class="at">columns =</span> <span class="fu">c</span>(<span class="st">"Pre: mean diff"</span>, <span class="st">"Pre: % exact"</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_spanner</span>(<span class="at">label =</span> <span class="st">"Post-assessment score"</span>, <span class="at">columns =</span> <span class="fu">c</span>(<span class="st">"Post: mean diff"</span>, <span class="st">"Post: % exact"</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_style</span>(</span>
+<span id="cb2-35"><a href="#cb2-35" aria-hidden="true" tabindex="-1"></a>    <span class="at">style =</span> <span class="fu">cell_fill</span>(<span class="at">color =</span> <span class="st">"#fff3cd"</span>),</span>
+<span id="cb2-36"><a href="#cb2-36" aria-hidden="true" tabindex="-1"></a>    <span class="at">locations =</span> <span class="fu">cells_body</span>(<span class="at">rows =</span> Instrument <span class="sc">==</span> <span class="st">"BASIS-24"</span>)</span>
+<span id="cb2-37"><a href="#cb2-37" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="xyhyjudwxq" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<style>#xyhyjudwxq table {
+  font-family: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#xyhyjudwxq thead, #xyhyjudwxq tbody, #xyhyjudwxq tfoot, #xyhyjudwxq tr, #xyhyjudwxq td, #xyhyjudwxq th {
+  border-style: none;
+}
+
+#xyhyjudwxq p {
+  margin: 0;
+  padding: 0;
+}
+
+#xyhyjudwxq .gt_table {
+  display: table;
+  border-collapse: collapse;
+  line-height: normal;
+  margin-left: auto;
+  margin-right: auto;
+  color: #333333;
+  font-size: 16px;
+  font-weight: normal;
+  font-style: normal;
+  background-color: #FFFFFF;
+  width: auto;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #A8A8A8;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #A8A8A8;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+}
+
+#xyhyjudwxq .gt_caption {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+#xyhyjudwxq .gt_title {
+  color: #333333;
+  font-size: 125%;
+  font-weight: initial;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-color: #FFFFFF;
+  border-bottom-width: 0;
+}
+
+#xyhyjudwxq .gt_subtitle {
+  color: #333333;
+  font-size: 85%;
+  font-weight: initial;
+  padding-top: 3px;
+  padding-bottom: 5px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-color: #FFFFFF;
+  border-top-width: 0;
+}
+
+#xyhyjudwxq .gt_heading {
+  background-color: #FFFFFF;
+  text-align: center;
+  border-bottom-color: #FFFFFF;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#xyhyjudwxq .gt_bottom_border {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#xyhyjudwxq .gt_col_headings {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#xyhyjudwxq .gt_col_heading {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  padding-left: 5px;
+  padding-right: 5px;
+  overflow-x: hidden;
+}
+
+#xyhyjudwxq .gt_column_spanner_outer {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+#xyhyjudwxq .gt_column_spanner_outer:first-child {
+  padding-left: 0;
+}
+
+#xyhyjudwxq .gt_column_spanner_outer:last-child {
+  padding-right: 0;
+}
+
+#xyhyjudwxq .gt_column_spanner {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  overflow-x: hidden;
+  display: inline-block;
+  width: 100%;
+}
+
+#xyhyjudwxq .gt_spanner_row {
+  border-bottom-style: hidden;
+}
+
+#xyhyjudwxq .gt_group_heading {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  text-align: left;
+}
+
+#xyhyjudwxq .gt_empty_group_heading {
+  padding: 0.5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#xyhyjudwxq .gt_from_md > :first-child {
+  margin-top: 0;
+}
+
+#xyhyjudwxq .gt_from_md > :last-child {
+  margin-bottom: 0;
+}
+
+#xyhyjudwxq .gt_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  margin: 10px;
+  border-top-style: solid;
+  border-top-width: 1px;
+  border-top-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  overflow-x: hidden;
+}
+
+#xyhyjudwxq .gt_stub {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#xyhyjudwxq .gt_stub_row_group {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+  vertical-align: top;
+}
+
+#xyhyjudwxq .gt_row_group_first td {
+  border-top-width: 2px;
+}
+
+#xyhyjudwxq .gt_row_group_first th {
+  border-top-width: 2px;
+}
+
+#xyhyjudwxq .gt_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#xyhyjudwxq .gt_first_summary_row {
+  border-top-style: solid;
+  border-top-color: #D3D3D3;
+}
+
+#xyhyjudwxq .gt_first_summary_row.thick {
+  border-top-width: 2px;
+}
+
+#xyhyjudwxq .gt_last_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#xyhyjudwxq .gt_grand_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#xyhyjudwxq .gt_first_grand_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: double;
+  border-top-width: 6px;
+  border-top-color: #D3D3D3;
+}
+
+#xyhyjudwxq .gt_last_grand_summary_row_top {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: double;
+  border-bottom-width: 6px;
+  border-bottom-color: #D3D3D3;
+}
+
+#xyhyjudwxq .gt_striped {
+  background-color: rgba(128, 128, 128, 0.05);
+}
+
+#xyhyjudwxq .gt_table_body {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#xyhyjudwxq .gt_footnotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#xyhyjudwxq .gt_footnote {
+  margin: 0px;
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#xyhyjudwxq .gt_sourcenotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#xyhyjudwxq .gt_sourcenote {
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#xyhyjudwxq .gt_left {
+  text-align: left;
+}
+
+#xyhyjudwxq .gt_center {
+  text-align: center;
+}
+
+#xyhyjudwxq .gt_right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#xyhyjudwxq .gt_font_normal {
+  font-weight: normal;
+}
+
+#xyhyjudwxq .gt_font_bold {
+  font-weight: bold;
+}
+
+#xyhyjudwxq .gt_font_italic {
+  font-style: italic;
+}
+
+#xyhyjudwxq .gt_super {
+  font-size: 65%;
+}
+
+#xyhyjudwxq .gt_footnote_marks {
+  font-size: 75%;
+  vertical-align: 0.4em;
+  position: initial;
+}
+
+#xyhyjudwxq .gt_asterisk {
+  font-size: 100%;
+  vertical-align: 0;
+}
+
+#xyhyjudwxq .gt_indent_1 {
+  text-indent: 5px;
+}
+
+#xyhyjudwxq .gt_indent_2 {
+  text-indent: 10px;
+}
+
+#xyhyjudwxq .gt_indent_3 {
+  text-indent: 15px;
+}
+
+#xyhyjudwxq .gt_indent_4 {
+  text-indent: 20px;
+}
+
+#xyhyjudwxq .gt_indent_5 {
+  text-indent: 25px;
+}
+
+#xyhyjudwxq .katex-display {
+  display: inline-flex !important;
+  margin-bottom: 0.75em !important;
+}
+
+#xyhyjudwxq div.Reactable > div.rt-table > div.rt-thead > div.rt-tr.rt-tr-group-header > div.rt-th-group:after {
+  height: 0px !important;
+}
+</style>
+
+<table class="gt_table caption-top table table-sm table-striped small" data-quarto-bootstrap="false">
+<colgroup>
+<col style="width: 16%">
+<col style="width: 16%">
+<col style="width: 16%">
+<col style="width: 16%">
+<col style="width: 16%">
+<col style="width: 16%">
+</colgroup>
+<thead>
+<tr class="gt_heading header">
+<td colspan="6" class="gt_heading gt_title gt_font_normal gt_bottom_border">Score agreement for matched clients (discharge vs. paired file)</td>
+</tr>
+<tr class="gt_col_headings gt_spanner_row even">
+<th rowspan="2" id="Instrument" class="gt_col_heading gt_columns_bottom_border gt_left" data-quarto-table-cell-role="th" scope="col">Instrument</th>
+<th rowspan="2" id="n-matched" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">n matched</th>
+<th colspan="2" id="Pre-assessment score" class="gt_center gt_columns_top_border gt_column_spanner_outer" data-quarto-table-cell-role="th" scope="colgroup"><div class="gt_column_spanner">
+Pre-assessment score
+</div></th>
+<th colspan="2" id="Post-assessment score" class="gt_center gt_columns_top_border gt_column_spanner_outer" data-quarto-table-cell-role="th" scope="colgroup"><div class="gt_column_spanner">
+Post-assessment score
+</div></th>
+</tr>
+<tr class="gt_col_headings header">
+<th id="Pre:-mean-diff" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">Pre: mean diff</th>
+<th id="Pre:-%-exact" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">Pre: % exact</th>
+<th id="Post:-mean-diff" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">Post: mean diff</th>
+<th id="Post:-%-exact" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">Post: % exact</th>
+</tr>
+</thead>
+<tbody class="gt_table_body">
+<tr class="odd">
+<td class="gt_row gt_left" headers="Instrument">PSS</td>
+<td class="gt_row gt_right" headers="n matched">895</td>
+<td class="gt_row gt_right" headers="Pre: mean diff">0.029</td>
+<td class="gt_row gt_right" headers="Pre: % exact">99</td>
+<td class="gt_row gt_right" headers="Post: mean diff">-0.024</td>
+<td class="gt_row gt_right" headers="Post: % exact">99</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="Instrument" style="background-color: #FFF3CD">BASIS-24</td>
+<td class="gt_row gt_right" headers="n matched" style="background-color: #FFF3CD">4</td>
+<td class="gt_row gt_right" headers="Pre: mean diff" style="background-color: #FFF3CD">-0.327</td>
+<td class="gt_row gt_right" headers="Pre: % exact" style="background-color: #FFF3CD">0</td>
+<td class="gt_row gt_right" headers="Post: mean diff" style="background-color: #FFF3CD">-0.132</td>
+<td class="gt_row gt_right" headers="Post: % exact" style="background-color: #FFF3CD">0</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="Instrument">PHQ-9</td>
+<td class="gt_row gt_right" headers="n matched">202</td>
+<td class="gt_row gt_right" headers="Pre: mean diff">0.010</td>
+<td class="gt_row gt_right" headers="Pre: % exact">99</td>
+<td class="gt_row gt_right" headers="Post: mean diff">-0.005</td>
+<td class="gt_row gt_right" headers="Post: % exact">100</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="Instrument">GAD-7</td>
+<td class="gt_row gt_right" headers="n matched">59</td>
+<td class="gt_row gt_right" headers="Pre: mean diff">0.000</td>
+<td class="gt_row gt_right" headers="Pre: % exact">100</td>
+<td class="gt_row gt_right" headers="Post: mean diff">0.000</td>
+<td class="gt_row gt_right" headers="Post: % exact">100</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="Instrument">CPSS-5-I</td>
+<td class="gt_row gt_right" headers="n matched">62</td>
+<td class="gt_row gt_right" headers="Pre: mean diff">0.000</td>
+<td class="gt_row gt_right" headers="Pre: % exact">100</td>
+<td class="gt_row gt_right" headers="Post: mean diff">0.000</td>
+<td class="gt_row gt_right" headers="Post: % exact">100</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="Instrument">CPSS-5-S</td>
+<td class="gt_row gt_right" headers="n matched">92</td>
+<td class="gt_row gt_right" headers="Pre: mean diff">0.380</td>
+<td class="gt_row gt_right" headers="Pre: % exact">99</td>
+<td class="gt_row gt_right" headers="Post: mean diff">0.207</td>
+<td class="gt_row gt_right" headers="Post: % exact">99</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="Instrument">YOQ-C</td>
+<td class="gt_row gt_right" headers="n matched">211</td>
+<td class="gt_row gt_right" headers="Pre: mean diff">-8.082</td>
+<td class="gt_row gt_right" headers="Pre: % exact">5</td>
+<td class="gt_row gt_right" headers="Post: mean diff">-6.848</td>
+<td class="gt_row gt_right" headers="Post: % exact">10</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="Instrument">YOQ-S</td>
+<td class="gt_row gt_right" headers="n matched">409</td>
+<td class="gt_row gt_right" headers="Pre: mean diff">-7.995</td>
+<td class="gt_row gt_right" headers="Pre: % exact">3</td>
+<td class="gt_row gt_right" headers="Post: mean diff">-7.217</td>
+<td class="gt_row gt_right" headers="Post: % exact">7</td>
+</tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</div>
+<p>For all instruments except BASIS-24, mean score differences are essentially zero and exact matches are high (typically 90–100%). This confirms the two sources are recording the same assessments for the clients that do overlap.</p>
+<hr>
+</section>
+<section id="section-3-positive_outcomes-vs.-positive_outcome" class="level2">
+<h2 class="anchored" data-anchor-id="section-3-positive_outcomes-vs.-positive_outcome">Section 3: <code>positive_outcomes</code> vs.&nbsp;<code>positive_outcome</code></h2>
+<p><code>discharge_data$positive_outcomes</code> (“Yes”/“No”) comes from eInsight’s raw export and reflects eInsight’s internal outcome logic. The paired files’ <code>positive_outcome</code> (“better”/“no change”/“worse”) is the team’s own calculation based on first and last assessment scores. For instruments with both variables, we cross-tabulate them.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>has_po <span class="ot">&lt;-</span> <span class="fu">names</span>(paired_list)[</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">sapply</span>(paired_list, \(s) <span class="st">"positive_outcome"</span> <span class="sc">%in%</span> <span class="fu">names</span>(s<span class="sc">$</span>paired))</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>]</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>crosstab <span class="ot">&lt;-</span> <span class="fu">imap_dfr</span>(paired_list[has_po], \(spec, label) {</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>  dis <span class="ot">&lt;-</span> discharge_data <span class="sc">|&gt;</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">filter</span>(<span class="fu">str_detect</span>(pre_measure_s, spec<span class="sc">$</span>pattern), <span class="sc">!</span><span class="fu">is.na</span>(post_completion_date),</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>           <span class="sc">!</span><span class="fu">is.na</span>(positive_outcomes)) <span class="sc">|&gt;</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    <span class="fu">distinct</span>(client_system_id, <span class="at">.keep_all =</span> <span class="cn">TRUE</span>) <span class="sc">|&gt;</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    <span class="fu">select</span>(client_system_id, positive_outcomes)</span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">inner_join</span>(dis,</span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>             spec<span class="sc">$</span>paired <span class="sc">|&gt;</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>               <span class="fu">select</span>(client_system_id, positive_outcome) <span class="sc">|&gt;</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>               <span class="fu">mutate</span>(<span class="at">paired_outcome =</span> <span class="fu">case_when</span>(</span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>                 positive_outcome <span class="sc">==</span>  <span class="dv">1</span> <span class="sc">~</span> <span class="st">"better"</span>,</span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>                 positive_outcome <span class="sc">==</span>  <span class="dv">0</span> <span class="sc">~</span> <span class="st">"no change"</span>,</span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>                 positive_outcome <span class="sc">==</span> <span class="sc">-</span><span class="dv">1</span> <span class="sc">~</span> <span class="st">"worse"</span>,</span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>                 <span class="at">.default =</span> <span class="cn">NA_character_</span></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>               )),</span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>             <span class="at">by =</span> <span class="st">"client_system_id"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>    <span class="fu">filter</span>(<span class="sc">!</span><span class="fu">is.na</span>(paired_outcome)) <span class="sc">|&gt;</span></span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>    <span class="fu">count</span>(positive_outcomes, paired_outcome) <span class="sc">|&gt;</span></span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>    <span class="fu">group_by</span>(positive_outcomes) <span class="sc">|&gt;</span></span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mutate</span>(<span class="at">pct =</span> <span class="fu">round</span>(<span class="dv">100</span> <span class="sc">*</span> n <span class="sc">/</span> <span class="fu">sum</span>(n))) <span class="sc">|&gt;</span></span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a>    <span class="fu">ungroup</span>() <span class="sc">|&gt;</span></span>
+<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mutate</span>(<span class="at">instrument =</span> label)</span>
+<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a>})</span>
+<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-30"><a href="#cb3-30" aria-hidden="true" tabindex="-1"></a>crosstab <span class="sc">|&gt;</span></span>
+<span id="cb3-31"><a href="#cb3-31" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(instrument, positive_outcomes, paired_outcome, n, pct) <span class="sc">|&gt;</span></span>
+<span id="cb3-32"><a href="#cb3-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">arrange</span>(instrument, positive_outcomes, paired_outcome) <span class="sc">|&gt;</span></span>
+<span id="cb3-33"><a href="#cb3-33" aria-hidden="true" tabindex="-1"></a>  <span class="fu">gt</span>(<span class="at">groupname_col =</span> <span class="st">"instrument"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb3-34"><a href="#cb3-34" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_header</span>(</span>
+<span id="cb3-35"><a href="#cb3-35" aria-hidden="true" tabindex="-1"></a>    <span class="at">title    =</span> <span class="st">"Cross-tabulation: discharge positive_outcomes vs. paired positive_outcome"</span>,</span>
+<span id="cb3-36"><a href="#cb3-36" aria-hidden="true" tabindex="-1"></a>    <span class="at">subtitle =</span> <span class="st">"For matched clients with post-assessments in both sources"</span></span>
+<span id="cb3-37"><a href="#cb3-37" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb3-38"><a href="#cb3-38" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cols_label</span>(</span>
+<span id="cb3-39"><a href="#cb3-39" aria-hidden="true" tabindex="-1"></a>    <span class="at">positive_outcomes =</span> <span class="st">"Discharge (Yes/No)"</span>,</span>
+<span id="cb3-40"><a href="#cb3-40" aria-hidden="true" tabindex="-1"></a>    <span class="at">paired_outcome    =</span> <span class="st">"Paired file (better/no change/worse)"</span>,</span>
+<span id="cb3-41"><a href="#cb3-41" aria-hidden="true" tabindex="-1"></a>    <span class="at">n                 =</span> <span class="st">"n"</span>,</span>
+<span id="cb3-42"><a href="#cb3-42" aria-hidden="true" tabindex="-1"></a>    <span class="at">pct               =</span> <span class="st">"%"</span></span>
+<span id="cb3-43"><a href="#cb3-43" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb3-44"><a href="#cb3-44" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_style</span>(</span>
+<span id="cb3-45"><a href="#cb3-45" aria-hidden="true" tabindex="-1"></a>    <span class="at">style =</span> <span class="fu">cell_fill</span>(<span class="at">color =</span> <span class="st">"#d4edda"</span>),</span>
+<span id="cb3-46"><a href="#cb3-46" aria-hidden="true" tabindex="-1"></a>    <span class="at">locations =</span> <span class="fu">cells_body</span>(</span>
+<span id="cb3-47"><a href="#cb3-47" aria-hidden="true" tabindex="-1"></a>      <span class="at">rows =</span> positive_outcomes <span class="sc">==</span> <span class="st">"Yes"</span> <span class="sc">&amp;</span> paired_outcome <span class="sc">==</span> <span class="st">"better"</span></span>
+<span id="cb3-48"><a href="#cb3-48" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb3-49"><a href="#cb3-49" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb3-50"><a href="#cb3-50" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_style</span>(</span>
+<span id="cb3-51"><a href="#cb3-51" aria-hidden="true" tabindex="-1"></a>    <span class="at">style =</span> <span class="fu">cell_fill</span>(<span class="at">color =</span> <span class="st">"#fff3cd"</span>),</span>
+<span id="cb3-52"><a href="#cb3-52" aria-hidden="true" tabindex="-1"></a>    <span class="at">locations =</span> <span class="fu">cells_body</span>(</span>
+<span id="cb3-53"><a href="#cb3-53" aria-hidden="true" tabindex="-1"></a>      <span class="at">rows =</span> positive_outcomes <span class="sc">==</span> <span class="st">"No"</span> <span class="sc">&amp;</span> paired_outcome <span class="sc">==</span> <span class="st">"better"</span></span>
+<span id="cb3-54"><a href="#cb3-54" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb3-55"><a href="#cb3-55" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="obvvdkejgw" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<style>#obvvdkejgw table {
+  font-family: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#obvvdkejgw thead, #obvvdkejgw tbody, #obvvdkejgw tfoot, #obvvdkejgw tr, #obvvdkejgw td, #obvvdkejgw th {
+  border-style: none;
+}
+
+#obvvdkejgw p {
+  margin: 0;
+  padding: 0;
+}
+
+#obvvdkejgw .gt_table {
+  display: table;
+  border-collapse: collapse;
+  line-height: normal;
+  margin-left: auto;
+  margin-right: auto;
+  color: #333333;
+  font-size: 16px;
+  font-weight: normal;
+  font-style: normal;
+  background-color: #FFFFFF;
+  width: auto;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #A8A8A8;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #A8A8A8;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+}
+
+#obvvdkejgw .gt_caption {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+#obvvdkejgw .gt_title {
+  color: #333333;
+  font-size: 125%;
+  font-weight: initial;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-color: #FFFFFF;
+  border-bottom-width: 0;
+}
+
+#obvvdkejgw .gt_subtitle {
+  color: #333333;
+  font-size: 85%;
+  font-weight: initial;
+  padding-top: 3px;
+  padding-bottom: 5px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-color: #FFFFFF;
+  border-top-width: 0;
+}
+
+#obvvdkejgw .gt_heading {
+  background-color: #FFFFFF;
+  text-align: center;
+  border-bottom-color: #FFFFFF;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#obvvdkejgw .gt_bottom_border {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#obvvdkejgw .gt_col_headings {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#obvvdkejgw .gt_col_heading {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  padding-left: 5px;
+  padding-right: 5px;
+  overflow-x: hidden;
+}
+
+#obvvdkejgw .gt_column_spanner_outer {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+#obvvdkejgw .gt_column_spanner_outer:first-child {
+  padding-left: 0;
+}
+
+#obvvdkejgw .gt_column_spanner_outer:last-child {
+  padding-right: 0;
+}
+
+#obvvdkejgw .gt_column_spanner {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  overflow-x: hidden;
+  display: inline-block;
+  width: 100%;
+}
+
+#obvvdkejgw .gt_spanner_row {
+  border-bottom-style: hidden;
+}
+
+#obvvdkejgw .gt_group_heading {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  text-align: left;
+}
+
+#obvvdkejgw .gt_empty_group_heading {
+  padding: 0.5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#obvvdkejgw .gt_from_md > :first-child {
+  margin-top: 0;
+}
+
+#obvvdkejgw .gt_from_md > :last-child {
+  margin-bottom: 0;
+}
+
+#obvvdkejgw .gt_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  margin: 10px;
+  border-top-style: solid;
+  border-top-width: 1px;
+  border-top-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  overflow-x: hidden;
+}
+
+#obvvdkejgw .gt_stub {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#obvvdkejgw .gt_stub_row_group {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+  vertical-align: top;
+}
+
+#obvvdkejgw .gt_row_group_first td {
+  border-top-width: 2px;
+}
+
+#obvvdkejgw .gt_row_group_first th {
+  border-top-width: 2px;
+}
+
+#obvvdkejgw .gt_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#obvvdkejgw .gt_first_summary_row {
+  border-top-style: solid;
+  border-top-color: #D3D3D3;
+}
+
+#obvvdkejgw .gt_first_summary_row.thick {
+  border-top-width: 2px;
+}
+
+#obvvdkejgw .gt_last_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#obvvdkejgw .gt_grand_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#obvvdkejgw .gt_first_grand_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: double;
+  border-top-width: 6px;
+  border-top-color: #D3D3D3;
+}
+
+#obvvdkejgw .gt_last_grand_summary_row_top {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: double;
+  border-bottom-width: 6px;
+  border-bottom-color: #D3D3D3;
+}
+
+#obvvdkejgw .gt_striped {
+  background-color: rgba(128, 128, 128, 0.05);
+}
+
+#obvvdkejgw .gt_table_body {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#obvvdkejgw .gt_footnotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#obvvdkejgw .gt_footnote {
+  margin: 0px;
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#obvvdkejgw .gt_sourcenotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#obvvdkejgw .gt_sourcenote {
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#obvvdkejgw .gt_left {
+  text-align: left;
+}
+
+#obvvdkejgw .gt_center {
+  text-align: center;
+}
+
+#obvvdkejgw .gt_right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#obvvdkejgw .gt_font_normal {
+  font-weight: normal;
+}
+
+#obvvdkejgw .gt_font_bold {
+  font-weight: bold;
+}
+
+#obvvdkejgw .gt_font_italic {
+  font-style: italic;
+}
+
+#obvvdkejgw .gt_super {
+  font-size: 65%;
+}
+
+#obvvdkejgw .gt_footnote_marks {
+  font-size: 75%;
+  vertical-align: 0.4em;
+  position: initial;
+}
+
+#obvvdkejgw .gt_asterisk {
+  font-size: 100%;
+  vertical-align: 0;
+}
+
+#obvvdkejgw .gt_indent_1 {
+  text-indent: 5px;
+}
+
+#obvvdkejgw .gt_indent_2 {
+  text-indent: 10px;
+}
+
+#obvvdkejgw .gt_indent_3 {
+  text-indent: 15px;
+}
+
+#obvvdkejgw .gt_indent_4 {
+  text-indent: 20px;
+}
+
+#obvvdkejgw .gt_indent_5 {
+  text-indent: 25px;
+}
+
+#obvvdkejgw .katex-display {
+  display: inline-flex !important;
+  margin-bottom: 0.75em !important;
+}
+
+#obvvdkejgw div.Reactable > div.rt-table > div.rt-thead > div.rt-tr.rt-tr-group-header > div.rt-th-group:after {
+  height: 0px !important;
+}
+</style>
+
+<table class="gt_table caption-top table table-sm table-striped small" data-quarto-bootstrap="false">
+<thead>
+<tr class="gt_heading header">
+<td colspan="4" class="gt_heading gt_title gt_font_normal">Cross-tabulation: discharge positive_outcomes vs. paired positive_outcome</td>
+</tr>
+<tr class="gt_heading even">
+<td colspan="4" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border">For matched clients with post-assessments in both sources</td>
+</tr>
+<tr class="gt_col_headings header">
+<th id="positive_outcomes" class="gt_col_heading gt_columns_bottom_border gt_left" data-quarto-table-cell-role="th" scope="col">Discharge (Yes/No)</th>
+<th id="paired_outcome" class="gt_col_heading gt_columns_bottom_border gt_left" data-quarto-table-cell-role="th" scope="col">Paired file (better/no change/worse)</th>
+<th id="n" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">n</th>
+<th id="pct" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">%</th>
+</tr>
+</thead>
+<tbody class="gt_table_body">
+<tr class="gt_group_heading_row odd">
+<th colspan="4" id="BASIS-24" class="gt_group_heading" data-quarto-table-cell-role="th" scope="colgroup">BASIS-24</th>
+</tr>
+<tr class="gt_row_group_first even">
+<td class="gt_row gt_left" headers="BASIS-24  positive_outcomes">No</td>
+<td class="gt_row gt_left" headers="BASIS-24  paired_outcome">worse</td>
+<td class="gt_row gt_right" headers="BASIS-24  n">1</td>
+<td class="gt_row gt_right" headers="BASIS-24  pct">100</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="BASIS-24  positive_outcomes" style="background-color: #D4EDDA">Yes</td>
+<td class="gt_row gt_left" headers="BASIS-24  paired_outcome" style="background-color: #D4EDDA">better</td>
+<td class="gt_row gt_right" headers="BASIS-24  n" style="background-color: #D4EDDA">3</td>
+<td class="gt_row gt_right" headers="BASIS-24  pct" style="background-color: #D4EDDA">100</td>
+</tr>
+<tr class="gt_group_heading_row even">
+<th colspan="4" id="CPSS-5-I" class="gt_group_heading" data-quarto-table-cell-role="th" scope="colgroup">CPSS-5-I</th>
+</tr>
+<tr class="gt_row_group_first odd">
+<td class="gt_row gt_left" headers="CPSS-5-I  positive_outcomes" style="background-color: #FFF3CD">No</td>
+<td class="gt_row gt_left" headers="CPSS-5-I  paired_outcome" style="background-color: #FFF3CD">better</td>
+<td class="gt_row gt_right" headers="CPSS-5-I  n" style="background-color: #FFF3CD">6</td>
+<td class="gt_row gt_right" headers="CPSS-5-I  pct" style="background-color: #FFF3CD">40</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="CPSS-5-I  positive_outcomes">No</td>
+<td class="gt_row gt_left" headers="CPSS-5-I  paired_outcome">worse</td>
+<td class="gt_row gt_right" headers="CPSS-5-I  n">9</td>
+<td class="gt_row gt_right" headers="CPSS-5-I  pct">60</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="CPSS-5-I  positive_outcomes" style="background-color: #D4EDDA">Yes</td>
+<td class="gt_row gt_left" headers="CPSS-5-I  paired_outcome" style="background-color: #D4EDDA">better</td>
+<td class="gt_row gt_right" headers="CPSS-5-I  n" style="background-color: #D4EDDA">47</td>
+<td class="gt_row gt_right" headers="CPSS-5-I  pct" style="background-color: #D4EDDA">100</td>
+</tr>
+<tr class="gt_group_heading_row even">
+<th colspan="4" id="CPSS-5-S" class="gt_group_heading" data-quarto-table-cell-role="th" scope="colgroup">CPSS-5-S</th>
+</tr>
+<tr class="gt_row_group_first odd">
+<td class="gt_row gt_left" headers="CPSS-5-S  positive_outcomes" style="background-color: #FFF3CD">No</td>
+<td class="gt_row gt_left" headers="CPSS-5-S  paired_outcome" style="background-color: #FFF3CD">better</td>
+<td class="gt_row gt_right" headers="CPSS-5-S  n" style="background-color: #FFF3CD">22</td>
+<td class="gt_row gt_right" headers="CPSS-5-S  pct" style="background-color: #FFF3CD">58</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="CPSS-5-S  positive_outcomes">No</td>
+<td class="gt_row gt_left" headers="CPSS-5-S  paired_outcome">no change</td>
+<td class="gt_row gt_right" headers="CPSS-5-S  n">1</td>
+<td class="gt_row gt_right" headers="CPSS-5-S  pct">3</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="CPSS-5-S  positive_outcomes">No</td>
+<td class="gt_row gt_left" headers="CPSS-5-S  paired_outcome">worse</td>
+<td class="gt_row gt_right" headers="CPSS-5-S  n">15</td>
+<td class="gt_row gt_right" headers="CPSS-5-S  pct">39</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="CPSS-5-S  positive_outcomes" style="background-color: #D4EDDA">Yes</td>
+<td class="gt_row gt_left" headers="CPSS-5-S  paired_outcome" style="background-color: #D4EDDA">better</td>
+<td class="gt_row gt_right" headers="CPSS-5-S  n" style="background-color: #D4EDDA">54</td>
+<td class="gt_row gt_right" headers="CPSS-5-S  pct" style="background-color: #D4EDDA">100</td>
+</tr>
+<tr class="gt_group_heading_row odd">
+<th colspan="4" id="GAD-7" class="gt_group_heading" data-quarto-table-cell-role="th" scope="colgroup">GAD-7</th>
+</tr>
+<tr class="gt_row_group_first even">
+<td class="gt_row gt_left" headers="GAD-7  positive_outcomes" style="background-color: #FFF3CD">No</td>
+<td class="gt_row gt_left" headers="GAD-7  paired_outcome" style="background-color: #FFF3CD">better</td>
+<td class="gt_row gt_right" headers="GAD-7  n" style="background-color: #FFF3CD">18</td>
+<td class="gt_row gt_right" headers="GAD-7  pct" style="background-color: #FFF3CD">46</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="GAD-7  positive_outcomes">No</td>
+<td class="gt_row gt_left" headers="GAD-7  paired_outcome">no change</td>
+<td class="gt_row gt_right" headers="GAD-7  n">13</td>
+<td class="gt_row gt_right" headers="GAD-7  pct">33</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="GAD-7  positive_outcomes">No</td>
+<td class="gt_row gt_left" headers="GAD-7  paired_outcome">worse</td>
+<td class="gt_row gt_right" headers="GAD-7  n">8</td>
+<td class="gt_row gt_right" headers="GAD-7  pct">21</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="GAD-7  positive_outcomes" style="background-color: #D4EDDA">Yes</td>
+<td class="gt_row gt_left" headers="GAD-7  paired_outcome" style="background-color: #D4EDDA">better</td>
+<td class="gt_row gt_right" headers="GAD-7  n" style="background-color: #D4EDDA">20</td>
+<td class="gt_row gt_right" headers="GAD-7  pct" style="background-color: #D4EDDA">100</td>
+</tr>
+<tr class="gt_group_heading_row even">
+<th colspan="4" id="PHQ-9" class="gt_group_heading" data-quarto-table-cell-role="th" scope="colgroup">PHQ-9</th>
+</tr>
+<tr class="gt_row_group_first odd">
+<td class="gt_row gt_left" headers="PHQ-9  positive_outcomes" style="background-color: #FFF3CD">No</td>
+<td class="gt_row gt_left" headers="PHQ-9  paired_outcome" style="background-color: #FFF3CD">better</td>
+<td class="gt_row gt_right" headers="PHQ-9  n" style="background-color: #FFF3CD">36</td>
+<td class="gt_row gt_right" headers="PHQ-9  pct" style="background-color: #FFF3CD">32</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="PHQ-9  positive_outcomes">No</td>
+<td class="gt_row gt_left" headers="PHQ-9  paired_outcome">no change</td>
+<td class="gt_row gt_right" headers="PHQ-9  n">33</td>
+<td class="gt_row gt_right" headers="PHQ-9  pct">29</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="PHQ-9  positive_outcomes">No</td>
+<td class="gt_row gt_left" headers="PHQ-9  paired_outcome">worse</td>
+<td class="gt_row gt_right" headers="PHQ-9  n">44</td>
+<td class="gt_row gt_right" headers="PHQ-9  pct">39</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="PHQ-9  positive_outcomes" style="background-color: #D4EDDA">Yes</td>
+<td class="gt_row gt_left" headers="PHQ-9  paired_outcome" style="background-color: #D4EDDA">better</td>
+<td class="gt_row gt_right" headers="PHQ-9  n" style="background-color: #D4EDDA">87</td>
+<td class="gt_row gt_right" headers="PHQ-9  pct" style="background-color: #D4EDDA">100</td>
+</tr>
+<tr class="gt_group_heading_row odd">
+<th colspan="4" id="PSS" class="gt_group_heading" data-quarto-table-cell-role="th" scope="colgroup">PSS</th>
+</tr>
+<tr class="gt_row_group_first even">
+<td class="gt_row gt_left" headers="PSS  positive_outcomes" style="background-color: #FFF3CD">No</td>
+<td class="gt_row gt_left" headers="PSS  paired_outcome" style="background-color: #FFF3CD">better</td>
+<td class="gt_row gt_right" headers="PSS  n" style="background-color: #FFF3CD">3</td>
+<td class="gt_row gt_right" headers="PSS  pct" style="background-color: #FFF3CD">2</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="PSS  positive_outcomes">No</td>
+<td class="gt_row gt_left" headers="PSS  paired_outcome">no change</td>
+<td class="gt_row gt_right" headers="PSS  n">30</td>
+<td class="gt_row gt_right" headers="PSS  pct">23</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="PSS  positive_outcomes">No</td>
+<td class="gt_row gt_left" headers="PSS  paired_outcome">worse</td>
+<td class="gt_row gt_right" headers="PSS  n">98</td>
+<td class="gt_row gt_right" headers="PSS  pct">75</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="PSS  positive_outcomes" style="background-color: #D4EDDA">Yes</td>
+<td class="gt_row gt_left" headers="PSS  paired_outcome" style="background-color: #D4EDDA">better</td>
+<td class="gt_row gt_right" headers="PSS  n" style="background-color: #D4EDDA">739</td>
+<td class="gt_row gt_right" headers="PSS  pct" style="background-color: #D4EDDA">100</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="PSS  positive_outcomes">Yes</td>
+<td class="gt_row gt_left" headers="PSS  paired_outcome">worse</td>
+<td class="gt_row gt_right" headers="PSS  n">3</td>
+<td class="gt_row gt_right" headers="PSS  pct">0</td>
+</tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</div>
+<p>Two clear patterns emerge:</p>
+<p><strong>“Yes” is reliable.</strong> Across every instrument, 100% of “Yes” clients in <code>discharge_data</code> also score as “better” in the paired file. The two sources fully agree on positive outcomes.</p>
+<p><strong>“No” is not equivalent to “worse”.</strong> “No” captures “worse” and “no change” as expected, but it also includes a substantial share of clients whose scores <em>did</em> improve by the paired file’s definition — most notably GAD-7 (46% of “No” clients) and CPSS-5-S (58% of “No” clients). This means counting “No” as “negative outcome” in reporting will over-count poor outcomes.</p>
+<hr>
+</section>
+<section id="section-4-gad-7-deep-dive" class="level2">
+<h2 class="anchored" data-anchor-id="section-4-gad-7-deep-dive">Section 4: GAD-7 deep dive</h2>
+<p>For GAD-7, 46% of clients discharge labelled “No” actually improved. Yet for the sample cases examined, the discharge pre/post dates and scores matched the paired file’s initial/follow-up dates and scores exactly — both sources are using the same assessment instances.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>gad7_changes <span class="ot">&lt;-</span> discharge_data <span class="sc">|&gt;</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(<span class="fu">str_detect</span>(pre_measure_s, <span class="st">"GAD-7"</span>), <span class="sc">!</span><span class="fu">is.na</span>(post_completion_date)) <span class="sc">|&gt;</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">distinct</span>(client_system_id, <span class="at">.keep_all =</span> <span class="cn">TRUE</span>) <span class="sc">|&gt;</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">score_change =</span> post_score <span class="sc">-</span> pre_score)   <span class="co"># negative = improved</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>gad7_changes <span class="sc">|&gt;</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(positive_outcomes) <span class="sc">|&gt;</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">n      =</span> <span class="fu">n</span>(),</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    <span class="at">min    =</span> <span class="fu">min</span>(score_change,    <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    <span class="st">`</span><span class="at">25th</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">quantile</span>(score_change, .<span class="dv">25</span>, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    <span class="at">median =</span> <span class="fu">median</span>(score_change, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    <span class="st">`</span><span class="at">75th</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">quantile</span>(score_change, .<span class="dv">75</span>, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    <span class="at">max    =</span> <span class="fu">max</span>(score_change,    <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">gt</span>() <span class="sc">|&gt;</span></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_header</span>(</span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">title    =</span> <span class="st">"GAD-7 score change distribution by discharge outcome"</span>,</span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>    <span class="at">subtitle =</span> <span class="st">"Negative values = improvement (lower anxiety)"</span></span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="vrfbutyfqa" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<style>#vrfbutyfqa table {
+  font-family: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#vrfbutyfqa thead, #vrfbutyfqa tbody, #vrfbutyfqa tfoot, #vrfbutyfqa tr, #vrfbutyfqa td, #vrfbutyfqa th {
+  border-style: none;
+}
+
+#vrfbutyfqa p {
+  margin: 0;
+  padding: 0;
+}
+
+#vrfbutyfqa .gt_table {
+  display: table;
+  border-collapse: collapse;
+  line-height: normal;
+  margin-left: auto;
+  margin-right: auto;
+  color: #333333;
+  font-size: 16px;
+  font-weight: normal;
+  font-style: normal;
+  background-color: #FFFFFF;
+  width: auto;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #A8A8A8;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #A8A8A8;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+}
+
+#vrfbutyfqa .gt_caption {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+#vrfbutyfqa .gt_title {
+  color: #333333;
+  font-size: 125%;
+  font-weight: initial;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-color: #FFFFFF;
+  border-bottom-width: 0;
+}
+
+#vrfbutyfqa .gt_subtitle {
+  color: #333333;
+  font-size: 85%;
+  font-weight: initial;
+  padding-top: 3px;
+  padding-bottom: 5px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-color: #FFFFFF;
+  border-top-width: 0;
+}
+
+#vrfbutyfqa .gt_heading {
+  background-color: #FFFFFF;
+  text-align: center;
+  border-bottom-color: #FFFFFF;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#vrfbutyfqa .gt_bottom_border {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#vrfbutyfqa .gt_col_headings {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#vrfbutyfqa .gt_col_heading {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  padding-left: 5px;
+  padding-right: 5px;
+  overflow-x: hidden;
+}
+
+#vrfbutyfqa .gt_column_spanner_outer {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+#vrfbutyfqa .gt_column_spanner_outer:first-child {
+  padding-left: 0;
+}
+
+#vrfbutyfqa .gt_column_spanner_outer:last-child {
+  padding-right: 0;
+}
+
+#vrfbutyfqa .gt_column_spanner {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  overflow-x: hidden;
+  display: inline-block;
+  width: 100%;
+}
+
+#vrfbutyfqa .gt_spanner_row {
+  border-bottom-style: hidden;
+}
+
+#vrfbutyfqa .gt_group_heading {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  text-align: left;
+}
+
+#vrfbutyfqa .gt_empty_group_heading {
+  padding: 0.5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#vrfbutyfqa .gt_from_md > :first-child {
+  margin-top: 0;
+}
+
+#vrfbutyfqa .gt_from_md > :last-child {
+  margin-bottom: 0;
+}
+
+#vrfbutyfqa .gt_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  margin: 10px;
+  border-top-style: solid;
+  border-top-width: 1px;
+  border-top-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  overflow-x: hidden;
+}
+
+#vrfbutyfqa .gt_stub {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#vrfbutyfqa .gt_stub_row_group {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+  vertical-align: top;
+}
+
+#vrfbutyfqa .gt_row_group_first td {
+  border-top-width: 2px;
+}
+
+#vrfbutyfqa .gt_row_group_first th {
+  border-top-width: 2px;
+}
+
+#vrfbutyfqa .gt_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#vrfbutyfqa .gt_first_summary_row {
+  border-top-style: solid;
+  border-top-color: #D3D3D3;
+}
+
+#vrfbutyfqa .gt_first_summary_row.thick {
+  border-top-width: 2px;
+}
+
+#vrfbutyfqa .gt_last_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#vrfbutyfqa .gt_grand_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#vrfbutyfqa .gt_first_grand_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: double;
+  border-top-width: 6px;
+  border-top-color: #D3D3D3;
+}
+
+#vrfbutyfqa .gt_last_grand_summary_row_top {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: double;
+  border-bottom-width: 6px;
+  border-bottom-color: #D3D3D3;
+}
+
+#vrfbutyfqa .gt_striped {
+  background-color: rgba(128, 128, 128, 0.05);
+}
+
+#vrfbutyfqa .gt_table_body {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#vrfbutyfqa .gt_footnotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#vrfbutyfqa .gt_footnote {
+  margin: 0px;
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#vrfbutyfqa .gt_sourcenotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#vrfbutyfqa .gt_sourcenote {
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#vrfbutyfqa .gt_left {
+  text-align: left;
+}
+
+#vrfbutyfqa .gt_center {
+  text-align: center;
+}
+
+#vrfbutyfqa .gt_right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#vrfbutyfqa .gt_font_normal {
+  font-weight: normal;
+}
+
+#vrfbutyfqa .gt_font_bold {
+  font-weight: bold;
+}
+
+#vrfbutyfqa .gt_font_italic {
+  font-style: italic;
+}
+
+#vrfbutyfqa .gt_super {
+  font-size: 65%;
+}
+
+#vrfbutyfqa .gt_footnote_marks {
+  font-size: 75%;
+  vertical-align: 0.4em;
+  position: initial;
+}
+
+#vrfbutyfqa .gt_asterisk {
+  font-size: 100%;
+  vertical-align: 0;
+}
+
+#vrfbutyfqa .gt_indent_1 {
+  text-indent: 5px;
+}
+
+#vrfbutyfqa .gt_indent_2 {
+  text-indent: 10px;
+}
+
+#vrfbutyfqa .gt_indent_3 {
+  text-indent: 15px;
+}
+
+#vrfbutyfqa .gt_indent_4 {
+  text-indent: 20px;
+}
+
+#vrfbutyfqa .gt_indent_5 {
+  text-indent: 25px;
+}
+
+#vrfbutyfqa .katex-display {
+  display: inline-flex !important;
+  margin-bottom: 0.75em !important;
+}
+
+#vrfbutyfqa div.Reactable > div.rt-table > div.rt-thead > div.rt-tr.rt-tr-group-header > div.rt-th-group:after {
+  height: 0px !important;
+}
+</style>
+
+<table class="gt_table caption-top table table-sm table-striped small" data-quarto-bootstrap="false">
+<thead>
+<tr class="gt_heading header">
+<td colspan="7" class="gt_heading gt_title gt_font_normal">GAD-7 score change distribution by discharge outcome</td>
+</tr>
+<tr class="gt_heading even">
+<td colspan="7" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border">Negative values = improvement (lower anxiety)</td>
+</tr>
+<tr class="gt_col_headings header">
+<th id="positive_outcomes" class="gt_col_heading gt_columns_bottom_border gt_left" data-quarto-table-cell-role="th" scope="col">positive_outcomes</th>
+<th id="n" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">n</th>
+<th id="min" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">min</th>
+<th id="a25th" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">25th</th>
+<th id="median" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">median</th>
+<th id="a75th" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">75th</th>
+<th id="max" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">max</th>
+</tr>
+</thead>
+<tbody class="gt_table_body">
+<tr class="odd">
+<td class="gt_row gt_left" headers="positive_outcomes">No</td>
+<td class="gt_row gt_right" headers="n">53</td>
+<td class="gt_row gt_right" headers="min">-3</td>
+<td class="gt_row gt_right" headers="25th">-1</td>
+<td class="gt_row gt_right" headers="median">-1</td>
+<td class="gt_row gt_right" headers="75th">0</td>
+<td class="gt_row gt_right" headers="max">7</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="positive_outcomes">Yes</td>
+<td class="gt_row gt_right" headers="n">28</td>
+<td class="gt_row gt_right" headers="min">-7</td>
+<td class="gt_row gt_right" headers="25th">-4</td>
+<td class="gt_row gt_right" headers="median">-3</td>
+<td class="gt_row gt_right" headers="75th">-2</td>
+<td class="gt_row gt_right" headers="max">-1</td>
+</tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>gad7_changes <span class="sc">|&gt;</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">count</span>(positive_outcomes, score_change) <span class="sc">|&gt;</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pivot_wider</span>(<span class="at">names_from =</span> positive_outcomes, <span class="at">values_from =</span> n, <span class="at">values_fill =</span> <span class="dv">0</span>) <span class="sc">|&gt;</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">arrange</span>(score_change) <span class="sc">|&gt;</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">gt</span>() <span class="sc">|&gt;</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_header</span>(</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">title =</span> <span class="st">"GAD-7: count of clients by score change and discharge outcome"</span>,</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">subtitle =</span> <span class="st">"Both 'Yes' and 'No' appear at the same change values (e.g., −1, −2, −3)"</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cols_label</span>(<span class="at">score_change =</span> <span class="st">"Score change (post − pre)"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="guzcgtfwlt" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<style>#guzcgtfwlt table {
+  font-family: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#guzcgtfwlt thead, #guzcgtfwlt tbody, #guzcgtfwlt tfoot, #guzcgtfwlt tr, #guzcgtfwlt td, #guzcgtfwlt th {
+  border-style: none;
+}
+
+#guzcgtfwlt p {
+  margin: 0;
+  padding: 0;
+}
+
+#guzcgtfwlt .gt_table {
+  display: table;
+  border-collapse: collapse;
+  line-height: normal;
+  margin-left: auto;
+  margin-right: auto;
+  color: #333333;
+  font-size: 16px;
+  font-weight: normal;
+  font-style: normal;
+  background-color: #FFFFFF;
+  width: auto;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #A8A8A8;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #A8A8A8;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+}
+
+#guzcgtfwlt .gt_caption {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+#guzcgtfwlt .gt_title {
+  color: #333333;
+  font-size: 125%;
+  font-weight: initial;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-color: #FFFFFF;
+  border-bottom-width: 0;
+}
+
+#guzcgtfwlt .gt_subtitle {
+  color: #333333;
+  font-size: 85%;
+  font-weight: initial;
+  padding-top: 3px;
+  padding-bottom: 5px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-color: #FFFFFF;
+  border-top-width: 0;
+}
+
+#guzcgtfwlt .gt_heading {
+  background-color: #FFFFFF;
+  text-align: center;
+  border-bottom-color: #FFFFFF;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#guzcgtfwlt .gt_bottom_border {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#guzcgtfwlt .gt_col_headings {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#guzcgtfwlt .gt_col_heading {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  padding-left: 5px;
+  padding-right: 5px;
+  overflow-x: hidden;
+}
+
+#guzcgtfwlt .gt_column_spanner_outer {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+#guzcgtfwlt .gt_column_spanner_outer:first-child {
+  padding-left: 0;
+}
+
+#guzcgtfwlt .gt_column_spanner_outer:last-child {
+  padding-right: 0;
+}
+
+#guzcgtfwlt .gt_column_spanner {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  overflow-x: hidden;
+  display: inline-block;
+  width: 100%;
+}
+
+#guzcgtfwlt .gt_spanner_row {
+  border-bottom-style: hidden;
+}
+
+#guzcgtfwlt .gt_group_heading {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  text-align: left;
+}
+
+#guzcgtfwlt .gt_empty_group_heading {
+  padding: 0.5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#guzcgtfwlt .gt_from_md > :first-child {
+  margin-top: 0;
+}
+
+#guzcgtfwlt .gt_from_md > :last-child {
+  margin-bottom: 0;
+}
+
+#guzcgtfwlt .gt_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  margin: 10px;
+  border-top-style: solid;
+  border-top-width: 1px;
+  border-top-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  overflow-x: hidden;
+}
+
+#guzcgtfwlt .gt_stub {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#guzcgtfwlt .gt_stub_row_group {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+  vertical-align: top;
+}
+
+#guzcgtfwlt .gt_row_group_first td {
+  border-top-width: 2px;
+}
+
+#guzcgtfwlt .gt_row_group_first th {
+  border-top-width: 2px;
+}
+
+#guzcgtfwlt .gt_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#guzcgtfwlt .gt_first_summary_row {
+  border-top-style: solid;
+  border-top-color: #D3D3D3;
+}
+
+#guzcgtfwlt .gt_first_summary_row.thick {
+  border-top-width: 2px;
+}
+
+#guzcgtfwlt .gt_last_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#guzcgtfwlt .gt_grand_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#guzcgtfwlt .gt_first_grand_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: double;
+  border-top-width: 6px;
+  border-top-color: #D3D3D3;
+}
+
+#guzcgtfwlt .gt_last_grand_summary_row_top {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: double;
+  border-bottom-width: 6px;
+  border-bottom-color: #D3D3D3;
+}
+
+#guzcgtfwlt .gt_striped {
+  background-color: rgba(128, 128, 128, 0.05);
+}
+
+#guzcgtfwlt .gt_table_body {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#guzcgtfwlt .gt_footnotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#guzcgtfwlt .gt_footnote {
+  margin: 0px;
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#guzcgtfwlt .gt_sourcenotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#guzcgtfwlt .gt_sourcenote {
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#guzcgtfwlt .gt_left {
+  text-align: left;
+}
+
+#guzcgtfwlt .gt_center {
+  text-align: center;
+}
+
+#guzcgtfwlt .gt_right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#guzcgtfwlt .gt_font_normal {
+  font-weight: normal;
+}
+
+#guzcgtfwlt .gt_font_bold {
+  font-weight: bold;
+}
+
+#guzcgtfwlt .gt_font_italic {
+  font-style: italic;
+}
+
+#guzcgtfwlt .gt_super {
+  font-size: 65%;
+}
+
+#guzcgtfwlt .gt_footnote_marks {
+  font-size: 75%;
+  vertical-align: 0.4em;
+  position: initial;
+}
+
+#guzcgtfwlt .gt_asterisk {
+  font-size: 100%;
+  vertical-align: 0;
+}
+
+#guzcgtfwlt .gt_indent_1 {
+  text-indent: 5px;
+}
+
+#guzcgtfwlt .gt_indent_2 {
+  text-indent: 10px;
+}
+
+#guzcgtfwlt .gt_indent_3 {
+  text-indent: 15px;
+}
+
+#guzcgtfwlt .gt_indent_4 {
+  text-indent: 20px;
+}
+
+#guzcgtfwlt .gt_indent_5 {
+  text-indent: 25px;
+}
+
+#guzcgtfwlt .katex-display {
+  display: inline-flex !important;
+  margin-bottom: 0.75em !important;
+}
+
+#guzcgtfwlt div.Reactable > div.rt-table > div.rt-thead > div.rt-tr.rt-tr-group-header > div.rt-th-group:after {
+  height: 0px !important;
+}
+</style>
+
+<table class="gt_table caption-top table table-sm table-striped small" data-quarto-bootstrap="false">
+<thead>
+<tr class="gt_heading header">
+<td colspan="3" class="gt_heading gt_title gt_font_normal">GAD-7: count of clients by score change and discharge outcome</td>
+</tr>
+<tr class="gt_heading even">
+<td colspan="3" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border">Both 'Yes' and 'No' appear at the same change values (e.g., −1, −2, −3)</td>
+</tr>
+<tr class="gt_col_headings header">
+<th id="score_change" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">Score change (post − pre)</th>
+<th id="No" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">No</th>
+<th id="Yes" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">Yes</th>
+</tr>
+</thead>
+<tbody class="gt_table_body">
+<tr class="odd">
+<td class="gt_row gt_right" headers="score_change">-7</td>
+<td class="gt_row gt_right" headers="No">0</td>
+<td class="gt_row gt_right" headers="Yes">2</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_right" headers="score_change">-5</td>
+<td class="gt_row gt_right" headers="No">0</td>
+<td class="gt_row gt_right" headers="Yes">4</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_right" headers="score_change">-4</td>
+<td class="gt_row gt_right" headers="No">0</td>
+<td class="gt_row gt_right" headers="Yes">6</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_right" headers="score_change">-3</td>
+<td class="gt_row gt_right" headers="No">5</td>
+<td class="gt_row gt_right" headers="Yes">8</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_right" headers="score_change">-2</td>
+<td class="gt_row gt_right" headers="No">8</td>
+<td class="gt_row gt_right" headers="Yes">6</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_right" headers="score_change">-1</td>
+<td class="gt_row gt_right" headers="No">14</td>
+<td class="gt_row gt_right" headers="Yes">2</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_right" headers="score_change">0</td>
+<td class="gt_row gt_right" headers="No">17</td>
+<td class="gt_row gt_right" headers="Yes">0</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_right" headers="score_change">1</td>
+<td class="gt_row gt_right" headers="No">4</td>
+<td class="gt_row gt_right" headers="Yes">0</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_right" headers="score_change">2</td>
+<td class="gt_row gt_right" headers="No">2</td>
+<td class="gt_row gt_right" headers="Yes">0</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_right" headers="score_change">5</td>
+<td class="gt_row gt_right" headers="No">2</td>
+<td class="gt_row gt_right" headers="Yes">0</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_right" headers="score_change">7</td>
+<td class="gt_row gt_right" headers="No">1</td>
+<td class="gt_row gt_right" headers="Yes">0</td>
+</tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</div>
+<p>The distributions overlap at changes of −1, −2, and −3. This rules out a simple minimum-change threshold as the explanation. Combined with the fact that dates and scores match between the two sources, this suggests <strong>eInsight’s internal logic for GAD-7 uses a definition of “positive outcome” that differs from simple pre-post improvement</strong> — but the specific rule is not visible from the export data alone.</p>
+<hr>
+</section>
+<section id="section-5-cpss-5-s-deep-dive" class="level2">
+<h2 class="anchored" data-anchor-id="section-5-cpss-5-s-deep-dive">Section 5: CPSS-5-S deep dive</h2>
+<p>For CPSS-5-S, 58% of discharge “No” clients scored as “better” in the paired file. Unlike GAD-7, the mechanism here is traceable: discharge is often using a <strong>different pre-assessment instance</strong> than the paired file.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>cpss_s_scores_raw <span class="ot">&lt;-</span> cpss_s_raw <span class="sc">|&gt;</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    <span class="at">client_system_id =</span> <span class="fu">as.numeric</span>(client_system_id),</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">date_completed   =</span> <span class="fu">as.Date</span>(date_completed),</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">total_score =</span> <span class="fu">rowSums</span>(<span class="fu">across</span>(<span class="fu">all_of</span>(resp_cols_cpss_s), as.numeric), <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(client_system_id, date_completed, total_score) <span class="sc">|&gt;</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">arrange</span>(client_system_id, date_completed)</span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>cpss_s_no_better_ids <span class="ot">&lt;-</span> discharge_data <span class="sc">|&gt;</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(<span class="fu">str_detect</span>(pre_measure_s, <span class="st">"CPSS-5"</span>), <span class="sc">!</span><span class="fu">is.na</span>(post_completion_date),</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>         positive_outcomes <span class="sc">==</span> <span class="st">"No"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">distinct</span>(client_system_id, <span class="at">.keep_all =</span> <span class="cn">TRUE</span>) <span class="sc">|&gt;</span></span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">inner_join</span>(cpss_s_paired <span class="sc">|&gt;</span> <span class="fu">select</span>(client_system_id, positive_outcome),</span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>             <span class="at">by =</span> <span class="st">"client_system_id"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(positive_outcome <span class="sc">==</span> <span class="dv">1</span>) <span class="sc">|&gt;</span></span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pull</span>(client_system_id)</span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a>cpss_s_earliest <span class="ot">&lt;-</span> cpss_s_scores_raw <span class="sc">|&gt;</span></span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(client_system_id) <span class="sc">|&gt;</span></span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">slice_min</span>(date_completed, <span class="at">n =</span> <span class="dv">1</span>, <span class="at">with_ties =</span> <span class="cn">FALSE</span>) <span class="sc">|&gt;</span></span>
+<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rename</span>(<span class="at">earliest_date =</span> date_completed, <span class="at">earliest_score =</span> total_score)</span>
+<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a>cpss_s_no_better_detail <span class="ot">&lt;-</span> discharge_data <span class="sc">|&gt;</span></span>
+<span id="cb6-25"><a href="#cb6-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(<span class="fu">str_detect</span>(pre_measure_s, <span class="st">"CPSS-5"</span>),</span>
+<span id="cb6-26"><a href="#cb6-26" aria-hidden="true" tabindex="-1"></a>         <span class="sc">!</span><span class="fu">is.na</span>(post_completion_date),</span>
+<span id="cb6-27"><a href="#cb6-27" aria-hidden="true" tabindex="-1"></a>         positive_outcomes <span class="sc">==</span> <span class="st">"No"</span>,</span>
+<span id="cb6-28"><a href="#cb6-28" aria-hidden="true" tabindex="-1"></a>         client_system_id <span class="sc">%in%</span> cpss_s_no_better_ids) <span class="sc">|&gt;</span></span>
+<span id="cb6-29"><a href="#cb6-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">distinct</span>(client_system_id, <span class="at">.keep_all =</span> <span class="cn">TRUE</span>) <span class="sc">|&gt;</span></span>
+<span id="cb6-30"><a href="#cb6-30" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(client_system_id,</span>
+<span id="cb6-31"><a href="#cb6-31" aria-hidden="true" tabindex="-1"></a>         <span class="at">dis_pre_date =</span> pre_completion_date, <span class="at">dis_pre =</span> pre_score,</span>
+<span id="cb6-32"><a href="#cb6-32" aria-hidden="true" tabindex="-1"></a>         <span class="at">dis_post_date =</span> post_completion_date, <span class="at">dis_post =</span> post_score) <span class="sc">|&gt;</span></span>
+<span id="cb6-33"><a href="#cb6-33" aria-hidden="true" tabindex="-1"></a>  <span class="fu">left_join</span>(cpss_s_earliest, <span class="at">by =</span> <span class="st">"client_system_id"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb6-34"><a href="#cb6-34" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb6-35"><a href="#cb6-35" aria-hidden="true" tabindex="-1"></a>    <span class="at">pre_date_matches_earliest =</span> dis_pre_date <span class="sc">==</span> earliest_date,</span>
+<span id="cb6-36"><a href="#cb6-36" aria-hidden="true" tabindex="-1"></a>    <span class="at">days_later =</span> <span class="fu">as.integer</span>(dis_pre_date <span class="sc">-</span> earliest_date),</span>
+<span id="cb6-37"><a href="#cb6-37" aria-hidden="true" tabindex="-1"></a>    <span class="at">score_change_discharge =</span> dis_post <span class="sc">-</span> dis_pre</span>
+<span id="cb6-38"><a href="#cb6-38" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb6-39"><a href="#cb6-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-40"><a href="#cb6-40" aria-hidden="true" tabindex="-1"></a>cpss_s_no_better_detail <span class="sc">|&gt;</span></span>
+<span id="cb6-41"><a href="#cb6-41" aria-hidden="true" tabindex="-1"></a>  <span class="fu">count</span>(pre_date_matches_earliest) <span class="sc">|&gt;</span></span>
+<span id="cb6-42"><a href="#cb6-42" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">pct =</span> <span class="fu">round</span>(<span class="dv">100</span> <span class="sc">*</span> n <span class="sc">/</span> <span class="fu">sum</span>(n))) <span class="sc">|&gt;</span></span>
+<span id="cb6-43"><a href="#cb6-43" aria-hidden="true" tabindex="-1"></a>  <span class="fu">gt</span>() <span class="sc">|&gt;</span></span>
+<span id="cb6-44"><a href="#cb6-44" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_header</span>(</span>
+<span id="cb6-45"><a href="#cb6-45" aria-hidden="true" tabindex="-1"></a>    <span class="at">title =</span> <span class="st">"CPSS-5-S 'No but better': does discharge pre-date match earliest raw assessment?"</span></span>
+<span id="cb6-46"><a href="#cb6-46" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb6-47"><a href="#cb6-47" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cols_label</span>(<span class="at">pre_date_matches_earliest =</span> <span class="st">"Pre-date matches earliest assessment"</span>,</span>
+<span id="cb6-48"><a href="#cb6-48" aria-hidden="true" tabindex="-1"></a>             <span class="at">n =</span> <span class="st">"n"</span>, <span class="at">pct =</span> <span class="st">"%"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="aaqaiymrqq" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<style>#aaqaiymrqq table {
+  font-family: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#aaqaiymrqq thead, #aaqaiymrqq tbody, #aaqaiymrqq tfoot, #aaqaiymrqq tr, #aaqaiymrqq td, #aaqaiymrqq th {
+  border-style: none;
+}
+
+#aaqaiymrqq p {
+  margin: 0;
+  padding: 0;
+}
+
+#aaqaiymrqq .gt_table {
+  display: table;
+  border-collapse: collapse;
+  line-height: normal;
+  margin-left: auto;
+  margin-right: auto;
+  color: #333333;
+  font-size: 16px;
+  font-weight: normal;
+  font-style: normal;
+  background-color: #FFFFFF;
+  width: auto;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #A8A8A8;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #A8A8A8;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+}
+
+#aaqaiymrqq .gt_caption {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+#aaqaiymrqq .gt_title {
+  color: #333333;
+  font-size: 125%;
+  font-weight: initial;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-color: #FFFFFF;
+  border-bottom-width: 0;
+}
+
+#aaqaiymrqq .gt_subtitle {
+  color: #333333;
+  font-size: 85%;
+  font-weight: initial;
+  padding-top: 3px;
+  padding-bottom: 5px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-color: #FFFFFF;
+  border-top-width: 0;
+}
+
+#aaqaiymrqq .gt_heading {
+  background-color: #FFFFFF;
+  text-align: center;
+  border-bottom-color: #FFFFFF;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#aaqaiymrqq .gt_bottom_border {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#aaqaiymrqq .gt_col_headings {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#aaqaiymrqq .gt_col_heading {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  padding-left: 5px;
+  padding-right: 5px;
+  overflow-x: hidden;
+}
+
+#aaqaiymrqq .gt_column_spanner_outer {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+#aaqaiymrqq .gt_column_spanner_outer:first-child {
+  padding-left: 0;
+}
+
+#aaqaiymrqq .gt_column_spanner_outer:last-child {
+  padding-right: 0;
+}
+
+#aaqaiymrqq .gt_column_spanner {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  overflow-x: hidden;
+  display: inline-block;
+  width: 100%;
+}
+
+#aaqaiymrqq .gt_spanner_row {
+  border-bottom-style: hidden;
+}
+
+#aaqaiymrqq .gt_group_heading {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  text-align: left;
+}
+
+#aaqaiymrqq .gt_empty_group_heading {
+  padding: 0.5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#aaqaiymrqq .gt_from_md > :first-child {
+  margin-top: 0;
+}
+
+#aaqaiymrqq .gt_from_md > :last-child {
+  margin-bottom: 0;
+}
+
+#aaqaiymrqq .gt_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  margin: 10px;
+  border-top-style: solid;
+  border-top-width: 1px;
+  border-top-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  overflow-x: hidden;
+}
+
+#aaqaiymrqq .gt_stub {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#aaqaiymrqq .gt_stub_row_group {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+  vertical-align: top;
+}
+
+#aaqaiymrqq .gt_row_group_first td {
+  border-top-width: 2px;
+}
+
+#aaqaiymrqq .gt_row_group_first th {
+  border-top-width: 2px;
+}
+
+#aaqaiymrqq .gt_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#aaqaiymrqq .gt_first_summary_row {
+  border-top-style: solid;
+  border-top-color: #D3D3D3;
+}
+
+#aaqaiymrqq .gt_first_summary_row.thick {
+  border-top-width: 2px;
+}
+
+#aaqaiymrqq .gt_last_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#aaqaiymrqq .gt_grand_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#aaqaiymrqq .gt_first_grand_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: double;
+  border-top-width: 6px;
+  border-top-color: #D3D3D3;
+}
+
+#aaqaiymrqq .gt_last_grand_summary_row_top {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: double;
+  border-bottom-width: 6px;
+  border-bottom-color: #D3D3D3;
+}
+
+#aaqaiymrqq .gt_striped {
+  background-color: rgba(128, 128, 128, 0.05);
+}
+
+#aaqaiymrqq .gt_table_body {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#aaqaiymrqq .gt_footnotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#aaqaiymrqq .gt_footnote {
+  margin: 0px;
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#aaqaiymrqq .gt_sourcenotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#aaqaiymrqq .gt_sourcenote {
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#aaqaiymrqq .gt_left {
+  text-align: left;
+}
+
+#aaqaiymrqq .gt_center {
+  text-align: center;
+}
+
+#aaqaiymrqq .gt_right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#aaqaiymrqq .gt_font_normal {
+  font-weight: normal;
+}
+
+#aaqaiymrqq .gt_font_bold {
+  font-weight: bold;
+}
+
+#aaqaiymrqq .gt_font_italic {
+  font-style: italic;
+}
+
+#aaqaiymrqq .gt_super {
+  font-size: 65%;
+}
+
+#aaqaiymrqq .gt_footnote_marks {
+  font-size: 75%;
+  vertical-align: 0.4em;
+  position: initial;
+}
+
+#aaqaiymrqq .gt_asterisk {
+  font-size: 100%;
+  vertical-align: 0;
+}
+
+#aaqaiymrqq .gt_indent_1 {
+  text-indent: 5px;
+}
+
+#aaqaiymrqq .gt_indent_2 {
+  text-indent: 10px;
+}
+
+#aaqaiymrqq .gt_indent_3 {
+  text-indent: 15px;
+}
+
+#aaqaiymrqq .gt_indent_4 {
+  text-indent: 20px;
+}
+
+#aaqaiymrqq .gt_indent_5 {
+  text-indent: 25px;
+}
+
+#aaqaiymrqq .katex-display {
+  display: inline-flex !important;
+  margin-bottom: 0.75em !important;
+}
+
+#aaqaiymrqq div.Reactable > div.rt-table > div.rt-thead > div.rt-tr.rt-tr-group-header > div.rt-th-group:after {
+  height: 0px !important;
+}
+</style>
+
+<table class="gt_table caption-top table table-sm table-striped small" data-quarto-bootstrap="false">
+<thead>
+<tr class="gt_heading header">
+<td colspan="3" class="gt_heading gt_title gt_font_normal gt_bottom_border">CPSS-5-S 'No but better': does discharge pre-date match earliest raw assessment?</td>
+</tr>
+<tr class="gt_col_headings even">
+<th id="pre_date_matches_earliest" class="gt_col_heading gt_columns_bottom_border gt_center" data-quarto-table-cell-role="th" scope="col">Pre-date matches earliest assessment</th>
+<th id="n" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">n</th>
+<th id="pct" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">%</th>
+</tr>
+</thead>
+<tbody class="gt_table_body">
+<tr class="odd">
+<td class="gt_row gt_center" headers="pre_date_matches_earliest">FALSE</td>
+<td class="gt_row gt_right" headers="n">17</td>
+<td class="gt_row gt_right" headers="pct">77</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_center" headers="pre_date_matches_earliest">TRUE</td>
+<td class="gt_row gt_right" headers="n">5</td>
+<td class="gt_row gt_right" headers="pct">23</td>
+</tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>cpss_s_no_better_detail <span class="sc">|&gt;</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(<span class="sc">!</span>pre_date_matches_earliest) <span class="sc">|&gt;</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">n         =</span> <span class="fu">n</span>(),</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">min_days  =</span> <span class="fu">min</span>(days_later,  <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_days =</span> <span class="fu">round</span>(<span class="fu">mean</span>(days_later, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)),</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">max_days  =</span> <span class="fu">max</span>(days_later,  <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">gt</span>() <span class="sc">|&gt;</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_header</span>(</span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">title    =</span> <span class="st">"CPSS-5-S: how much later is the discharge pre-date vs. earliest raw assessment?"</span>,</span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>    <span class="at">subtitle =</span> <span class="st">"For the 17 clients where dates do not match"</span></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">|&gt;</span></span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cols_label</span>(<span class="at">n =</span> <span class="st">"n clients"</span>, <span class="at">min_days =</span> <span class="st">"Min days later"</span>,</span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a>             <span class="at">mean_days =</span> <span class="st">"Mean days later"</span>, <span class="at">max_days =</span> <span class="st">"Max days later"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="ubrbhylwbo" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<style>#ubrbhylwbo table {
+  font-family: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#ubrbhylwbo thead, #ubrbhylwbo tbody, #ubrbhylwbo tfoot, #ubrbhylwbo tr, #ubrbhylwbo td, #ubrbhylwbo th {
+  border-style: none;
+}
+
+#ubrbhylwbo p {
+  margin: 0;
+  padding: 0;
+}
+
+#ubrbhylwbo .gt_table {
+  display: table;
+  border-collapse: collapse;
+  line-height: normal;
+  margin-left: auto;
+  margin-right: auto;
+  color: #333333;
+  font-size: 16px;
+  font-weight: normal;
+  font-style: normal;
+  background-color: #FFFFFF;
+  width: auto;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #A8A8A8;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #A8A8A8;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+}
+
+#ubrbhylwbo .gt_caption {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+#ubrbhylwbo .gt_title {
+  color: #333333;
+  font-size: 125%;
+  font-weight: initial;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-color: #FFFFFF;
+  border-bottom-width: 0;
+}
+
+#ubrbhylwbo .gt_subtitle {
+  color: #333333;
+  font-size: 85%;
+  font-weight: initial;
+  padding-top: 3px;
+  padding-bottom: 5px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-color: #FFFFFF;
+  border-top-width: 0;
+}
+
+#ubrbhylwbo .gt_heading {
+  background-color: #FFFFFF;
+  text-align: center;
+  border-bottom-color: #FFFFFF;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#ubrbhylwbo .gt_bottom_border {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#ubrbhylwbo .gt_col_headings {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#ubrbhylwbo .gt_col_heading {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  padding-left: 5px;
+  padding-right: 5px;
+  overflow-x: hidden;
+}
+
+#ubrbhylwbo .gt_column_spanner_outer {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+#ubrbhylwbo .gt_column_spanner_outer:first-child {
+  padding-left: 0;
+}
+
+#ubrbhylwbo .gt_column_spanner_outer:last-child {
+  padding-right: 0;
+}
+
+#ubrbhylwbo .gt_column_spanner {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  overflow-x: hidden;
+  display: inline-block;
+  width: 100%;
+}
+
+#ubrbhylwbo .gt_spanner_row {
+  border-bottom-style: hidden;
+}
+
+#ubrbhylwbo .gt_group_heading {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  text-align: left;
+}
+
+#ubrbhylwbo .gt_empty_group_heading {
+  padding: 0.5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#ubrbhylwbo .gt_from_md > :first-child {
+  margin-top: 0;
+}
+
+#ubrbhylwbo .gt_from_md > :last-child {
+  margin-bottom: 0;
+}
+
+#ubrbhylwbo .gt_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  margin: 10px;
+  border-top-style: solid;
+  border-top-width: 1px;
+  border-top-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  overflow-x: hidden;
+}
+
+#ubrbhylwbo .gt_stub {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#ubrbhylwbo .gt_stub_row_group {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+  vertical-align: top;
+}
+
+#ubrbhylwbo .gt_row_group_first td {
+  border-top-width: 2px;
+}
+
+#ubrbhylwbo .gt_row_group_first th {
+  border-top-width: 2px;
+}
+
+#ubrbhylwbo .gt_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#ubrbhylwbo .gt_first_summary_row {
+  border-top-style: solid;
+  border-top-color: #D3D3D3;
+}
+
+#ubrbhylwbo .gt_first_summary_row.thick {
+  border-top-width: 2px;
+}
+
+#ubrbhylwbo .gt_last_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#ubrbhylwbo .gt_grand_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#ubrbhylwbo .gt_first_grand_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: double;
+  border-top-width: 6px;
+  border-top-color: #D3D3D3;
+}
+
+#ubrbhylwbo .gt_last_grand_summary_row_top {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: double;
+  border-bottom-width: 6px;
+  border-bottom-color: #D3D3D3;
+}
+
+#ubrbhylwbo .gt_striped {
+  background-color: rgba(128, 128, 128, 0.05);
+}
+
+#ubrbhylwbo .gt_table_body {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#ubrbhylwbo .gt_footnotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#ubrbhylwbo .gt_footnote {
+  margin: 0px;
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#ubrbhylwbo .gt_sourcenotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#ubrbhylwbo .gt_sourcenote {
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#ubrbhylwbo .gt_left {
+  text-align: left;
+}
+
+#ubrbhylwbo .gt_center {
+  text-align: center;
+}
+
+#ubrbhylwbo .gt_right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#ubrbhylwbo .gt_font_normal {
+  font-weight: normal;
+}
+
+#ubrbhylwbo .gt_font_bold {
+  font-weight: bold;
+}
+
+#ubrbhylwbo .gt_font_italic {
+  font-style: italic;
+}
+
+#ubrbhylwbo .gt_super {
+  font-size: 65%;
+}
+
+#ubrbhylwbo .gt_footnote_marks {
+  font-size: 75%;
+  vertical-align: 0.4em;
+  position: initial;
+}
+
+#ubrbhylwbo .gt_asterisk {
+  font-size: 100%;
+  vertical-align: 0;
+}
+
+#ubrbhylwbo .gt_indent_1 {
+  text-indent: 5px;
+}
+
+#ubrbhylwbo .gt_indent_2 {
+  text-indent: 10px;
+}
+
+#ubrbhylwbo .gt_indent_3 {
+  text-indent: 15px;
+}
+
+#ubrbhylwbo .gt_indent_4 {
+  text-indent: 20px;
+}
+
+#ubrbhylwbo .gt_indent_5 {
+  text-indent: 25px;
+}
+
+#ubrbhylwbo .katex-display {
+  display: inline-flex !important;
+  margin-bottom: 0.75em !important;
+}
+
+#ubrbhylwbo div.Reactable > div.rt-table > div.rt-thead > div.rt-tr.rt-tr-group-header > div.rt-th-group:after {
+  height: 0px !important;
+}
+</style>
+
+<table class="gt_table caption-top table table-sm table-striped small" data-quarto-bootstrap="false">
+<thead>
+<tr class="gt_heading header">
+<td colspan="4" class="gt_heading gt_title gt_font_normal">CPSS-5-S: how much later is the discharge pre-date vs. earliest raw assessment?</td>
+</tr>
+<tr class="gt_heading even">
+<td colspan="4" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border">For the 17 clients where dates do not match</td>
+</tr>
+<tr class="gt_col_headings header">
+<th id="n" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">n clients</th>
+<th id="min_days" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">Min days later</th>
+<th id="mean_days" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">Mean days later</th>
+<th id="max_days" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">Max days later</th>
+</tr>
+</thead>
+<tbody class="gt_table_body">
+<tr class="odd">
+<td class="gt_row gt_right" headers="n">17</td>
+<td class="gt_row gt_right" headers="min_days">1</td>
+<td class="gt_row gt_right" headers="mean_days">52</td>
+<td class="gt_row gt_right" headers="max_days">85</td>
+</tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</div>
+<p>In 17 of 22 cases (77%), the discharge pre-assessment date is <strong>later</strong> than the earliest assessment in the raw CPSS-5 file — on average 52 days later. The scores at these two time points often happen to be the same (because the client scored identically on both dates), but the discharge record misses the earlier improvement that the raw file captures.</p>
+<p>This confirms that for CPSS-5-S, discharge_data’s <code>positive_outcomes</code> is based on a <strong>designated “Initial” assessment label in eInsight</strong> rather than the chronologically first assessment. When clients were assessed before their official “Initial” collection point, that earlier assessment is invisible to the discharge calculation.</p>
+<hr>
+</section>
+<section id="section-6-summary-and-implications" class="level2">
+<h2 class="anchored" data-anchor-id="section-6-summary-and-implications">Section 6: Summary and implications</h2>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">tribble</span>(</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>  <span class="sc">~</span>Finding, <span class="sc">~</span>Implication,</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>  <span class="st">'"Yes" reliably = "better" across all instruments (100%)'</span>,</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>  <span class="st">'Clients flagged "Yes" in discharge_data can be treated as confirmed positive outcomes; the two sources fully agree.'</span>,</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>  <span class="st">'"No" conflates "worse", "no change", and some "better" cases'</span>,</span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>  <span class="st">'Using "No" as a proxy for "negative outcome" in reporting will over-count poor outcomes. The three-level positive_outcome variable from the paired files gives a more precise breakdown.'</span>,</span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>  <span class="st">'GAD-7: 46% of "No" clients improved; overlap in score changes at −1 to −3'</span>,</span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>  <span class="st">'The mechanism is unclear — eInsight</span><span class="sc">\'</span><span class="st">s internal GAD-7 outcome logic is not transparent from the export data. Do not use discharge positive_outcomes as the primary outcome variable for GAD-7.'</span>,</span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>  <span class="st">'CPSS-5-S: 58% of "No" clients improved; discharge uses a later pre-assessment in 77% of cases'</span>,</span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a>  <span class="st">'eInsight assigns the "Initial" collection label as the pre-assessment, which may not be the client</span><span class="sc">\'</span><span class="st">s chronologically first score. The paired file captures the earlier assessment and therefore detects more improvement. This is a systematic difference in pairing logic, not a data quality error.'</span>,</span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a>  <span class="st">'BASIS-24: near-total client ID mismatch (4% overlap)'</span>,</span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a>  <span class="st">'The two sources appear to be tracking largely different client populations. BASIS-24 outcomes cannot be cross-validated until the source of the ID discrepancy is identified.'</span></span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a>) <span class="sc">|&gt;</span></span>
+<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">gt</span>() <span class="sc">|&gt;</span></span>
+<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_header</span>(<span class="at">title =</span> <span class="st">"Summary of findings and implications for reporting"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cols_width</span>(Finding <span class="sc">~</span> <span class="fu">pct</span>(<span class="dv">40</span>), Implication <span class="sc">~</span> <span class="fu">pct</span>(<span class="dv">60</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb8-21"><a href="#cb8-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_style</span>(</span>
+<span id="cb8-22"><a href="#cb8-22" aria-hidden="true" tabindex="-1"></a>    <span class="at">style =</span> <span class="fu">list</span>(<span class="fu">cell_text</span>(<span class="at">weight =</span> <span class="st">"bold"</span>)),</span>
+<span id="cb8-23"><a href="#cb8-23" aria-hidden="true" tabindex="-1"></a>    <span class="at">locations =</span> <span class="fu">cells_column_labels</span>()</span>
+<span id="cb8-24"><a href="#cb8-24" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="xjdjqcrvoc" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<style>#xjdjqcrvoc table {
+  font-family: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#xjdjqcrvoc thead, #xjdjqcrvoc tbody, #xjdjqcrvoc tfoot, #xjdjqcrvoc tr, #xjdjqcrvoc td, #xjdjqcrvoc th {
+  border-style: none;
+}
+
+#xjdjqcrvoc p {
+  margin: 0;
+  padding: 0;
+}
+
+#xjdjqcrvoc .gt_table {
+  display: table;
+  border-collapse: collapse;
+  line-height: normal;
+  margin-left: auto;
+  margin-right: auto;
+  color: #333333;
+  font-size: 16px;
+  font-weight: normal;
+  font-style: normal;
+  background-color: #FFFFFF;
+  width: auto;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #A8A8A8;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #A8A8A8;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+}
+
+#xjdjqcrvoc .gt_caption {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+#xjdjqcrvoc .gt_title {
+  color: #333333;
+  font-size: 125%;
+  font-weight: initial;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-color: #FFFFFF;
+  border-bottom-width: 0;
+}
+
+#xjdjqcrvoc .gt_subtitle {
+  color: #333333;
+  font-size: 85%;
+  font-weight: initial;
+  padding-top: 3px;
+  padding-bottom: 5px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-color: #FFFFFF;
+  border-top-width: 0;
+}
+
+#xjdjqcrvoc .gt_heading {
+  background-color: #FFFFFF;
+  text-align: center;
+  border-bottom-color: #FFFFFF;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#xjdjqcrvoc .gt_bottom_border {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#xjdjqcrvoc .gt_col_headings {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#xjdjqcrvoc .gt_col_heading {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  padding-left: 5px;
+  padding-right: 5px;
+  overflow-x: hidden;
+}
+
+#xjdjqcrvoc .gt_column_spanner_outer {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+#xjdjqcrvoc .gt_column_spanner_outer:first-child {
+  padding-left: 0;
+}
+
+#xjdjqcrvoc .gt_column_spanner_outer:last-child {
+  padding-right: 0;
+}
+
+#xjdjqcrvoc .gt_column_spanner {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  overflow-x: hidden;
+  display: inline-block;
+  width: 100%;
+}
+
+#xjdjqcrvoc .gt_spanner_row {
+  border-bottom-style: hidden;
+}
+
+#xjdjqcrvoc .gt_group_heading {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  text-align: left;
+}
+
+#xjdjqcrvoc .gt_empty_group_heading {
+  padding: 0.5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#xjdjqcrvoc .gt_from_md > :first-child {
+  margin-top: 0;
+}
+
+#xjdjqcrvoc .gt_from_md > :last-child {
+  margin-bottom: 0;
+}
+
+#xjdjqcrvoc .gt_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  margin: 10px;
+  border-top-style: solid;
+  border-top-width: 1px;
+  border-top-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  overflow-x: hidden;
+}
+
+#xjdjqcrvoc .gt_stub {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#xjdjqcrvoc .gt_stub_row_group {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+  vertical-align: top;
+}
+
+#xjdjqcrvoc .gt_row_group_first td {
+  border-top-width: 2px;
+}
+
+#xjdjqcrvoc .gt_row_group_first th {
+  border-top-width: 2px;
+}
+
+#xjdjqcrvoc .gt_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#xjdjqcrvoc .gt_first_summary_row {
+  border-top-style: solid;
+  border-top-color: #D3D3D3;
+}
+
+#xjdjqcrvoc .gt_first_summary_row.thick {
+  border-top-width: 2px;
+}
+
+#xjdjqcrvoc .gt_last_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#xjdjqcrvoc .gt_grand_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#xjdjqcrvoc .gt_first_grand_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: double;
+  border-top-width: 6px;
+  border-top-color: #D3D3D3;
+}
+
+#xjdjqcrvoc .gt_last_grand_summary_row_top {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: double;
+  border-bottom-width: 6px;
+  border-bottom-color: #D3D3D3;
+}
+
+#xjdjqcrvoc .gt_striped {
+  background-color: rgba(128, 128, 128, 0.05);
+}
+
+#xjdjqcrvoc .gt_table_body {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#xjdjqcrvoc .gt_footnotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#xjdjqcrvoc .gt_footnote {
+  margin: 0px;
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#xjdjqcrvoc .gt_sourcenotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#xjdjqcrvoc .gt_sourcenote {
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#xjdjqcrvoc .gt_left {
+  text-align: left;
+}
+
+#xjdjqcrvoc .gt_center {
+  text-align: center;
+}
+
+#xjdjqcrvoc .gt_right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#xjdjqcrvoc .gt_font_normal {
+  font-weight: normal;
+}
+
+#xjdjqcrvoc .gt_font_bold {
+  font-weight: bold;
+}
+
+#xjdjqcrvoc .gt_font_italic {
+  font-style: italic;
+}
+
+#xjdjqcrvoc .gt_super {
+  font-size: 65%;
+}
+
+#xjdjqcrvoc .gt_footnote_marks {
+  font-size: 75%;
+  vertical-align: 0.4em;
+  position: initial;
+}
+
+#xjdjqcrvoc .gt_asterisk {
+  font-size: 100%;
+  vertical-align: 0;
+}
+
+#xjdjqcrvoc .gt_indent_1 {
+  text-indent: 5px;
+}
+
+#xjdjqcrvoc .gt_indent_2 {
+  text-indent: 10px;
+}
+
+#xjdjqcrvoc .gt_indent_3 {
+  text-indent: 15px;
+}
+
+#xjdjqcrvoc .gt_indent_4 {
+  text-indent: 20px;
+}
+
+#xjdjqcrvoc .gt_indent_5 {
+  text-indent: 25px;
+}
+
+#xjdjqcrvoc .katex-display {
+  display: inline-flex !important;
+  margin-bottom: 0.75em !important;
+}
+
+#xjdjqcrvoc div.Reactable > div.rt-table > div.rt-thead > div.rt-tr.rt-tr-group-header > div.rt-th-group:after {
+  height: 0px !important;
+}
+</style>
+
+<table class="gt_table caption-top table table-sm table-striped small" data-quarto-bootstrap="false">
+<colgroup>
+<col style="width: 40%">
+<col style="width: 60%">
+</colgroup>
+<thead>
+<tr class="gt_heading header">
+<td colspan="2" class="gt_heading gt_title gt_font_normal gt_bottom_border">Summary of findings and implications for reporting</td>
+</tr>
+<tr class="gt_col_headings even">
+<th id="Finding" class="gt_col_heading gt_columns_bottom_border gt_left" data-quarto-table-cell-role="th" style="font-weight: bold" scope="col">Finding</th>
+<th id="Implication" class="gt_col_heading gt_columns_bottom_border gt_left" data-quarto-table-cell-role="th" style="font-weight: bold" scope="col">Implication</th>
+</tr>
+</thead>
+<tbody class="gt_table_body">
+<tr class="odd">
+<td class="gt_row gt_left" headers="Finding">"Yes" reliably = "better" across all instruments (100%)</td>
+<td class="gt_row gt_left" headers="Implication">Clients flagged "Yes" in discharge_data can be treated as confirmed positive outcomes; the two sources fully agree.</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="Finding">"No" conflates "worse", "no change", and some "better" cases</td>
+<td class="gt_row gt_left" headers="Implication">Using "No" as a proxy for "negative outcome" in reporting will over-count poor outcomes. The three-level positive_outcome variable from the paired files gives a more precise breakdown.</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="Finding">GAD-7: 46% of "No" clients improved; overlap in score changes at −1 to −3</td>
+<td class="gt_row gt_left" headers="Implication">The mechanism is unclear — eInsight's internal GAD-7 outcome logic is not transparent from the export data. Do not use discharge positive_outcomes as the primary outcome variable for GAD-7.</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_left" headers="Finding">CPSS-5-S: 58% of "No" clients improved; discharge uses a later pre-assessment in 77% of cases</td>
+<td class="gt_row gt_left" headers="Implication">eInsight assigns the "Initial" collection label as the pre-assessment, which may not be the client's chronologically first score. The paired file captures the earlier assessment and therefore detects more improvement. This is a systematic difference in pairing logic, not a data quality error.</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_left" headers="Finding">BASIS-24: near-total client ID mismatch (4% overlap)</td>
+<td class="gt_row gt_left" headers="Implication">The two sources appear to be tracking largely different client populations. BASIS-24 outcomes cannot be cross-validated until the source of the ID discrepancy is identified.</td>
+</tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</div>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
