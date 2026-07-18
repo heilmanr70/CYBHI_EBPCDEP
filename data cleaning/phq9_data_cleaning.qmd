@@ -18,12 +18,12 @@ This notebook prepares **CYBHI EBP/CDEP** Patient Health Questionnaire-9 (PHQ-9)
 
 **Scoring:**
 
--   9 items. Responses are stored as text and mapped to numeric values: Not at all = 0, Several days = 1, More than half the days = 2, Nearly every day = 3.
--   Total score range: 0–27. Higher scores indicate greater depression severity.
--   **A lower follow-up score indicates a positive outcome.**
--   Total score is set to `NA` if 2 or more items are missing.
--   Cut-off bands: 0–4 = minimal, 5–9 = mild, 10–14 = moderate, 15–19 = moderately severe, 20–27 = severe.
--   Item 10 (functional impairment) is not included in the total score.
+- 9 items. Responses are stored as text and mapped to numeric values: Not at all = 0, Several days = 1, More than half the days = 2, Nearly every day = 3.
+- Total score range: 0–27. Higher scores indicate greater depression severity.
+- **A lower follow-up score indicates a positive outcome.**
+- Total score is set to `NA` if 2 or more items are missing.
+- Cut-off bands: 0–4 = minimal, 5–9 = mild, 10–14 = moderate, 15–19 = moderately severe, 20–27 = severe.
+- Item 10 (functional impairment) is not included in the total score.
 
 **Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 exist) is the follow-up. Clients with only one assessment are excluded.
 
