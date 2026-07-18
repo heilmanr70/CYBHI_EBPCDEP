@@ -20,6 +20,7 @@ execute:
 [ ] suppress data with n<11 
 
 [ ] if there's only one cell in the row/column suppressed, also suppress the total so back calculation isn't possible
+
 :::
 
 ## CDEPs
@@ -36,6 +37,7 @@ library(tidyverse)
 library(janitor)
 library(haven)
 library(stringr)
+library(readxl)
 
 knitr::opts_chunk$set(rownames.print = FALSE)
 
@@ -46,6 +48,9 @@ discharge_data    <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Pr
     client_system_id   = as.character(client_system_id),
     provider_id        = as.character(provider_id)
   )
+
+clinical_summary_data <- read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Admin Report Exports/2026-05-11-clinical_summary.xlsx", na = c("-", "", "NA", "N/A")) |>
+  janitor::clean_names()
 
 demographic_data_cdep  <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/CDEPS Data Analysis_May2026/CDEP Data May  2026/Master Files/Demographics - CDEPS- All CDEPs - May 7, 2026.csv", na = c("-", "", "NA", "N/A")) |> janitor::clean_names() |> 
   mutate(
@@ -125,16 +130,59 @@ demographic_data_cdep <- demographic_data_cdep |>
 demographic_data_cdep <- demographic_data_cdep |> 
   distinct(client_system_id, .keep_all = TRUE)
 
+# make clinical summary data distinct
+clinical_summary_data_cdep <- clinical_summary_data |> 
+  distinct(client_system_id, .keep_all = TRUE)
+
 # join discharge data to demographic data, which has client_ids needed
 discharge_data_cdep <- discharge_data |> 
   semi_join(demographic_data_cdep, by = c("client_system_id", "provider_id", "provider_system_id"))
 
+# join clinical summary data to demographic data, which has funding round needed
+clinical_summary_data_cdep <- clinical_summary_data_cdep |> 
+  semi_join(demographic_data_cdep, by = c("client_system_id", "provider_id", "provider_system_id"))
+
+# manually edit funding rounds for discharge data
+discharge_data_cdep <- discharge_data_cdep |> 
+  mutate(
+    funding_round = case_when(
+      provider_id == "613" & funding_round == "No Funding Round Selected" ~ "3",
+      provider_id == "437" & funding_round == "No Funding Round Selected" ~ "4",
+      provider_id == "127" & funding_round == "No Funding Round Selected" ~ "4",
+      provider_id == "311" & funding_round == "No Funding Round Selected" ~ "4",
+      TRUE ~ funding_round
+    )
+  )  
+
+# manually edit funding rounds for clinical summary data
+clinical_summary_data_cdep <- clinical_summary_data_cdep |> 
+  mutate(
+    funding_round = case_when(
+      provider_id == "613" & is.na(funding_round) ~ 3,
+      provider_id == "437" & is.na(funding_round) ~ 4,
+      provider_id == "127" & is.na(funding_round) ~ 4,
+      provider_id == "311" & is.na(funding_round) ~ 4,
+      provider_id == "503" & is.na(funding_round) ~ 4,
+      provider_id == "207" & is.na(funding_round) ~ 3,
+      provider_id == "124" & is.na(funding_round) ~ 4,
+      TRUE ~ funding_round
+    )
+  )  
+
+
 # join discharge data to demographic data, which has client_ids needed
 all_data_cdep <- left_join(demographic_data_cdep, discharge_data_cdep, by = c("provider_id", "client_system_id", "provider_system_id"))
 
-cat("Unique providers (discharge data):", discharge_data_cdep |> distinct(provider_id) |> nrow(), "\n")
+# write raw data to folder for Rikke
+write_csv(clinical_summary_data_cdep, "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/Data files for DHCS and CIBHS/CDEP Report - May 2026/clinical_summary_data_cdep.csv")
+write_csv(discharge_data_cdep, "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/Data files for DHCS and CIBHS/CDEP Report - May 2026/discharge_data_cdep.csv")
+write_csv(demographic_data_cdep, "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/Data files for DHCS and CIBHS/CDEP Report - May 2026/demographic_data_cdep.csv")
+write_csv(all_data_cdep, "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/Data files for DHCS and CIBHS/CDEP Report - May 2026/all_data_cdep.csv")
+
+# summary stats
 cat("Discharge data (distinct by client ID) rows; this is the denominator for most tables below:", all_data_cdep |> distinct(client_system_id, .keep_all = TRUE) |> nrow(), "\n")
 cat("Discharge data rows (total):", nrow(all_data_cdep), "\n")
+cat("Clients with pre AND post measure (discharge data):", all_data_cdep |> filter(!is.na(positive_outcomes)) |> nrow(), "\n") 
 cat("Clients reached (demographic data, distinct by client ID):", demographic_data_cdep |> distinct(client_system_id, .keep_all = TRUE) |> nrow(), "\n")
 ```
 
@@ -143,24 +191,23 @@ cat("Clients reached (demographic data, distinct by client ID):", demographic_da
 ### Enrollment
 
 #### Grantees by Funding Round
-**data used:** discharge_data
+**data used:** clinical_summary_data_cdep
 ```{r}
 #| label: tbl-grantees-by-round
 
-discharge_data_cdep |>
+clinical_summary_data_cdep |>
   distinct(provider, .keep_all = TRUE) |>
   tabyl(funding_round) |>
   adorn_totals("row") |>
   adorn_pct_formatting(digits = 1)
 ```
 
-#### Clients Enrolled by Funding Round
-**Assumptions:** Needed to have an intervention start date; data used: discharge_data
+#### Clients Reached by Funding Round
+**Assumptions:** Needed to have a funding round specified in the clinical summary; data used: clinical_summary_data_cdep
 ```{r}
-#| label: tbl-enrolled-by-round
+#| label: tbl-reached-by-round
 
-discharge_data_cdep |>
-  filter(!is.na(intervention_start)) |>
+clinical_summary_data_cdep |>
   tabyl(funding_round) |>
   adorn_totals("row") |>
   adorn_pct_formatting(digits = 1)
@@ -292,11 +339,11 @@ all_data_cdep |>
 ## Client Demographics
 
 ### Primary Language
-**Assumptions:** Distinct by client system ID, Don't know, no primary language selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 8105); data used: all_data (demo + discharge data); must have intervention name
+**Assumptions:** Distinct by client system ID, Don't know, no primary language selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 13687); data used: all_data (demo + discharge data); must have intervention name
 ```{r}
 #| label: tbl-primary-language
 
-all_data_cdep |>
+.d <- all_data_cdep |>
   filter(
     primary_language != "Don't Know",
     primary_language != "No Primary Language Selected",
@@ -304,18 +351,28 @@ all_data_cdep |>
     primary_language != "Prefer Not To Answer",
     !is.na(primary_language)
   ) |>
-  distinct(client_system_id, .keep_all = TRUE) |>
+  distinct(client_system_id, .keep_all = TRUE) 
+
+.d |> 
   tabyl(primary_language) |>
   adorn_totals("row") |>
   adorn_pct_formatting(digits = 1)
+
+cat(sprintf(
+  "%.1f%% of clients have this data (n = %d); %.1f%% without data (n = %d)\n",
+  100 * nrow(.d) / n_distinct(all_data_cdep$client_system_id),
+  nrow(.d),
+  100 * (1 - nrow(.d) / n_distinct(all_data_cdep$client_system_id)),
+  n_distinct(all_data_cdep$client_system_id) - nrow(.d)
+))
 ```
 
 ### Housing Status
-**Assumptions:** Distinct by client system ID, Don't know, no housing status selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 8105); data used: all_data (demo + discharge data); must have intervention name
+**Assumptions:** Distinct by client system ID, Don't know, no housing status selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 13687); data used: all_data (demo + discharge data); must have intervention name
 ```{r}
 #| label: tbl-housing-status
 
-all_data_cdep |>
+.d <- all_data_cdep |>
   filter(
     housing_status != "Don't Know",
     housing_status != "No Housing Status Selected",
@@ -323,10 +380,20 @@ all_data_cdep |>
     housing_status != "Prefer Not To Answer",
     !is.na(housing_status)
   ) |>
-  distinct(client_system_id, .keep_all = TRUE) |>
+  distinct(client_system_id, .keep_all = TRUE) 
+
+.d |>
   tabyl(housing_status) |>
   adorn_totals("row") |>
   adorn_pct_formatting(digits = 1)
+
+cat(sprintf(
+  "%.1f%% of clients have this data (n = %d); %.1f%% without data (n = %d)\n",
+  100 * nrow(.d) / n_distinct(all_data_cdep$client_system_id),
+  nrow(.d),
+  100 * (1 - nrow(.d) / n_distinct(all_data_cdep$client_system_id)),
+  n_distinct(all_data_cdep$client_system_id) - nrow(.d)
+))
 ```
 
 ### Client Type with Average Age
@@ -362,11 +429,11 @@ tab_counts |>
 ```
 
 ### Insurance Status
-**Assumptions:** Distinct by client system ID, Don't know, no insurance status selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 8105); data used: all_data (demo + discharge data); must have intervention name
+**Assumptions:** Distinct by client system ID, Don't know, no insurance status selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 13687); data used: all_data (demo + discharge data); must have intervention name
 ```{r}
 #| label: tbl-insurance-status
 
-all_data_cdep |>
+.d <- all_data_cdep |>
   filter(
     insurance_status != "Don't Know",
     insurance_status != "No Insurance Status Selected",
@@ -374,18 +441,28 @@ all_data_cdep |>
     insurance_status != "Prefer Not To Answer",
     !is.na(insurance_status)
   ) |>
-  distinct(client_system_id, .keep_all = TRUE) |>
+  distinct(client_system_id, .keep_all = TRUE) 
+
+.d |>
   tabyl(insurance_status) |>
   adorn_totals("row") |>
   adorn_pct_formatting(digits = 1)
+
+cat(sprintf(
+  "%.1f%% of clients have this data (n = %d); %.1f%% without data (n = %d)\n",
+  100 * nrow(.d) / n_distinct(all_data_cdep$client_system_id),
+  nrow(.d),
+  100 * (1 - nrow(.d) / n_distinct(all_data_cdep$client_system_id)),
+  n_distinct(all_data_cdep$client_system_id) - nrow(.d)
+))
 ```
 
 ### Gender Identity
-**Assumptions:** Distinct by client system ID, Don't know, no gender identity selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 8105); data used: all_data (demo + discharge data); must have intervention name
+**Assumptions:** Distinct by client system ID, Don't know, no gender identity selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 13687); data used: all_data (demo + discharge data); must have intervention name
 ```{r}
 #| label: tbl-gender-identity
 
-all_data_cdep |>
+.d <- all_data_cdep |>
    filter(
     gender_identity != "Don't Know",
     gender_identity != "No Gender Identify Selected",
@@ -393,18 +470,28 @@ all_data_cdep |>
     gender_identity != "Prefer Not To Answer",
     !is.na(gender_identity)
   ) |>
-  distinct(client_system_id, .keep_all = TRUE) |>
+  distinct(client_system_id, .keep_all = TRUE) 
+
+.d |>
   tabyl(gender_identity) |>
   adorn_totals("row") |>
   adorn_pct_formatting(digits = 1)
+
+cat(sprintf(
+  "%.1f%% of clients have this data (n = %d); %.1f%% without data (n = %d)\n",
+  100 * nrow(.d) / n_distinct(all_data_cdep$client_system_id),
+  nrow(.d),
+  100 * (1 - nrow(.d) / n_distinct(all_data_cdep$client_system_id)),
+  n_distinct(all_data_cdep$client_system_id) - nrow(.d)
+))
 ```
 
 ### Sexual Orientation
-**Assumptions:** Distinct by client system ID, Don't know, no sexual orientation selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 8105); data used: all_data (demo + discharge data); must have intervention name
+**Assumptions:** Distinct by client system ID, Don't know, no sexual orientation selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 13687); data used: all_data (demo + discharge data); must have intervention name
 ```{r}
 #| label: tbl-sexual-orientation
 
-all_data_cdep |>
+.d <- all_data_cdep |>
    filter(
     sexual_orientation != "Don't Know",
     sexual_orientation != "No Sexual Orientation Selected",
@@ -412,10 +499,20 @@ all_data_cdep |>
     sexual_orientation != "Prefer Not To Answer",
     !is.na(sexual_orientation)
   ) |>
-  distinct(client_system_id, .keep_all = TRUE) |>
-  tabyl(sexual_orientation, client_type) |> 
+  distinct(client_system_id, .keep_all = TRUE) 
+
+.d |>
+  tabyl(sexual_orientation) |> 
   adorn_totals("row") |>
   adorn_pct_formatting(digits = 1)
+
+cat(sprintf(
+  "%.1f%% of clients have this data (n = %d); %.1f%% without data (n = %d)\n",
+  100 * nrow(.d) / n_distinct(all_data_cdep$client_system_id),
+  nrow(.d),
+  100 * (1 - nrow(.d) / n_distinct(all_data_cdep$client_system_id)),
+  n_distinct(all_data_cdep$client_system_id) - nrow(.d)
+))
 ```
 
 ### Race
@@ -432,11 +529,11 @@ Race is coded numerically as follows:
 | 6    | Native Hawaiian or Pacific Islander                |
 | 7    | White                                              |
 | 88   | 2+ races selected                                  |
-**Assumptions:** Distinct by client system ID, Don't know, no race selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 8105); data used: all_data (demo + discharge data); must have intervention name
+**Assumptions:** Distinct by client system ID, Don't know, no race selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 13687); data used: all_data (demo + discharge data); must have intervention name
 ```{r}
 #| label: tbl-race
 
-all_data_cdep |>
+.d <- all_data_cdep |>
   filter(
     race != "Don't Know",
     race != "No Race Selected",
@@ -444,10 +541,20 @@ all_data_cdep |>
     race != "Prefer Not To Answer",
     !is.na(code_num)
   ) |>
-  distinct(client_system_id, .keep_all = TRUE) |>
+  distinct(client_system_id, .keep_all = TRUE) 
+
+.d |>
   tabyl(code_num) |>
   adorn_totals("row") |>
   adorn_pct_formatting(digits = 1)
+
+cat(sprintf(
+  "%.1f%% of clients have this data (n = %d); %.1f%% without data (n = %d)\n",
+  100 * nrow(.d) / n_distinct(all_data_cdep$client_system_id),
+  nrow(.d),
+  100 * (1 - nrow(.d) / n_distinct(all_data_cdep$client_system_id)),
+  n_distinct(all_data_cdep$client_system_id) - nrow(.d)
+))
 ```
 
 ### Ethnicity
@@ -483,11 +590,11 @@ Ethnicity is coded numerically as follows:
 | 25   | Polish                  |
 | 26   | Scottish                |
 | 88   | 2+ ethnicities selected |
-**Assumptions:** Distinct by client system ID, Don't know, no ethnicity selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 8105); data used: all_data (demo + discharge data); must have intervention name
+**Assumptions:** Distinct by client system ID, Don't know, no ethnicity selected, not applicable, and prefer not to answer all grouped as NA (so total n with NA = 13687); data used: all_data (demo + discharge data); must have intervention name
 ```{r}
 #| label: tbl-ethnicity
 
-all_data_cdep |>
+.d <- all_data_cdep |>
    filter(
     race != "Don't Know",
     race != "No Ethnicity Selected",
@@ -495,10 +602,20 @@ all_data_cdep |>
     race != "Prefer Not To Answer",
     !is.na(ethn_num)
   ) |>
-  distinct(client_system_id, .keep_all = TRUE) |>
+  distinct(client_system_id, .keep_all = TRUE) 
+
+.d |>
   tabyl(ethn_num) |>
   adorn_totals("row") |>
   adorn_pct_formatting(digits = 1)
+
+cat(sprintf(
+  "%.1f%% of clients have this data (n = %d); %.1f%% without data (n = %d)\n",
+  100 * nrow(.d) / n_distinct(all_data_cdep$client_system_id),
+  nrow(.d),
+  100 * (1 - nrow(.d) / n_distinct(all_data_cdep$client_system_id)),
+  n_distinct(all_data_cdep$client_system_id) - nrow(.d)
+))
 ```
 
 ## Satisfaction Surveys
@@ -690,17 +807,16 @@ discharge_cdep_outcome |>
   adorn_pct_formatting(digits = 1)
 ```
 
-#### Outcome by Intervention
-**Assumptions:** Must have an intervention name and an outcome; data used: discharge_data
+#### NOMS Outcome by Funding Round
+**Assumptions:** Must have an intervention name and a NOMS outcome; data used: discharge_data
 ```{r}
-#| label: tbl-outcome-by-intervention
+#| label: tbl-noms-outcome-by-intervention
 
 discharge_cdep_outcome |>
-  filter(!is.na(intervention_name), !is.na(outcome)) |>
-  tabyl(intervention_name, outcome) |>
+  filter(!is.na(intervention_name), !is.na(outcome), trimmed_post_assessment_name == "NOMS") |>
+  tabyl(outcome, funding_round) |>
   adorn_totals("row") |>
-  adorn_totals("col") |>
-  adorn_percentages("row") |>
+  adorn_percentages("col") |>
   adorn_pct_formatting(digits = 1) |>
   adorn_ns()
 ```
