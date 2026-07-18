@@ -16,10 +16,10 @@ This notebook prepares **CYBHI EBP/CDEP** satisfaction survey data for analysis 
 
 **Data sources (eInsight exports):**
 
--   **Satisfaction Survey — Caregiver** — Respondents who are caregivers of a child receiving services.
--   **Satisfaction Survey — Child (13–17)** — Respondents who are youth ages 13–17.
--   **Satisfaction Survey — Adult (18–59)** — Respondents who are adults ages 18–59.
--   **Satisfaction Survey — Adult (60+)** — Respondents who are older adults age 60 and above.
+- **Satisfaction Survey — Caregiver** — Respondents who are caregivers of a child receiving services.
+- **Satisfaction Survey — Child (13–17)** — Respondents who are youth ages 13–17.
+- **Satisfaction Survey — Adult (18–59)** — Respondents who are adults ages 18–59.
+- **Satisfaction Survey — Adult (60+)** — Respondents who are older adults age 60 and above.
 
 Each file has a two-row header: row 1 contains question text (with merged cells exported as `NA`), and row 2 contains subheader labels (e.g., "Rating", "Comments"). These are combined into clean column names using `zoo::na.locf()` to forward-fill the question text across merged cells.
 
