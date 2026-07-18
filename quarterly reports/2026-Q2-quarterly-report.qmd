@@ -1,0 +1,799 @@
+---
+title: "Quarterly Report Results"
+subtitle: "`r params$quarter_label`"
+author: "Cristin Young"
+date: "`r Sys.Date()`"
+params:
+  quarter_label: "2026 Q2"
+  period_start: "2024-06-01"
+  period_end: "2026-06-30"
+  date_downloaded: "2026-07-17"
+  suppression_threshold: 11
+  discharge_data_path: "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv"
+  demo_data_path: "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv"
+  satisfaction_data_path: "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/combined_satisfaction_clean.csv"
+format:
+  docx:
+    reference-doc: dhcs-reference-doc.docx
+    toc: true
+    toc-depth: 2
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+<!--
+  READ ME (delete or leave — Quarto ignores HTML comments):
+
+  1. Every quarter, update only the `params:` block above (dates, quarter
+     label, file paths) — nothing else in this file should need to change
+     unless the underlying data columns change.
+  2. This file renders straight to a DHCS-branded .docx using
+     dhcs-reference-doc.docx (must live in the same folder as this .qmd).
+     There is no template to paste numbers into anymore — the rendered
+     .docx *is* the deliverable.
+  3. Small-cell suppression (<11) is implemented in code below
+     (see `suppress_labeled_counts()` and `dhcs_crosstab()`), per the
+     original TODO. This has NOT been validated against real output by
+     Anthropic/Claude — spot-check the first render against a few known
+     small cells before trusting it for publication.
+-->
+
+```{r}
+#| label: setup
+library(readr)
+library(tidyverse)
+library(haven)
+library(janitor)
+library(flextable)
+library(officer)
+library(scales)
+
+knitr::opts_chunk$set(rownames.print = FALSE)
+
+threshold <- params$suppression_threshold
+
+# ---- load data -------------------------------------------------------
+discharge_data <- read_csv(params$discharge_data_path) %>%
+  filter(intervention_start >= params$period_start,
+         intervention_start <= params$period_end)
+
+all_data <- read_csv(params$demo_data_path) %>%
+  filter(intervention_start >= params$period_start,
+         intervention_start <= params$period_end)
+
+discharge_data_distinct <- discharge_data %>%
+  distinct(client_system_id, .keep_all = TRUE)
+
+all_data_distinct <- all_data %>%
+  distinct(client_system_id, .keep_all = TRUE)
+
+n_providers        <- discharge_data |> distinct(provider_id) |> nrow()
+n_discharge_distinct <- discharge_data |> distinct(client_system_id, .keep_all = TRUE) |> nrow()
+n_discharge_rows   <- nrow(discharge_data)
+
+# ---- DHCS brand table theme ------------------------------------------
+# Applied to every results table so styling lives in one place.
+dhcs_table <- function(df, caption = NULL) {
+  ft <- flextable(df) |>
+    set_table_properties(layout = "autofit", width = 1) |>
+    font(fontname = "Segoe UI", part = "all") |>
+    fontsize(size = 10, part = "all") |>
+    bold(part = "header") |>
+    color(color = "white", part = "header") |>
+    bg(bg = "#17315A", part = "header") |>
+    border_remove() |>
+    hline(border = fp_border(color = "#ECEEF0", width = 0.75), part = "body") |>
+    hline_bottom(border = fp_border(color = "#17315A", width = 1.5), part = "header") |>
+    hline_bottom(border = fp_border(color = "#17315A", width = 1), part = "body") |>
+    padding(padding = 4, part = "all") |>
+    align(align = "left", part = "all")
+
+  n_rows <- nrow(df)
+  if (n_rows > 1) {
+    ft <- bg(ft, i = seq(2, n_rows, by = 2), bg = "#ECEEF0", part = "body")
+  }
+  if (!is.null(caption)) {
+    ft <- set_caption(ft, caption = caption, style = "Caption")
+  }
+  ft
+}
+
+# ---- small-cell suppression -------------------------------------------
+# DHCS rule: any cell with < threshold individuals is suppressed. If only
+# one non-total row in the table is suppressed, the total is suppressed
+# too (otherwise it could be back-calculated). NOT independently tested —
+# spot-check against real small cells on first render.
+suppress_labeled_counts <- function(labels, counts, threshold = 11, total_label = "Total") {
+  is_total <- labels == total_label
+  is_small <- !is.na(counts) & counts < threshold & !is_total
+  any_small <- any(is_small)
+  out <- ifelse(!is.na(counts) & counts < threshold,
+                paste0("<", threshold), format(counts, big.mark = ","))
+  if (any_small) out[is_total] <- paste0("<", threshold)
+  list(display = out, suppressed = is_small | (any_small & is_total))
+}
+
+# Apply suppression + formatting to a single-variable tabyl() that has
+# already had adorn_totals("row") and adorn_pct_formatting() run on it.
+apply_suppression <- function(tabyl_df, label_col = 1, n_col = "n", pct_col = "percent") {
+  labels <- tabyl_df[[label_col]]
+  counts <- tabyl_df[[n_col]]
+  sup <- suppress_labeled_counts(labels, counts, threshold = threshold)
+  tabyl_df[[n_col]] <- sup$display
+  tabyl_df[[pct_col]] <- ifelse(sup$suppressed, "suppressed", tabyl_df[[pct_col]])
+  tabyl_df
+}
+
+# Build a suppressed, percent-by-column crosstab from raw (unformatted)
+# counts — used instead of tabyl()+adorn_ns() so suppression happens
+# before any percentage math touches the small cells.
+dhcs_crosstab <- function(data, row_var, col_var, threshold = 11) {
+  row_var <- rlang::ensym(row_var)
+  col_var <- rlang::ensym(col_var)
+
+  counts <- data |>
+    filter(!is.na(!!row_var), !is.na(!!col_var)) |>
+    count(!!row_var, !!col_var, name = "n") |>
+    pivot_wider(names_from = !!col_var, values_from = n, values_fill = 0)
+
+  group_cols <- setdiff(names(counts), rlang::as_string(row_var))
+
+  totals <- counts |>
+    summarise(across(all_of(group_cols), sum)) |>
+    mutate(!!row_var := "Total")
+
+  full <- bind_rows(counts, totals)
+  col_totals <- full[full[[rlang::as_string(row_var)]] == "Total", group_cols] |>
+    unlist()
+
+  out <- full
+  for (col in group_cols) {
+    raw <- full[[col]]
+    labels <- full[[rlang::as_string(row_var)]]
+    sup <- suppress_labeled_counts(labels, raw, threshold = threshold)
+    pct <- percent(raw / col_totals[[col]], accuracy = 1)
+    display <- ifelse(sup$suppressed, paste0("<", threshold),
+                       paste0(format(raw, big.mark = ","), " (", pct, ")"))
+    out[[col]] <- display
+  }
+  out
+}
+
+cat("Unique providers (discharge data):", n_providers, "\n")
+cat("Discharge data (distinct by client ID) rows; this is the denominator for most tables below:", n_discharge_distinct, "\n")
+cat("Discharge data rows (total):", n_discharge_rows, "\n")
+```
+
+::: {custom-style="DHCS Data Note"}
+Data Source: Scaling EBPs/CDEPs eInsight Data Platform (https://cybhi.einsight.net/nova-login) | Datasets Used: Individual- and assessment-level records, from intake to discharge | Dates Represented: `r params$period_start` - `r params$period_end` | Date downloaded: `r params$date_downloaded` | Prepared by Behavioral Health Evaluation Strategies, LLC.
+:::
+
+::: {custom-style="DHCS Callout"}
+**A note on suppression.** Any cell representing fewer than `r threshold` individuals is shown as "<`r threshold`" rather than an exact count, to protect client privacy. Where only one cell in a row would otherwise be suppressed, the row's total is suppressed as well so the hidden value cannot be back-calculated.
+:::
+
+## Period
+
+`r params$period_start` - `r params$period_end`
+
+## Outcomes Data by Round
+
+### Participants Served
+
+**Data used**: Discharge data, which includes clients that had more than one complete intervention.
+
+**Nitty gritty cleaning**: took out DEMO data; checked to see which `client_ids` had `pre_measure_s` AND `post_measure_s` per row (i.e., had a complete intervention); left those in; filtered only for `intervention_start` within the reporting period.
+
+```{r}
+#| label: tbl-participants-served-by-round
+tbl_served <- discharge_data %>%
+  filter(!is.na(intervention_start)) |>
+  tabyl(funding_round) %>%
+  adorn_totals("row") %>%
+  adorn_pct_formatting(digits = 1) %>%
+  apply_suppression()
+
+dhcs_table(tbl_served, caption = "Participants served by funding round")
+```
+
+### Participants with End Dates
+
+**Data used**: Discharge data, which includes clients that had more than one complete intervention.
+
+**Nitty gritty cleaning**: took out DEMO data; checked to see which `client_ids` had `pre_measure_s` AND `post_measure_s` per row (i.e., had a complete intervention); left those in; filtered only for `intervention_start` within the reporting period.
+
+```{r}
+#| label: tbl-participants-with-end-date-by-round
+tbl_end_date <- discharge_data %>%
+  filter(!is.na(intervention_end)) |>
+  tabyl(funding_round) %>%
+  adorn_totals("row") %>%
+  adorn_pct_formatting(digits = 1) %>%
+  apply_suppression()
+
+dhcs_table(tbl_end_date, caption = "Participants with an end date, by funding round")
+```
+
+### Improved Outcomes
+
+**Data used**: Discharge data
+
+**Nitty gritty cleaning**: took out DEMO data; checked to see which `client_ids` had `pre_measure_s` AND `post_measure_s` per row (i.e., had a complete intervention); left those in; filtered only for `intervention_start` within the reporting period.
+
+```{r}
+#| label: n-count-outcomes
+n_with_outcomes <- nrow(discharge_data %>% filter(!is.na(positive_outcomes)))
+```
+
+A total of [`r format(n_with_outcomes, big.mark = ",")`]{custom-style="DHCS Stat"} clients had a recorded outcome this period.
+
+#### Improved outcomes table
+
+**Assumptions:** Needed to have an intervention start and end date and reason for discharge; data used: discharge_data
+
+```{r}
+#| label: tbl-improved-outcomes
+tbl_outcomes <- discharge_data %>%
+  filter(!is.na(intervention_start),
+         !is.na(intervention_end),
+         !is.na(reason_for_discharge)) %>%
+  tabyl(positive_outcomes) %>%
+  adorn_totals("row") %>%
+  adorn_pct_formatting(digits = 1) %>%
+  apply_suppression()
+
+dhcs_table(tbl_outcomes, caption = "Improved outcomes")
+```
+
+#### Improved outcomes by funding round
+
+**Assumptions:** Needed to have an intervention start and end date and reason for discharge; data used: discharge_data
+
+```{r}
+#| label: tbl-positive-outcomes-by-round
+outcomes_base <- discharge_data %>%
+  filter(!is.na(intervention_start),
+         !is.na(intervention_end),
+         !is.na(reason_for_discharge),
+         !is.na(positive_outcomes))
+
+tbl_outcomes_round <- dhcs_crosstab(outcomes_base, positive_outcomes, funding_round)
+dhcs_table(tbl_outcomes_round, caption = "Improved outcomes by funding round — n (% of round)")
+```
+
+## Satisfaction Surveys
+
+Satisfaction is defined two ways below. The first is the percent of individuals who answered question 1 as "Agree" or "Strongly Agree." The second is the percent of individuals who selected "Agree" or "Strongly Agree" on 80% or more of the questions completed. High satisfaction on question 1 is defined as a score of 4 or 5.
+
+**Assumptions:** Distinct by client system ID and joined to satisfaction survey data; must have an intervention named; data used: satisfaction survey and all data (demo+discharge joined)
+
+```{r}
+#| label: setup-satisfaction
+#| include: false
+
+sat_all <- read_csv(params$satisfaction_data_path, show_col_types = FALSE)
+
+# Unified Q1 score — coalesce across three survey-specific Q1 columns
+sat_all <- sat_all |>
+  mutate(
+    q1_score = coalesce(
+      x1_overall_i_am_satisfied_with_the_services_my_child_received_score,
+      x1_overall_i_am_satisfied_with_the_services_i_received_score,
+      x1_i_like_the_services_that_i_received_here_score
+    )
+  )
+
+all_data_distinct <- all_data |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  mutate(
+    provider_system_id = as.character(provider_system_id),
+    client_system_id   = as.character(client_system_id)
+  )
+
+sat_all_data <- sat_all |>
+  mutate(
+    provider_system_id = as.character(provider_system_id),
+    client_system_id   = as.character(client_system_id)
+  ) |>
+  left_join(all_data_distinct,
+            by = c("provider", "provider_id", "provider_system_id", "client_system_id")) |>
+  filter(!is.na(intervention_name))
+
+score_cols <- names(sat_all_data)[str_detect(names(sat_all_data), "_score$")]
+
+# Overall Q1 high satisfaction rate
+pct_4_5 <- sat_all_data |>
+  summarise(
+    pct_4_5 = round(100 * sum(q1_score %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q1_score)), 1)
+  ) |>
+  pull(pct_4_5)
+
+# Overall combined survey high satisfaction rate (>= 80% of questions at 4 or 5)
+df2 <- sat_all_data |>
+  select(all_of(score_cols)) |>
+  mutate(across(everything(), as.numeric)) |>
+  mutate(across(everything(), ~ na_if(., 0))) |>
+  rowwise() |>
+  summarise(
+    n_answered = sum(!is.na(c_across(everything()))),
+    n_agree    = sum(c_across(everything()) %in% c(4, 5), na.rm = TRUE),
+    pct_agree  = n_agree / n_answered
+  ) |>
+  ungroup() |>
+  summarise(
+    n_total           = n(),
+    n_meeting_80pct   = sum(pct_agree >= 0.8, na.rm = TRUE),
+    pct_meeting_80pct = round(100 * n_meeting_80pct / n_total, 1)
+  )
+```
+
+### Question 1 Satisfaction
+
+Overall, [`r pct_4_5`%]{custom-style="DHCS Stat"} of survey respondents were highly satisfied based on question 1. The following table shows high satisfaction by round:
+
+```{r}
+#| label: tbl-q1-satisfaction-round
+q1_by_round <- sat_all_data |>
+  filter(!is.na(funding_round)) |>
+  group_by(funding_round) |>
+  summarise(
+    n_surveys = n(),
+    pct_4_5 = round(100 * sum(q1_score %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q1_score)), 1),
+    .groups = "drop"
+  ) |>
+  adorn_totals("row") %>%
+  rename(n = n_surveys) |>
+  apply_suppression(label_col = "funding_round", n_col = "n", pct_col = "pct_4_5")
+
+dhcs_table(q1_by_round, caption = "Question 1 high satisfaction, by funding round")
+```
+
+### Combined Survey Satisfaction
+
+Overall, [`r df2$pct_meeting_80pct`%]{custom-style="DHCS Stat"} of survey respondents were highly satisfied, defined as selecting "Agree" or "Strongly Agree" on 80% or more of the questions completed. The following table shows high combined satisfaction by round, for clients where both a client ID and intervention name were available:
+
+**Assumptions:** Must have an intervention name; data used: satisfaction survey and all data (demo+discharge joined)
+
+```{r}
+#| label: tbl-combined-satisfaction-round
+combined_by_round <- sat_all_data |>
+  filter(!is.na(funding_round)) |>
+  group_by(funding_round) |>
+  select(funding_round, all_of(score_cols)) |>
+  mutate(across(all_of(score_cols), as.numeric)) |>
+  mutate(across(all_of(score_cols), ~ na_if(., 0))) |>
+  rowwise() |>
+  summarise(
+    n_answered = sum(!is.na(c_across(all_of(score_cols)))),
+    n_agree    = sum(c_across(all_of(score_cols)) %in% c(4, 5), na.rm = TRUE),
+    pct_agree  = n_agree / n_answered
+  ) |>
+  summarise(
+    n_total           = n(),
+    n_meeting_80pct   = sum(pct_agree >= 0.8, na.rm = TRUE),
+    pct_meeting_80pct = round(100 * n_meeting_80pct / n_total, 1)
+  ) |>
+  adorn_totals("row") %>%
+  rename(n = n_total) |>
+  apply_suppression(label_col = "funding_round", n_col = "n", pct_col = "pct_meeting_80pct")
+
+dhcs_table(combined_by_round, caption = "Combined survey high satisfaction (>=80% agree/strongly agree), by funding round")
+```
+
+## Discharge
+
+### Discharge Reason
+
+**Assumptions:** Needed to have a reason for discharge; data used: discharge_data
+
+```{r}
+#| label: tbl-reason-for-discharge
+tbl_discharge_reason <- discharge_data |>
+  filter(!is.na(reason_for_discharge),
+         reason_for_discharge != "No Reason Selected") |>
+  tabyl(reason_for_discharge) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1) |>
+  apply_suppression()
+
+dhcs_table(tbl_discharge_reason, caption = "Discharge reason")
+```
+
+### Discharge Reason by Round
+
+The results below show successful discharges by round, once NA's are removed from the data.
+
+**Assumptions:** Needed to have a reason for discharge and a funding round; data used: discharge data
+
+```{r}
+#| label: tbl-discharged-by-reason
+discharge_reason_base <- discharge_data |>
+  filter(!is.na(reason_for_discharge))
+
+tbl_discharge_by_round <- dhcs_crosstab(discharge_reason_base, reason_for_discharge, funding_round)
+dhcs_table(tbl_discharge_by_round, caption = "Discharge reason by funding round — n (% of round)")
+```
+
+### Discharge Reason by Funding Round (start date)
+
+**Assumptions:** Needed to have an intervention START date -- this is because the data is broken out by funding round, not the funding round in which the intervention ended; data used: discharge_data
+
+```{r}
+#| label: tbl-discharge-reason-by-round
+discharge_start_base <- discharge_data |>
+  filter(!is.na(intervention_start), !is.na(reason_for_discharge))
+
+tbl_discharge_start_round <- dhcs_crosstab(discharge_start_base, reason_for_discharge, funding_round)
+dhcs_table(tbl_discharge_start_round, caption = "Discharge reason by funding round (by intervention start date) — n (% of round)")
+```
+
+## Client Type
+
+### Client Type Overall
+
+**Assumptions:** Distinct by client system ID; data used: all_data (demo + discharge data); must have client_type
+
+```{r}
+#| label: tbl-client-type
+.d <- all_data |>
+  filter(!is.na(client_type)) |>
+  distinct(client_system_id, .keep_all = TRUE)
+
+pct_have_client_type <- round(100 * nrow(.d) / n_distinct(all_data$client_system_id), 1)
+
+tbl_client_type <- .d |>
+  tabyl(client_type) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1) |>
+  apply_suppression()
+
+dhcs_table(tbl_client_type, caption = "Client type")
+```
+
+[`r pct_have_client_type`%]{custom-style="DHCS Emphasis"} of clients have this data.
+
+### Client Type by Funding Round
+
+**Assumptions:** Distinct by client system ID; data used: all_data (demo + discharge data); must have client type and funding round
+
+```{r}
+#| label: tbl-client-type-by-round
+.d <- all_data |>
+  filter(!is.na(client_type), !is.na(funding_round)) |>
+  distinct(client_system_id, .keep_all = TRUE)
+
+pct_have_client_type_round <- round(100 * nrow(.d) / n_distinct(all_data$client_system_id), 1)
+
+tbl_client_type_round <- dhcs_crosstab(.d, client_type, funding_round)
+dhcs_table(tbl_client_type_round, caption = "Client type by funding round — n (% of round)")
+```
+
+[`r pct_have_client_type_round`%]{custom-style="DHCS Emphasis"} of clients have this data.
+
+## Client Demographics
+
+### Client Type with Average Age
+
+**Assumptions:** Distinct by client system ID; data used: all_data (demo + discharge data)
+
+```{r}
+#| label: tbl-client-type-age
+all_data_distinct <- all_data_distinct |>
+  mutate(
+    age_start_tx_num = case_when(
+      age_at_start_of_treatment_in_years %in% c("No Age Provided", "", " ") ~ NA_character_,
+      TRUE ~ age_at_start_of_treatment_in_years
+    ) |> as.numeric()
+  ) |>
+  distinct(client_system_id, .keep_all = TRUE)
+
+tab_counts <- all_data_distinct |>
+  tabyl(client_type) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1)
+
+tab_age <- all_data_distinct |>
+  group_by(client_type) |>
+  summarise(
+    mean_age   = round(mean(age_start_tx_num, na.rm = TRUE), 1),
+    n_with_age = sum(!is.na(age_start_tx_num)),
+    .groups = "drop"
+  )
+
+tbl_type_age <- tab_counts |>
+  left_join(tab_age, by = "client_type") |>
+  select(client_type, n, percent, mean_age, n_with_age)
+
+# suppress rows below threshold; hide mean_age too when the row itself is suppressed
+sup <- suppress_labeled_counts(tbl_type_age$client_type, tbl_type_age$n, threshold = threshold)
+tbl_type_age <- tbl_type_age |>
+  mutate(
+    n = sup$display,
+    percent = ifelse(sup$suppressed, "suppressed", percent),
+    mean_age = ifelse(sup$suppressed, NA, mean_age),
+    n_with_age = ifelse(sup$suppressed, NA, n_with_age)
+  )
+
+dhcs_table(tbl_type_age, caption = "Client type with average age at start of treatment")
+```
+
+### Insurance Status
+
+**Assumptions:** Distinct by client system ID, Don't know/no selection/not applicable/prefer not to answer all grouped as NA; data used: all_data (demo + discharge data)
+
+```{r}
+#| label: tbl-insurance-status
+.d <- all_data |>
+  filter(
+    insurance_status != "Don't Know",
+    insurance_status != "No Insurance Status Selected",
+    insurance_status != "Not Applicable",
+    insurance_status != "Prefer Not To Answer",
+    !is.na(insurance_status)
+  ) |>
+  distinct(client_system_id, .keep_all = TRUE)
+
+pct_have_insurance <- round(100 * nrow(.d) / n_distinct(all_data$client_system_id), 1)
+
+tbl_insurance <- .d |>
+  tabyl(insurance_status) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1) |>
+  apply_suppression()
+
+dhcs_table(tbl_insurance, caption = "Insurance status")
+```
+
+[`r pct_have_insurance`%]{custom-style="DHCS Emphasis"} of clients have this data.
+
+### Gender Identity
+
+**Assumptions:** Distinct by client system ID, Don't know/no selection/not applicable/prefer not to answer all grouped as NA; data used: all_data (demo + discharge data)
+
+```{r}
+#| label: tbl-gender-identity
+.d <- all_data |>
+  filter(
+    gender_identity != "Don't Know",
+    gender_identity != "No Gender Identify Selected",
+    gender_identity != "Not Applicable",
+    gender_identity != "Prefer Not To Answer",
+    !is.na(gender_identity)
+  ) |>
+  distinct(client_system_id, .keep_all = TRUE)
+
+pct_have_gender <- round(100 * nrow(.d) / n_distinct(all_data$client_system_id), 1)
+
+tbl_gender <- .d |>
+  tabyl(gender_identity) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1) |>
+  apply_suppression()
+
+dhcs_table(tbl_gender, caption = "Gender identity")
+```
+
+[`r pct_have_gender`%]{custom-style="DHCS Emphasis"} of clients have this data.
+
+### Sexual Orientation
+
+**Assumptions:** Distinct by client system ID, Don't know/no selection/not applicable/prefer not to answer all grouped as NA; data used: all_data (demo + discharge data)
+
+```{r}
+#| label: tbl-sexual-orientation
+.d <- all_data |>
+  filter(
+    sexual_orientation != "Don't Know",
+    sexual_orientation != "No Sexual Orientation Selected",
+    sexual_orientation != "Not Applicable",
+    sexual_orientation != "Prefer Not To Answer",
+    !is.na(sexual_orientation)
+  ) |>
+  distinct(client_system_id, .keep_all = TRUE)
+
+pct_have_orientation <- round(100 * nrow(.d) / n_distinct(all_data$client_system_id), 1)
+
+tbl_orientation <- .d |>
+  tabyl(sexual_orientation) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1) |>
+  apply_suppression()
+
+dhcs_table(tbl_orientation, caption = "Sexual orientation")
+```
+
+[`r pct_have_orientation`%]{custom-style="DHCS Emphasis"} of clients have this data.
+
+### Race
+
+Race is coded numerically as follows:
+
+| Code | Race                                               |
+|------|-----------------------------------------------------|
+| 1    | Asian                                               |
+| 2    | Black or African American                           |
+| 3    | Hispanic or Latino                                  |
+| 4    | Middle Eastern or North African                     |
+| 5    | Native American / American Indian or Alaska Native  |
+| 6    | Native Hawaiian or Pacific Islander                 |
+| 7    | White                                               |
+| 88   | 2+ races selected                                   |
+
+**Assumptions:** Distinct by client system ID, Don't know/no selection/not applicable/prefer not to answer all grouped as NA; data used: all_data (demo + discharge data)
+
+```{r}
+#| label: tbl-race
+.d <- all_data |>
+  filter(
+    race != "Don't Know",
+    race != "No Race Selected",
+    race != "Not Applicable",
+    race != "Prefer Not To Answer",
+    !is.na(code_num)
+  ) |>
+  distinct(client_system_id, .keep_all = TRUE)
+
+pct_have_race <- round(100 * nrow(.d) / n_distinct(all_data$client_system_id), 1)
+
+tbl_race <- .d |>
+  tabyl(code_num) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1) |>
+  apply_suppression(label_col = "code_num")
+
+dhcs_table(tbl_race, caption = "Race")
+```
+
+[`r pct_have_race`%]{custom-style="DHCS Emphasis"} of clients have this data.
+
+### Ethnicity
+
+Ethnicity is coded numerically as follows:
+
+| Code | Ethnicity               | Code | Ethnicity       |
+|------|--------------------------|------|-----------------|
+| 1    | Chinese                  | 14   | Salvadoran      |
+| 2    | Asian Indian             | 15   | Cuban           |
+| 3    | Filipino                 | 16   | Dominican       |
+| 4    | Vietnamese                | 17   | Guatemalan      |
+| 5    | Korean                   | 18   | Native Hawaiian |
+| 6    | Japanese                 | 19   | Samoan          |
+| 7    | African American         | 20   | Chamorro        |
+| 8    | Jamaican                 | 21   | English         |
+| 9    | Haitian                  | 22   | German          |
+| 10   | Nigerian                 | 23   | Irish           |
+| 11   | Somali                   | 24   | Italian         |
+| 12   | Mexican                  | 25   | Polish          |
+| 13   | Puerto Rican             | 26   | Scottish        |
+|      |                           | 88   | 2+ ethnicities selected |
+
+**Assumptions:** Distinct by client system ID, Don't know/no selection/not applicable/prefer not to answer all grouped as NA; data used: all_data (demo + discharge data)
+
+```{r}
+#| label: tbl-ethnicity
+.d <- all_data |>
+  filter(
+    race != "Don't Know",
+    race != "No Ethnicity Selected",
+    race != "Not Applicable",
+    race != "Prefer Not To Answer",
+    !is.na(ethn_num)
+  ) |>
+  distinct(client_system_id, .keep_all = TRUE)
+
+pct_have_ethnicity <- round(100 * nrow(.d) / n_distinct(all_data$client_system_id), 1)
+
+tbl_ethnicity <- .d |>
+  tabyl(ethn_num) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1) |>
+  apply_suppression(label_col = "ethn_num")
+
+dhcs_table(tbl_ethnicity, caption = "Ethnicity")
+```
+
+[`r pct_have_ethnicity`%]{custom-style="DHCS Emphasis"} of clients have this data.
+
+### Primary Language
+
+**Assumptions:** Distinct by client system ID, Don't know/no selection/not applicable/prefer not to answer all grouped as NA; data used: all_data (demo + discharge data)
+
+```{r}
+#| label: tbl-primary-language
+.d <- all_data |>
+  filter(
+    primary_language != "Don't Know",
+    primary_language != "No Primary Language Selected",
+    primary_language != "Not Applicable",
+    primary_language != "Prefer Not To Answer",
+    !is.na(primary_language)) |>
+  distinct(client_system_id, .keep_all = TRUE)
+
+pct_have_language <- round(100 * nrow(.d) / n_distinct(all_data$client_system_id), 1)
+
+tbl_language <- .d |>
+  tabyl(primary_language) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1) |>
+  apply_suppression()
+
+dhcs_table(tbl_language, caption = "Primary language")
+```
+
+[`r pct_have_language`%]{custom-style="DHCS Emphasis"} of clients have this data.
+
+### Housing Status
+
+**Assumptions:** Distinct by client system ID, Don't know/no selection/not applicable/prefer not to answer all grouped as NA; data used: all_data (demo + discharge data)
+
+```{r}
+#| label: tbl-housing-status
+.d <- all_data |>
+  filter(
+    housing_status != "Don't Know",
+    housing_status != "No Housing Status Selected",
+    housing_status != "Not Applicable",
+    housing_status != "Prefer Not To Answer",
+    !is.na(housing_status)
+  ) |>
+  distinct(client_system_id, .keep_all = TRUE)
+
+pct_have_housing <- round(100 * nrow(.d) / n_distinct(all_data$client_system_id), 1)
+
+tbl_housing <- .d |>
+  tabyl(housing_status) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1) |>
+  apply_suppression()
+
+dhcs_table(tbl_housing, caption = "Housing status")
+```
+
+[`r pct_have_housing`%]{custom-style="DHCS Emphasis"} of clients have this data.
+
+### Services in Preferred Language
+
+**Definition:** Clients from the primary evaluation who indicate services received in their preferred language on the satisfaction survey divided by the total number of clients served by the grantees who completed a satisfaction survey after an intervention during the designated time frame.
+
+**Calculation:** The percent of clients that report services received in their preferred language out of the total that completed the satisfaction survey.
+
+**Data used:** satisfaction survey and all data (demo+discharge joined)
+
+```{r}
+#| label: tbl-preferred-language
+tbl_preferred_lang <- sat_all_data |>
+  arrange(date_clean) |>
+  mutate(quarter_label = factor(quarter_label, levels = unique(quarter_label))) |>
+  rename(preferred_lang_response = were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) |>
+  tabyl(preferred_lang_response) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1) |>
+  apply_suppression()
+
+dhcs_table(tbl_preferred_lang, caption = "Services received in preferred language")
+```
+
+### Caregiver / Parent Highest Level of Education
+
+**Assumptions:** Distinct by client system ID; must have highest level of education information available
+
+```{r}
+#| label: tbl-highest-caregiver-education
+.d <- all_data |>
+  filter(!is.na(highest_caregiver_education_level)) %>%
+  distinct(client_system_id, .keep_all = TRUE)
+
+pct_have_education <- round(100 * nrow(.d) / n_distinct(all_data$client_system_id), 1)
+
+tbl_education <- .d |>
+  tabyl(highest_caregiver_education_level) %>%
+  adorn_totals("row") %>%
+  adorn_pct_formatting(digits = 1) |>
+  apply_suppression()
+
+dhcs_table(tbl_education, caption = "Caregiver/parent highest level of education")
+```
+
+[`r pct_have_education`%]{custom-style="DHCS Emphasis"} of clients have this data.
