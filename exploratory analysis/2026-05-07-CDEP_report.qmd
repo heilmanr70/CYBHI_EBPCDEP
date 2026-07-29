@@ -21,6 +21,8 @@ execute:
 
 [ ] if there's only one cell in the row/column suppressed, also suppress the total so back calculation isn't possible
 
+[ ] put data note under every graphic: Data Source: Scaling EBPs/CDEPs eInsight Data Platform (https://cybhi.einsight.net/nova-login) | Datasets Used: Individual- and assessment-level records, from intake to discharge | Dates Represented: `r params$period_start` - `r params$period_end` | Date downloaded: `r params$date_downloaded` | Prepared by Behavioral Health Evaluation Strategies, LLC.
+
 :::
 
 ## CDEPs
@@ -49,7 +51,7 @@ discharge_data    <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Pr
     provider_id        = as.character(provider_id)
   )
 
-clinical_summary_data <- read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Admin Report Exports/2026-05-11-clinical_summary.xlsx", na = c("-", "", "NA", "N/A")) |>
+clinical_summary_data <- read_xlsx("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Admin Report Exports/Archived/2026-05-11-clinical_summary.xlsx", na = c("-", "", "NA", "N/A")) |>
   janitor::clean_names()
 
 demographic_data_cdep  <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/CDEPS Data Analysis_May2026/CDEP Data May  2026/Master Files/Demographics - CDEPS- All CDEPs - May 7, 2026.csv", na = c("-", "", "NA", "N/A")) |> janitor::clean_names() |> 
@@ -172,6 +174,7 @@ clinical_summary_data_cdep <- clinical_summary_data_cdep |>
 
 # join discharge data to demographic data, which has client_ids needed
 all_data_cdep <- left_join(demographic_data_cdep, discharge_data_cdep, by = c("provider_id", "client_system_id", "provider_system_id"))
+
 
 # write raw data to folder for Rikke
 write_csv(clinical_summary_data_cdep, "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/Data files for DHCS and CIBHS/CDEP Report - May 2026/clinical_summary_data_cdep.csv")

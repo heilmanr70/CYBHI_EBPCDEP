@@ -5,7 +5,7 @@ author: "Cristin Young"
 date: "`r Sys.Date()`"
 params:
   quarter_label: "2026 Q2"
-  period_start: "2024-06-01"
+  period_start: "2024-01-01"
   period_end: "2026-06-30"
   date_downloaded: "2026-07-17"
   suppression_threshold: 11
@@ -39,6 +39,10 @@ execute:
      Anthropic/Claude — spot-check the first render against a few known
      small cells before trusting it for publication.
 -->
+
+[ ] create internal report that leaves all the notes 
+[ ] create external report that deletes all notes
+[ ] Update variable names throughout so they're not raw variable names in the table column headers. If we could specify user-friendly labels for those, it would look nicer?
 
 ```{r}
 #| label: setup
@@ -262,6 +266,53 @@ outcomes_base <- discharge_data %>%
 tbl_outcomes_round <- dhcs_crosstab(outcomes_base, positive_outcomes, funding_round)
 dhcs_table(tbl_outcomes_round, caption = "Improved outcomes by funding round — n (% of round)")
 ```
+
+#### Including No Change in Outcomes
+
+```{r}
+#| label: setup-outcomes
+#| include: false
+
+assessment_rules <- tibble::tribble(
+  ~trimmed_pre_assessment_name, ~higher_is_better, ~min_change,
+  "Basis-24",  FALSE, 0.001, # weighted 0–4 scale; any positive change counts
+  "CATS",      FALSE, 1,
+  "GAD-7",     FALSE, 1,
+  "NOMS",      TRUE,  1,
+  "Pediatric", FALSE, 1,
+  "PHQ-9",     FALSE, 1,
+  "PSS",       FALSE, 1,
+  "SDQ",       FALSE, 1,
+  "YOQ",       FALSE, 10
+)
+
+discharge_outcome <- discharge_data |>
+  left_join(assessment_rules, by = "trimmed_pre_assessment_name") |>
+  mutate(
+    raw_change    = post_score - pre_score,
+    better_change = if_else(higher_is_better, raw_change, -raw_change),
+    min_change    = coalesce(min_change, 0),
+    outcome = case_when(
+      is.na(pre_score) | is.na(post_score) ~ NA_character_,
+      better_change >=  min_change ~ "improved",
+      better_change <= -min_change ~ "worsened",
+      TRUE                         ~ "no_change"
+    ),
+    outcome = factor(outcome, levels = c("worsened", "no_change", "improved"))
+  )
+```
+
+#### Including No Change in Outcomes Overall
+**Assumptions:** Must have an intervention name and an outcome; data used: discharge_data
+```{r}
+#| label: tbl-outcome-overall
+
+discharge_outcome |>
+  tabyl(outcome) |>
+  adorn_totals("row") |>
+  adorn_pct_formatting(digits = 1)
+```
+
 
 ## Satisfaction Surveys
 
