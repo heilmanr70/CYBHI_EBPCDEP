@@ -45,11 +45,11 @@ knitr::opts_chunk$set(rownames.print = FALSE)
 # load in all data
 discharge_data <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv") %>% 
   filter(intervention_start >= "2024-01-01",
-         intervention_start <= "2025-11-30")
+         intervention_start <= "2026-06-30")
 
 all_data <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv") %>% 
     filter(intervention_start >= "2024-01-01",
-           intervention_start <= "2025-11-30")
+           intervention_start <= "2026-06-30")
 
 discharge_data_distinct <- discharge_data %>% 
   distinct(client_system_id, .keep_all = TRUE)
