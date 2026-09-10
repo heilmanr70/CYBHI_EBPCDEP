@@ -12,6 +12,7 @@ params:
   discharge_data_path: "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv"
   demo_data_path: "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv"
   satisfaction_data_path: "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/combined_satisfaction_clean.csv"
+  assess_dir: "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
 format:
   docx:
     reference-doc: dhcs-reference-doc.docx
@@ -43,6 +44,8 @@ execute:
 [ ] create internal report that leaves all the notes 
 [ ] create external report that deletes all notes
 [ ] Update variable names throughout so they're not raw variable names in the table column headers. If we could specify user-friendly labels for those, it would look nicer?
+[ ] update to "don't have this data" 
+[ ] wtf claude, I want the tables to have % and total still
 
 ```{r}
 #| label: setup
@@ -168,6 +171,36 @@ dhcs_crosstab <- function(data, row_var, col_var, threshold = 11) {
 cat("Unique providers (discharge data):", n_providers, "\n")
 cat("Discharge data (distinct by client ID) rows; this is the denominator for most tables below:", n_discharge_distinct, "\n")
 cat("Discharge data rows (total):", n_discharge_rows, "\n")
+```
+
+```{r load-assessment-data}
+adir <- params$assess_dir
+
+pairs_primary_long_child <- read_csv(file.path(adir, "noms_child_pairs_clean.csv"),   show_col_types = FALSE)
+pairs_primary_long_self  <- read_csv(file.path(adir, "noms_self_pairs_clean.csv"),    show_col_types = FALSE)
+sdq_P24_pairs            <- read_csv(file.path(adir, "sdq_p24_pairs_clean.csv"),      show_col_types = FALSE)
+sdq_P410_pairs           <- read_csv(file.path(adir, "sdq_p410_pairs_clean.csv"),     show_col_types = FALSE)
+sdq_P1117_pairs          <- read_csv(file.path(adir, "sdq_p1117_pairs_clean.csv"),    show_col_types = FALSE)
+sdq_S1117_pairs          <- read_csv(file.path(adir, "sdq_s1117_pairs_clean.csv"),    show_col_types = FALSE)
+pss_paired               <- read_csv(file.path(adir, "pss_paired_clean.csv"),         show_col_types = FALSE)
+cpss_i_paired            <- read_csv(file.path(adir, "cpss_i_paired_clean.csv"),      show_col_types = FALSE)
+cpss_s_paired            <- read_csv(file.path(adir, "cpss_s_paired_clean.csv"),      show_col_types = FALSE)
+```
+
+```{r sdq-fn}
+analyze_sdq <- function(paired) {
+  tab_total <- paired |>
+    filter(!is.na(positive_outcome_total)) |>
+    tabyl(positive_outcome_total) |>
+    adorn_pct_formatting(digits = 0)
+
+  tab_ext <- paired |>
+    filter(!is.na(positive_outcome_ext)) |>
+    tabyl(positive_outcome_ext) |>
+    adorn_pct_formatting(digits = 0)
+
+  list(summary_total = tab_total, summary_ext = tab_ext)
+}
 ```
 
 ::: {custom-style="DHCS Data Note"}
@@ -848,3 +881,553 @@ dhcs_table(tbl_education, caption = "Caregiver/parent highest level of education
 ```
 
 [`r pct_have_education`%]{custom-style="DHCS Emphasis"} of clients have this data.
+
+## Assessment outcomes (questions 3.03–3.16)
+
+**Inclusion criteria:** 1. must have initial time point data; 2. must have a valid assessment at both intake and discharge; 3. limited to tools with a clinical cut-off.
+
+**Assumptions:** Filtered out dates before `r params$period_start`. Paired to the last follow-up. NAs excluded before computing percentages.
+
+---
+
+### 3.03 NOMS Child Q1 — Improved mental health (caregiver-reported)
+
+Range: 1–5.
+
+```{r q303}
+q303_data <- pairs_primary_long_child |>
+  filter(question == "q1_how_would_you_rate_your_child_s_overall_mental_health_right_now_score")
+
+q303_tabyl <- q303_data |>
+  mutate(
+    positive_outcome = case_when(
+      is.na(follow_up_score) | is.na(initial_score) ~ NA_character_,
+      follow_up_score > initial_score ~ "improved",
+      follow_up_score < initial_score ~ "worsened",
+      TRUE ~ "no_change"
+    ),
+    positive_outcome = factor(positive_outcome, levels = c("worsened", "no_change", "improved"))
+  ) |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+
+q303_long <- q303_data |>
+  filter(!is.na(client_system_id), !is.na(initial_score), !is.na(follow_up_score)) |>
+  select(client_system_id, initial_score, follow_up_score) |>
+  pivot_longer(c(initial_score, follow_up_score), names_to = "score_type", values_to = "score_value") |>
+  mutate(score_type = recode(score_type, "initial_score" = "Initial", "follow_up_score" = "Follow-up"),
+         score_type = factor(score_type, levels = c("Initial", "Follow-up")))
+
+q303_stats <- q303_long |>
+  group_by(score_type) |>
+  summarise(mean = round(mean(score_value, na.rm = TRUE), 2),
+            median = median(score_value, na.rm = TRUE),
+            sd = round(sd(score_value, na.rm = TRUE), 2),
+            n = sum(!is.na(score_value)), .groups = "drop")
+
+q303_pct <- q303_data |>
+  summarise(initial_4_5  = round(100 * mean(initial_score[!is.na(initial_score)]     %in% c(4, 5), na.rm = TRUE), 2),
+            followup_4_5 = round(100 * mean(follow_up_score[!is.na(follow_up_score)] %in% c(4, 5), na.rm = TRUE), 2))
+
+dhcs_table(q303_tabyl, caption = "3.03 NOMS Child Q1 — % with positive outcome")
+dhcs_table(q303_stats, caption = "3.03 NOMS Child Q1 — Summary statistics by timepoint")
+dhcs_table(q303_pct,   caption = "3.03 NOMS Child Q1 — % scoring 4 or 5")
+```
+
+---
+
+### 3.04 NOMS Self Q1 — Improved mental health (youth-reported)
+
+Range: 1–5.
+
+```{r q304}
+q304_data <- pairs_primary_long_self |>
+  filter(question == "q1_how_would_you_rate_your_overall_mental_health_right_now_score")
+
+q304_tabyl <- q304_data |>
+  mutate(
+    positive_outcome = case_when(
+      is.na(follow_up_score) | is.na(initial_score) ~ NA_character_,
+      follow_up_score > initial_score ~ "improved",
+      follow_up_score < initial_score ~ "worsened",
+      TRUE ~ "no_change"
+    ),
+    positive_outcome = factor(positive_outcome, levels = c("worsened", "no_change", "improved"))
+  ) |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+
+q304_long <- q304_data |>
+  filter(!is.na(client_system_id), !is.na(initial_score), !is.na(follow_up_score)) |>
+  select(client_system_id, initial_score, follow_up_score) |>
+  pivot_longer(c(initial_score, follow_up_score), names_to = "score_type", values_to = "score_value") |>
+  mutate(score_type = recode(score_type, "initial_score" = "Initial", "follow_up_score" = "Follow-up"),
+         score_type = factor(score_type, levels = c("Initial", "Follow-up")))
+
+q304_stats <- q304_long |>
+  group_by(score_type) |>
+  summarise(mean = round(mean(score_value, na.rm = TRUE), 2),
+            median = median(score_value, na.rm = TRUE),
+            sd = round(sd(score_value, na.rm = TRUE), 2),
+            n = sum(!is.na(score_value)), .groups = "drop")
+
+q304_pct <- q304_data |>
+  summarise(initial_4_5  = round(100 * mean(initial_score[!is.na(initial_score)]     %in% c(4, 5), na.rm = TRUE), 2),
+            followup_4_5 = round(100 * mean(follow_up_score[!is.na(follow_up_score)] %in% c(4, 5), na.rm = TRUE), 2))
+
+dhcs_table(q304_tabyl, caption = "3.04 NOMS Self Q1 — % with positive outcome")
+dhcs_table(q304_stats, caption = "3.04 NOMS Self Q1 — Summary statistics by timepoint")
+dhcs_table(q304_pct,   caption = "3.04 NOMS Self Q1 — % scoring 4 or 5")
+```
+
+---
+
+### 3.05 NOMS Child Q2 — Improved daily life functioning (caregiver-reported)
+
+Range: 7–35; Sum = Q2a–Q2g.
+
+```{r q305}
+q305_diff <- pairs_primary_long_child |>
+  filter(str_detect(question, "^x2.*_score$"),
+         !is.na(initial_score), !is.na(follow_up_score), !is.na(client_system_id)) |>
+  group_by(client_system_id) |>
+  summarise(initial_total  = sum(initial_score, na.rm = TRUE),
+            followup_total = sum(follow_up_score, na.rm = TRUE),
+            positive_outcome = case_when(
+              followup_total > initial_total ~ "improved",
+              followup_total < initial_total ~ "worsened",
+              TRUE ~ "no_change"
+            ),
+            positive_outcome = factor(positive_outcome, levels = c("worsened", "no_change", "improved")),
+            .groups = "drop") |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  filter(between(initial_total, 7, 35), between(followup_total, 7, 35))
+
+q305_tabyl <- q305_diff |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+
+q305_long <- q305_diff |>
+  select(client_system_id, initial_total, followup_total) |>
+  pivot_longer(c(initial_total, followup_total), names_to = "score_type", values_to = "score_value") |>
+  mutate(score_type = recode(score_type, "initial_total" = "Initial", "followup_total" = "Follow-up"),
+         score_type = factor(score_type, levels = c("Initial", "Follow-up")))
+
+q305_stats <- q305_long |>
+  group_by(score_type) |>
+  summarise(mean = round(mean(score_value, na.rm = TRUE), 2),
+            median = median(score_value, na.rm = TRUE),
+            sd = round(sd(score_value, na.rm = TRUE), 2),
+            n = sum(!is.na(score_value)), .groups = "drop")
+
+q305_pct <- q305_diff |>
+  summarise(initial_28  = round(100 * mean(initial_total[!is.na(initial_total)]   >= 28, na.rm = TRUE), 2),
+            followup_28 = round(100 * mean(followup_total[!is.na(followup_total)] >= 28, na.rm = TRUE), 2))
+
+dhcs_table(q305_tabyl, caption = "3.05 NOMS Child Q2 — % with positive outcome")
+dhcs_table(q305_stats, caption = "3.05 NOMS Child Q2 — Summary statistics by timepoint")
+dhcs_table(q305_pct,   caption = "3.05 NOMS Child Q2 — % scoring 28 or higher")
+```
+
+---
+
+### 3.06 NOMS Self Q2 — Improved daily life functioning (youth-reported)
+
+Range: 7–35; Sum = Q2a–Q2g.
+
+```{r q306}
+q306_diff <- pairs_primary_long_self |>
+  filter(str_detect(question, "^x2.*_score$"),
+         !is.na(initial_score), !is.na(follow_up_score), !is.na(client_system_id)) |>
+  group_by(client_system_id) |>
+  summarise(initial_total  = sum(initial_score, na.rm = TRUE),
+            followup_total = sum(follow_up_score, na.rm = TRUE),
+            positive_outcome = case_when(
+              followup_total > initial_total ~ "improved",
+              followup_total < initial_total ~ "worsened",
+              TRUE ~ "no_change"
+            ),
+            positive_outcome = factor(positive_outcome, levels = c("worsened", "no_change", "improved")),
+            .groups = "drop") |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  filter(between(initial_total, 7, 35), between(followup_total, 7, 35))
+
+q306_tabyl <- q306_diff |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+
+q306_long <- q306_diff |>
+  select(client_system_id, initial_total, followup_total) |>
+  pivot_longer(c(initial_total, followup_total), names_to = "score_type", values_to = "score_value") |>
+  mutate(score_type = recode(score_type, "initial_total" = "Initial", "followup_total" = "Follow-up"),
+         score_type = factor(score_type, levels = c("Initial", "Follow-up")))
+
+q306_stats <- q306_long |>
+  group_by(score_type) |>
+  summarise(mean = round(mean(score_value, na.rm = TRUE), 2),
+            median = median(score_value, na.rm = TRUE),
+            sd = round(sd(score_value, na.rm = TRUE), 2),
+            n = sum(!is.na(score_value)), .groups = "drop")
+
+q306_pct <- q306_diff |>
+  summarise(initial_28  = round(100 * mean(initial_total[!is.na(initial_total)]   >= 28, na.rm = TRUE), 2),
+            followup_28 = round(100 * mean(followup_total[!is.na(followup_total)] >= 28, na.rm = TRUE), 2))
+
+dhcs_table(q306_tabyl, caption = "3.06 NOMS Self Q2 — % with positive outcome")
+dhcs_table(q306_stats, caption = "3.06 NOMS Self Q2 — Summary statistics by timepoint")
+dhcs_table(q306_pct,   caption = "3.06 NOMS Self Q2 — % scoring 28 or higher")
+```
+
+---
+
+### 3.07 NOMS Child Q3 — Improved well-being (caregiver-reported)
+
+Range: 7–35; Sum = Q3a–Q3g.
+
+```{r q307}
+q307_diff <- pairs_primary_long_child |>
+  filter(str_detect(question, "^x3.*_score$"),
+         !is.na(initial_score), !is.na(follow_up_score), !is.na(client_system_id)) |>
+  group_by(client_system_id) |>
+  summarise(initial_total  = sum(initial_score, na.rm = TRUE),
+            followup_total = sum(follow_up_score, na.rm = TRUE),
+            positive_outcome = case_when(
+              followup_total > initial_total ~ "improved",
+              followup_total < initial_total ~ "worsened",
+              TRUE ~ "no_change"
+            ),
+            positive_outcome = factor(positive_outcome, levels = c("worsened", "no_change", "improved")),
+            .groups = "drop") |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  filter(between(initial_total, 7, 35), between(followup_total, 7, 35))
+
+q307_tabyl <- q307_diff |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+
+q307_long <- q307_diff |>
+  select(client_system_id, initial_total, followup_total) |>
+  pivot_longer(c(initial_total, followup_total), names_to = "score_type", values_to = "score_value") |>
+  mutate(score_type = recode(score_type, "initial_total" = "Initial", "followup_total" = "Follow-up"),
+         score_type = factor(score_type, levels = c("Initial", "Follow-up")))
+
+q307_stats <- q307_long |>
+  group_by(score_type) |>
+  summarise(mean = round(mean(score_value, na.rm = TRUE), 2),
+            median = median(score_value, na.rm = TRUE),
+            sd = round(sd(score_value, na.rm = TRUE), 2),
+            n = sum(!is.na(score_value)), .groups = "drop")
+
+q307_pct <- q307_diff |>
+  summarise(initial_28  = round(100 * mean(initial_total[!is.na(initial_total)]   >= 28, na.rm = TRUE), 2),
+            followup_28 = round(100 * mean(followup_total[!is.na(followup_total)] >= 28, na.rm = TRUE), 2))
+
+dhcs_table(q307_tabyl, caption = "3.07 NOMS Child Q3 — % with positive outcome")
+dhcs_table(q307_stats, caption = "3.07 NOMS Child Q3 — Summary statistics by timepoint")
+dhcs_table(q307_pct,   caption = "3.07 NOMS Child Q3 — % scoring 28 or higher")
+```
+
+---
+
+### 3.08 NOMS Self Q3 — Improved well-being (youth-reported)
+
+Range: 7–35; Sum = Q3a–Q3g.
+
+```{r q308}
+q308_diff <- pairs_primary_long_self |>
+  filter(str_detect(question, "^x3.*_score$"),
+         !is.na(initial_score), !is.na(follow_up_score), !is.na(client_system_id)) |>
+  group_by(client_system_id) |>
+  summarise(initial_total  = sum(initial_score, na.rm = TRUE),
+            followup_total = sum(follow_up_score, na.rm = TRUE),
+            positive_outcome = case_when(
+              followup_total > initial_total ~ "improved",
+              followup_total < initial_total ~ "worsened",
+              TRUE ~ "no_change"
+            ),
+            positive_outcome = factor(positive_outcome, levels = c("worsened", "no_change", "improved")),
+            .groups = "drop") |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  filter(between(initial_total, 7, 35), between(followup_total, 7, 35))
+
+q308_tabyl <- q308_diff |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+
+q308_long <- q308_diff |>
+  select(client_system_id, initial_total, followup_total) |>
+  pivot_longer(c(initial_total, followup_total), names_to = "score_type", values_to = "score_value") |>
+  mutate(score_type = recode(score_type, "initial_total" = "Initial", "followup_total" = "Follow-up"),
+         score_type = factor(score_type, levels = c("Initial", "Follow-up")))
+
+q308_stats <- q308_long |>
+  group_by(score_type) |>
+  summarise(mean = round(mean(score_value, na.rm = TRUE), 2),
+            median = median(score_value, na.rm = TRUE),
+            sd = round(sd(score_value, na.rm = TRUE), 2),
+            n = sum(!is.na(score_value)), .groups = "drop")
+
+q308_pct <- q308_diff |>
+  summarise(initial_28  = round(100 * mean(initial_total[!is.na(initial_total)]   >= 28, na.rm = TRUE), 2),
+            followup_28 = round(100 * mean(followup_total[!is.na(followup_total)] >= 28, na.rm = TRUE), 2))
+
+dhcs_table(q308_tabyl, caption = "3.08 NOMS Self Q3 — % with positive outcome")
+dhcs_table(q308_stats, caption = "3.08 NOMS Self Q3 — Summary statistics by timepoint")
+dhcs_table(q308_pct,   caption = "3.08 NOMS Self Q3 — % scoring 28 or higher")
+```
+
+---
+
+### 3.09 NOMS Child Q4 — Improved social connectedness (caregiver-reported)
+
+Range: 6–30; Sum = Q4a–Q4f.
+
+```{r q309}
+q309_diff <- pairs_primary_long_child |>
+  filter(str_detect(question, "^x4.*_score$"),
+         !is.na(initial_score), !is.na(follow_up_score), !is.na(client_system_id)) |>
+  group_by(client_system_id) |>
+  summarise(initial_total  = sum(initial_score, na.rm = TRUE),
+            followup_total = sum(follow_up_score, na.rm = TRUE),
+            positive_outcome = case_when(
+              followup_total > initial_total ~ "improved",
+              followup_total < initial_total ~ "worsened",
+              TRUE ~ "no_change"
+            ),
+            positive_outcome = factor(positive_outcome, levels = c("worsened", "no_change", "improved")),
+            .groups = "drop") |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  filter(between(initial_total, 6, 30), between(followup_total, 6, 30))
+
+q309_tabyl <- q309_diff |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+
+q309_long <- q309_diff |>
+  select(client_system_id, initial_total, followup_total) |>
+  pivot_longer(c(initial_total, followup_total), names_to = "score_type", values_to = "score_value") |>
+  mutate(score_type = recode(score_type, "initial_total" = "Initial", "followup_total" = "Follow-up"),
+         score_type = factor(score_type, levels = c("Initial", "Follow-up")))
+
+q309_stats <- q309_long |>
+  group_by(score_type) |>
+  summarise(mean = round(mean(score_value, na.rm = TRUE), 2),
+            median = median(score_value, na.rm = TRUE),
+            sd = round(sd(score_value, na.rm = TRUE), 2),
+            n = sum(!is.na(score_value)), .groups = "drop")
+
+q309_pct <- q309_diff |>
+  summarise(initial_24  = round(100 * mean(initial_total[!is.na(initial_total)]   >= 24, na.rm = TRUE), 2),
+            followup_24 = round(100 * mean(followup_total[!is.na(followup_total)] >= 24, na.rm = TRUE), 2))
+
+dhcs_table(q309_tabyl, caption = "3.09 NOMS Child Q4 — % with positive outcome")
+dhcs_table(q309_stats, caption = "3.09 NOMS Child Q4 — Summary statistics by timepoint")
+dhcs_table(q309_pct,   caption = "3.09 NOMS Child Q4 — % scoring 24 or higher")
+```
+
+---
+
+### 3.10 NOMS Self Q4 — Improved social connectedness (youth-reported)
+
+Range: 6–30; Sum = Q4a–Q4f.
+
+```{r q310}
+q310_diff <- pairs_primary_long_self |>
+  filter(str_detect(question, "^x4.*_score$"),
+         !is.na(initial_score), !is.na(follow_up_score), !is.na(client_system_id)) |>
+  group_by(client_system_id) |>
+  summarise(initial_total  = sum(initial_score, na.rm = TRUE),
+            followup_total = sum(follow_up_score, na.rm = TRUE),
+            positive_outcome = case_when(
+              followup_total > initial_total ~ "improved",
+              followup_total < initial_total ~ "worsened",
+              TRUE ~ "no_change"
+            ),
+            positive_outcome = factor(positive_outcome, levels = c("worsened", "no_change", "improved")),
+            .groups = "drop") |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  filter(between(initial_total, 6, 30), between(followup_total, 6, 30))
+
+q310_tabyl <- q310_diff |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+
+q310_long <- q310_diff |>
+  select(client_system_id, initial_total, followup_total) |>
+  pivot_longer(c(initial_total, followup_total), names_to = "score_type", values_to = "score_value") |>
+  mutate(score_type = recode(score_type, "initial_total" = "Initial", "followup_total" = "Follow-up"),
+         score_type = factor(score_type, levels = c("Initial", "Follow-up")))
+
+q310_stats <- q310_long |>
+  group_by(score_type) |>
+  summarise(mean = round(mean(score_value, na.rm = TRUE), 2),
+            median = median(score_value, na.rm = TRUE),
+            sd = round(sd(score_value, na.rm = TRUE), 2),
+            n = sum(!is.na(score_value)), .groups = "drop")
+
+q310_pct <- q310_diff |>
+  summarise(initial_24  = round(100 * mean(initial_total[!is.na(initial_total)]   >= 24, na.rm = TRUE), 2),
+            followup_24 = round(100 * mean(followup_total[!is.na(followup_total)] >= 24, na.rm = TRUE), 2))
+
+dhcs_table(q310_tabyl, caption = "3.10 NOMS Self Q4 — % with positive outcome")
+dhcs_table(q310_stats, caption = "3.10 NOMS Self Q4 — Summary statistics by timepoint")
+dhcs_table(q310_pct,   caption = "3.10 NOMS Self Q4 — % scoring 24 or higher")
+```
+
+---
+
+### 3.11 / 3.16 SDQ — Reductions in disruptive behaviors / improvements in coping
+
+**Scoring:** A decrease in score indicates a positive outcome. Four versions: P2–4; P4–10; P11–17; S11–17.
+
+- **3.11:** Externalizing score (conduct + hyperactivity scales)
+- **3.16:** Total difficulties score
+
+```{r q311-316-outcomes}
+sdq_subgroup_levels <- c("SDQ Parent (2-4)", "SDQ Parent (4-10)", "SDQ Parent (11-17)", "SDQ Self (11-17)")
+
+res_P24   <- analyze_sdq(sdq_P24_pairs)
+res_P410  <- analyze_sdq(sdq_P410_pairs)
+res_P1117 <- analyze_sdq(sdq_P1117_pairs)
+res_S1117 <- analyze_sdq(sdq_S1117_pairs)
+
+dhcs_table(res_P24$summary_total,   caption = "3.16 SDQ Parent (2–4) — % with positive outcome, total score")
+dhcs_table(res_P24$summary_ext,     caption = "3.11 SDQ Parent (2–4) — % with positive outcome, externalizing score")
+dhcs_table(res_P410$summary_total,  caption = "3.16 SDQ Parent (4–10) — % with positive outcome, total score")
+dhcs_table(res_P410$summary_ext,    caption = "3.11 SDQ Parent (4–10) — % with positive outcome, externalizing score")
+dhcs_table(res_P1117$summary_total, caption = "3.16 SDQ Parent (11–17) — % with positive outcome, total score")
+dhcs_table(res_P1117$summary_ext,   caption = "3.11 SDQ Parent (11–17) — % with positive outcome, externalizing score")
+dhcs_table(res_S1117$summary_total, caption = "3.16 SDQ Self (11–17) — % with positive outcome, total score")
+dhcs_table(res_S1117$summary_ext,   caption = "3.11 SDQ Self (11–17) — % with positive outcome, externalizing score")
+```
+
+```{r q311-316-stats}
+df_from_lists <- bind_rows(
+  sdq_P24_pairs   |> transmute(subgroup = "SDQ Parent (2-4)",   initial_total, follow_up_total, initial_ext, follow_up_ext),
+  sdq_P410_pairs  |> transmute(subgroup = "SDQ Parent (4-10)",  initial_total, follow_up_total, initial_ext, follow_up_ext),
+  sdq_P1117_pairs |> transmute(subgroup = "SDQ Parent (11-17)", initial_total, follow_up_total, initial_ext, follow_up_ext),
+  sdq_S1117_pairs |> transmute(subgroup = "SDQ Self (11-17)",   initial_total, follow_up_total, initial_ext, follow_up_ext)
+)
+
+sdq_stats_total <- df_from_lists |>
+  filter(!is.na(initial_total), !is.na(follow_up_total)) |>
+  pivot_longer(c(initial_total, follow_up_total), names_to = "timepoint", values_to = "value") |>
+  mutate(subgroup  = factor(subgroup, levels = sdq_subgroup_levels),
+         timepoint = recode(timepoint, "initial_total" = "Initial", "follow_up_total" = "Follow-up")) |>
+  group_by(subgroup, timepoint) |>
+  summarise(mean = round(mean(value, na.rm = TRUE), 2),
+            median = median(value, na.rm = TRUE),
+            sd = round(sd(value, na.rm = TRUE), 2),
+            n = sum(!is.na(value)), .groups = "drop")
+
+sdq_stats_ext <- df_from_lists |>
+  filter(!is.na(initial_ext), !is.na(follow_up_ext)) |>
+  pivot_longer(c(initial_ext, follow_up_ext), names_to = "timepoint", values_to = "value") |>
+  mutate(subgroup  = factor(subgroup, levels = sdq_subgroup_levels),
+         timepoint = recode(timepoint, "initial_ext" = "Initial", "follow_up_ext" = "Follow-up")) |>
+  group_by(subgroup, timepoint) |>
+  summarise(mean = round(mean(value, na.rm = TRUE), 2),
+            median = median(value, na.rm = TRUE),
+            sd = round(sd(value, na.rm = TRUE), 2),
+            n = sum(!is.na(value)), .groups = "drop")
+
+dhcs_table(sdq_stats_total, caption = "3.16 SDQ — Summary statistics, total difficulties score by subgroup and timepoint")
+dhcs_table(sdq_stats_ext,   caption = "3.11 SDQ — Summary statistics, externalizing score by subgroup and timepoint")
+```
+
+---
+
+### 3.12 PSS — Reduction in parent-related stress
+
+**Scoring:** A decrease in score indicates a positive outcome. Range: 18–90.
+
+```{r q312}
+q312_tabyl <- pss_paired |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+
+q312_long <- pss_paired |>
+  filter(!is.na(client_system_id), !is.na(initial_score), !is.na(follow_up_score)) |>
+  select(client_system_id, initial_score, follow_up_score) |>
+  pivot_longer(c(initial_score, follow_up_score), names_to = "score_type", values_to = "score_value") |>
+  mutate(score_type = recode(score_type, "initial_score" = "Initial", "follow_up_score" = "Follow-up"),
+         score_type = factor(score_type, levels = c("Initial", "Follow-up")))
+
+q312_stats <- q312_long |>
+  filter(!is.na(score_value)) |>
+  group_by(score_type) |>
+  summarise(mean = round(mean(score_value, na.rm = TRUE), 2),
+            median = median(score_value, na.rm = TRUE),
+            sd = round(sd(score_value, na.rm = TRUE), 2),
+            n = sum(!is.na(score_value)), .groups = "drop")
+
+dhcs_table(q312_tabyl, caption = "3.12 PSS — % with positive outcome (lower score = better)")
+dhcs_table(q312_stats, caption = "3.12 PSS — Summary statistics by timepoint")
+```
+
+---
+
+### 3.15 CPSS-5 — Reductions in PTSD symptoms
+
+**Scoring:** A decrease in score indicates a positive outcome. Range: 0–80.
+
+#### Interviewer version
+
+```{r q315-i}
+q315i_tabyl <- cpss_i_paired |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+
+q315i_long <- cpss_i_paired |>
+  filter(!is.na(client_system_id), !is.na(initial_score), !is.na(follow_up_score)) |>
+  select(client_system_id, initial_score, follow_up_score) |>
+  pivot_longer(c(initial_score, follow_up_score), names_to = "score_type", values_to = "score_value") |>
+  mutate(score_type = recode(score_type, "initial_score" = "Initial", "follow_up_score" = "Follow-up"),
+         score_type = factor(score_type, levels = c("Initial", "Follow-up")))
+
+q315i_stats <- q315i_long |>
+  group_by(score_type) |>
+  summarise(mean = round(mean(score_value, na.rm = TRUE), 2),
+            median = median(score_value, na.rm = TRUE),
+            sd = round(sd(score_value, na.rm = TRUE), 2),
+            n = sum(!is.na(score_value)), .groups = "drop")
+
+dhcs_table(q315i_tabyl, caption = "3.15 CPSS-5 Interviewer — % with positive outcome")
+dhcs_table(q315i_stats, caption = "3.15 CPSS-5 Interviewer — Summary statistics by timepoint")
+```
+
+#### Self version
+
+```{r q315-s}
+q315s_tabyl <- cpss_s_paired |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+
+q315s_long <- cpss_s_paired |>
+  filter(!is.na(client_system_id), !is.na(initial_score), !is.na(follow_up_score)) |>
+  select(client_system_id, initial_score, follow_up_score) |>
+  pivot_longer(c(initial_score, follow_up_score), names_to = "score_type", values_to = "score_value") |>
+  mutate(score_type = recode(score_type, "initial_score" = "Initial", "follow_up_score" = "Follow-up"),
+         score_type = factor(score_type, levels = c("Initial", "Follow-up")))
+
+q315s_stats <- q315s_long |>
+  group_by(score_type) |>
+  summarise(mean = round(mean(score_value, na.rm = TRUE), 2),
+            median = median(score_value, na.rm = TRUE),
+            sd = round(sd(score_value, na.rm = TRUE), 2),
+            n = sum(!is.na(score_value)), .groups = "drop")
+
+dhcs_table(q315s_tabyl, caption = "3.15 CPSS-5 Self — % with positive outcome")
+dhcs_table(q315s_stats, caption = "3.15 CPSS-5 Self — Summary statistics by timepoint")
+```

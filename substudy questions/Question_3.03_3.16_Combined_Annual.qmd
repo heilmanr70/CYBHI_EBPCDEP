@@ -1,0 +1,1002 @@
+---
+title: "Annual report data analysis - Questions 3.03–3.16"
+---
+
+
+# 3. Did EBP/CDEP services impact clinical and functional outcomes for clients who participated?
+
+**Inclusion criteria:** 1. must have initial time point data (i.e., be enrolled in an intervention), 2. must have a valid assessment collected at both intake and discharge time points, and 3. limited to tools with a clinical cut-off.
+
+**Assumptions:** Filtered out dates before 2024-01-01 and after the date the code was run. Filtered data that's >3 days from initial assessment and paired to the LAST follow-up. Filtered positive outcomes that had NAs before computing %.
+
+```{r load-packages}
+#| echo: false
+#| warning: false
+#| message: false
+library(tidyverse)
+library(janitor)
+library(patchwork)
+```
+
+```{r load-noms-data}
+#| echo: false
+#| warning: false
+#| message: false
+assess_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+# Produced by data cleaning/noms_data_cleaning.qmd
+pairs_primary_long_child <- read_csv(
+  file.path(assess_dir, "noms_child_pairs_clean.csv"),
+  show_col_types = FALSE
+)
+
+pairs_primary_long_self <- read_csv(
+  file.path(assess_dir, "noms_self_pairs_clean.csv"),
+  show_col_types = FALSE
+)
+```
+
+```{r load-sdq-data}
+#| echo: false
+#| warning: false
+#| message: false
+# Produced by data cleaning/sdq_data_cleaning.qmd
+sdq_P24_pairs   <- read_csv(file.path(assess_dir, "sdq_p24_pairs_clean.csv"),   show_col_types = FALSE)
+sdq_P410_pairs  <- read_csv(file.path(assess_dir, "sdq_p410_pairs_clean.csv"),  show_col_types = FALSE)
+sdq_P1117_pairs <- read_csv(file.path(assess_dir, "sdq_p1117_pairs_clean.csv"), show_col_types = FALSE)
+sdq_S1117_pairs <- read_csv(file.path(assess_dir, "sdq_s1117_pairs_clean.csv"), show_col_types = FALSE)
+```
+
+```{r load-pss-data}
+#| echo: false
+#| warning: false
+#| message: false
+# Produced by data cleaning/pss_data_cleaning.qmd
+pss_paired <- read_csv(
+  file.path(assess_dir, "pss_paired_clean.csv"),
+  show_col_types = FALSE
+)
+```
+
+```{r load-cpss-data}
+#| echo: false
+#| warning: false
+#| message: false
+# Produced by data cleaning/cpss5_data_cleaning.qmd
+cpss_i_paired <- read_csv(
+  file.path(assess_dir, "cpss_i_paired_clean.csv"),
+  show_col_types = FALSE
+)
+
+cpss_s_paired <- read_csv(
+  file.path(assess_dir, "cpss_s_paired_clean.csv"),
+  show_col_types = FALSE
+)
+```
+
+---
+
+## 3.03 NOMS Child Q1 — Improved mental health (caregiver-reported)
+
+**Scoring:** An **increase** in score indicates a positive outcome. Range: 1–5; Sum = Q1.
+
+```{r q303-positive-outcome}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q1 <- pairs_primary_long_child |>
+  filter(question == "q1_how_would_you_rate_your_child_s_overall_mental_health_right_now_score")
+
+score_diff_child_q1 <- pairs_primary_long_q1 |>
+  mutate(
+    score_change     = follow_up_score - initial_score,
+    positive_outcome = case_when(
+      is.na(follow_up_score) | is.na(initial_score) ~ NA_character_,
+      follow_up_score > initial_score ~ "improved",
+      follow_up_score < initial_score ~ "worsened",
+      TRUE                            ~ "no_change"
+    ),
+    positive_outcome = factor(positive_outcome, levels = c("worsened", "no_change", "improved"))
+  )
+
+score_diff_child_q1 |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+```
+
+```{r q303-summary-stats}
+#| echo: false
+#| warning: false
+#| message: false
+q1_child_score_long <- pairs_primary_long_q1 |>
+  ungroup() |>
+  filter(!is.na(client_system_id), !is.na(initial_score), !is.na(follow_up_score)) |>
+  select(client_system_id, initial_score, follow_up_score) |>
+  pivot_longer(
+    cols      = c(initial_score, follow_up_score),
+    names_to  = "score_type",
+    values_to = "score_value"
+  ) |>
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score"   = "Initial",
+                        "follow_up_score" = "Follow-up"),
+    score_type = factor(score_type, levels = c("Initial", "Follow-up"))
+  )
+
+summary_stats_child_score_type <- q1_child_score_long |>
+  group_by(score_type) |>
+  summarise(
+    mean_score   = mean(score_value, na.rm = TRUE),
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score     = sd(score_value, na.rm = TRUE),
+    n            = sum(!is.na(score_value))
+  )
+
+summary_stats_child_score_type
+```
+
+The percent of those who selected ratings of 4 or higher (excellent or very good) across Q1 at initial and discharge time points:
+
+```{r q303-pct-4-5}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q1 |>
+  ungroup() |>
+  summarise(
+    initial_4_5  = round(100 * mean(initial_score[!is.na(initial_score)]     %in% c(4, 5), na.rm = TRUE), 2),
+    followup_4_5 = round(100 * mean(follow_up_score[!is.na(follow_up_score)] %in% c(4, 5), na.rm = TRUE), 2)
+  )
+```
+
+---
+
+## 3.04 NOMS Self Q1 — Improved mental health (youth-reported)
+
+**Scoring:** An **increase** in score indicates a positive outcome. Range: 1–5; Sum = Q1.
+
+```{r q304-positive-outcome}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q1_self <- pairs_primary_long_self |>
+  filter(question == "q1_how_would_you_rate_your_overall_mental_health_right_now_score")
+
+score_diff_self_q1 <- pairs_primary_long_q1_self |>
+  mutate(
+    score_change     = follow_up_score - initial_score,
+    positive_outcome = case_when(
+      is.na(follow_up_score) | is.na(initial_score) ~ NA_character_,
+      follow_up_score > initial_score ~ "improved",
+      follow_up_score < initial_score ~ "worsened",
+      TRUE                            ~ "no_change"
+    ),
+    positive_outcome = factor(positive_outcome, levels = c("worsened", "no_change", "improved"))
+  )
+
+score_diff_self_q1 |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+```
+
+```{r q304-summary-stats}
+#| echo: false
+#| warning: false
+#| message: false
+q1_self_score_long <- pairs_primary_long_q1_self |>
+  ungroup() |>
+  filter(!is.na(client_system_id), !is.na(initial_score), !is.na(follow_up_score)) |>
+  select(client_system_id, initial_score, follow_up_score) |>
+  pivot_longer(
+    cols      = c(initial_score, follow_up_score),
+    names_to  = "score_type",
+    values_to = "score_value"
+  ) |>
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score"   = "Initial",
+                        "follow_up_score" = "Follow-up"),
+    score_type = factor(score_type, levels = c("Initial", "Follow-up"))
+  )
+
+summary_stats_self_score_type <- q1_self_score_long |>
+  group_by(score_type) |>
+  summarise(
+    mean_score   = mean(score_value, na.rm = TRUE),
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score     = sd(score_value, na.rm = TRUE),
+    n            = sum(!is.na(score_value))
+  )
+
+summary_stats_self_score_type
+```
+
+The percent of those who selected ratings of 4 or higher across Q1 at initial and discharge time points:
+
+```{r q304-pct-4-5}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q1_self |>
+  ungroup() |>
+  summarise(
+    initial_4_5  = round(100 * mean(initial_score[!is.na(initial_score)]     %in% c(4, 5), na.rm = TRUE), 2),
+    followup_4_5 = round(100 * mean(follow_up_score[!is.na(follow_up_score)] %in% c(4, 5), na.rm = TRUE), 2)
+  )
+```
+
+---
+
+## 3.05 NOMS Child Q2 — Improved daily life functioning (caregiver-reported)
+
+**Scoring:** An **increase** in score indicates a positive outcome. Range: 7–35; Sum = Q2a+…+Q2g.
+
+```{r q305-positive-outcome}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q2 <- pairs_primary_long_child |>
+  filter(str_detect(question, "^x2.*_score$"))
+
+score_diff_child_q2 <- pairs_primary_long_q2 |>
+  filter(!is.na(initial_score), !is.na(follow_up_score), !is.na(client_system_id)) |>
+  group_by(client_system_id) |>
+  summarise(
+    initial_total    = sum(initial_score, na.rm = TRUE),
+    followup_total   = sum(follow_up_score, na.rm = TRUE),
+    score_change     = followup_total - initial_total,
+    positive_outcome = case_when(
+      followup_total > initial_total ~ "improved",
+      followup_total < initial_total ~ "worsened",
+      TRUE                           ~ "no_change"
+    ),
+    positive_outcome  = factor(positive_outcome, levels = c("worsened", "no_change", "improved"))
+  ) |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  filter(between(initial_total, 7, 35), between(followup_total, 7, 35))
+
+score_diff_child_q2 |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+```
+
+```{r q305-summary-stats}
+#| echo: false
+#| warning: false
+#| message: false
+q2_child_score_long <- score_diff_child_q2 |>
+  ungroup() |>
+  select(client_system_id, initial_total, followup_total) |>
+  pivot_longer(
+    cols      = c(initial_total, followup_total),
+    names_to  = "score_type",
+    values_to = "score_value"
+  ) |>
+  mutate(
+    score_type = recode(score_type,
+                        "initial_total"  = "Initial",
+                        "followup_total" = "Follow-up"),
+    score_type = factor(score_type, levels = c("Initial", "Follow-up"))
+  )
+
+summary_stats_child_q2 <- q2_child_score_long |>
+  group_by(score_type) |>
+  summarise(
+    mean_score   = mean(score_value, na.rm = TRUE),
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score     = sd(score_value, na.rm = TRUE),
+    n            = sum(!is.na(score_value))
+  )
+
+summary_stats_child_q2
+```
+
+The percent of those who had total scores of 28 or higher (4 × 7 questions) across Q2 at initial and discharge time points:
+
+```{r q305-pct-28}
+#| echo: false
+#| warning: false
+#| message: false
+score_diff_child_q2 |>
+  ungroup() |>
+  summarise(
+    initial_28  = round(100 * mean(initial_total[!is.na(initial_total)]   >= 28, na.rm = TRUE), 2),
+    followup_28 = round(100 * mean(followup_total[!is.na(followup_total)] >= 28, na.rm = TRUE), 2)
+  )
+```
+
+---
+
+## 3.06 NOMS Self Q2 — Improved daily life functioning (youth-reported)
+
+**Scoring:** An **increase** in score indicates a positive outcome. Range: 7–35; Sum = Q2a+…+Q2g.
+
+```{r q306-positive-outcome}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q2_self <- pairs_primary_long_self |>
+  filter(str_detect(question, "^x2.*_score$"))
+
+score_diff_self_q2 <- pairs_primary_long_q2_self |>
+  filter(!is.na(initial_score), !is.na(follow_up_score), !is.na(client_system_id)) |>
+  group_by(client_system_id) |>
+  summarise(
+    initial_total    = sum(initial_score, na.rm = TRUE),
+    followup_total   = sum(follow_up_score, na.rm = TRUE),
+    score_change     = followup_total - initial_total,
+    positive_outcome = case_when(
+      followup_total > initial_total ~ "improved",
+      followup_total < initial_total ~ "worsened",
+      TRUE                           ~ "no_change"
+    ),
+    positive_outcome  = factor(positive_outcome, levels = c("worsened", "no_change", "improved"))
+  ) |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  filter(between(initial_total, 7, 35), between(followup_total, 7, 35))
+
+score_diff_self_q2 |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+```
+
+```{r q306-summary-stats}
+#| echo: false
+#| warning: false
+#| message: false
+q2_self_score_long <- score_diff_self_q2 |>
+  ungroup() |>
+  select(client_system_id, initial_total, followup_total) |>
+  pivot_longer(
+    cols      = c(initial_total, followup_total),
+    names_to  = "score_type",
+    values_to = "score_value"
+  ) |>
+  mutate(
+    score_type = recode(score_type,
+                        "initial_total"  = "Initial",
+                        "followup_total" = "Follow-up"),
+    score_type = factor(score_type, levels = c("Initial", "Follow-up"))
+  )
+
+summary_stats_self_q2 <- q2_self_score_long |>
+  group_by(score_type) |>
+  summarise(
+    mean_score   = mean(score_value, na.rm = TRUE),
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score     = sd(score_value, na.rm = TRUE),
+    n            = sum(!is.na(score_value))
+  )
+
+summary_stats_self_q2
+```
+
+The percent of those who had total scores of 28 or higher across Q2 at initial and discharge time points:
+
+```{r q306-pct-28}
+#| echo: false
+#| warning: false
+#| message: false
+score_diff_self_q2 |>
+  ungroup() |>
+  summarise(
+    initial_28  = round(100 * mean(initial_total[!is.na(initial_total)]   >= 28, na.rm = TRUE), 2),
+    followup_28 = round(100 * mean(followup_total[!is.na(followup_total)] >= 28, na.rm = TRUE), 2)
+  )
+```
+
+---
+
+## 3.07 NOMS Child Q3 — Improved well-being (caregiver-reported)
+
+**Scoring:** An **increase** in score indicates a positive outcome. Range: 7–35; Sum = Q3a+…+Q3g.
+
+```{r q307-positive-outcome}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q3 <- pairs_primary_long_child |>
+  filter(str_detect(question, "^x3.*_score$"))
+
+score_diff_child_q3 <- pairs_primary_long_q3 |>
+  filter(!is.na(initial_score), !is.na(follow_up_score), !is.na(client_system_id)) |>
+  group_by(client_system_id) |>
+  summarise(
+    initial_total    = sum(initial_score, na.rm = TRUE),
+    followup_total   = sum(follow_up_score, na.rm = TRUE),
+    score_change     = followup_total - initial_total,
+    positive_outcome = case_when(
+      followup_total > initial_total ~ "improved",
+      followup_total < initial_total ~ "worsened",
+      TRUE                           ~ "no_change"
+    ),
+    positive_outcome  = factor(positive_outcome, levels = c("worsened", "no_change", "improved"))
+  ) |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  filter(between(initial_total, 7, 35), between(followup_total, 7, 35))
+
+score_diff_child_q3 |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+```
+
+```{r q307-summary-stats}
+#| echo: false
+#| warning: false
+#| message: false
+q3_child_score_long <- score_diff_child_q3 |>
+  ungroup() |>
+  select(client_system_id, initial_total, followup_total) |>
+  pivot_longer(
+    cols      = c(initial_total, followup_total),
+    names_to  = "score_type",
+    values_to = "score_value"
+  ) |>
+  mutate(
+    score_type = recode(score_type,
+                        "initial_total"  = "Initial",
+                        "followup_total" = "Follow-up"),
+    score_type = factor(score_type, levels = c("Initial", "Follow-up"))
+  )
+
+summary_stats_child_q3 <- q3_child_score_long |>
+  group_by(score_type) |>
+  summarise(
+    mean_score   = mean(score_value, na.rm = TRUE),
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score     = sd(score_value, na.rm = TRUE),
+    n            = sum(!is.na(score_value))
+  )
+
+summary_stats_child_q3
+```
+
+The percent of those who had total scores of 28 or higher across Q3 at initial and discharge time points:
+
+```{r q307-pct-28}
+#| echo: false
+#| warning: false
+#| message: false
+score_diff_child_q3 |>
+  ungroup() |>
+  summarise(
+    initial_28  = round(100 * mean(initial_total[!is.na(initial_total)]   >= 28, na.rm = TRUE), 2),
+    followup_28 = round(100 * mean(followup_total[!is.na(followup_total)] >= 28, na.rm = TRUE), 2)
+  )
+```
+
+---
+
+## 3.08 NOMS Self Q3 — Improved well-being (youth-reported)
+
+**Scoring:** An **increase** in score indicates a positive outcome. Range: 7–35; Sum = Q3a+…+Q3g.
+
+```{r q308-positive-outcome}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q3_self <- pairs_primary_long_self |>
+  filter(str_detect(question, "^x3.*_score$"))
+
+score_diff_self_q3 <- pairs_primary_long_q3_self |>
+  filter(!is.na(initial_score), !is.na(follow_up_score), !is.na(client_system_id)) |>
+  group_by(client_system_id) |>
+  summarise(
+    initial_total    = sum(initial_score, na.rm = TRUE),
+    followup_total   = sum(follow_up_score, na.rm = TRUE),
+    score_change     = followup_total - initial_total,
+    positive_outcome = case_when(
+      followup_total > initial_total ~ "improved",
+      followup_total < initial_total ~ "worsened",
+      TRUE                           ~ "no_change"
+    ),
+    positive_outcome  = factor(positive_outcome, levels = c("worsened", "no_change", "improved"))
+  ) |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  filter(between(initial_total, 7, 35), between(followup_total, 7, 35))
+
+score_diff_self_q3 |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+```
+
+```{r q308-summary-stats}
+#| echo: false
+#| warning: false
+#| message: false
+q3_self_score_long <- score_diff_self_q3 |>
+  ungroup() |>
+  select(client_system_id, initial_total, followup_total) |>
+  pivot_longer(
+    cols      = c(initial_total, followup_total),
+    names_to  = "score_type",
+    values_to = "score_value"
+  ) |>
+  mutate(
+    score_type = recode(score_type,
+                        "initial_total"  = "Initial",
+                        "followup_total" = "Follow-up"),
+    score_type = factor(score_type, levels = c("Initial", "Follow-up"))
+  )
+
+summary_stats_self_q3 <- q3_self_score_long |>
+  group_by(score_type) |>
+  summarise(
+    mean_score   = mean(score_value, na.rm = TRUE),
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score     = sd(score_value, na.rm = TRUE),
+    n            = sum(!is.na(score_value))
+  )
+
+summary_stats_self_q3
+```
+
+The percent of those who had total scores of 28 or higher across Q3 at initial and discharge time points:
+
+```{r q308-pct-28}
+#| echo: false
+#| warning: false
+#| message: false
+score_diff_self_q3 |>
+  ungroup() |>
+  summarise(
+    initial_28  = round(100 * mean(initial_total[!is.na(initial_total)]   >= 28, na.rm = TRUE), 2),
+    followup_28 = round(100 * mean(followup_total[!is.na(followup_total)] >= 28, na.rm = TRUE), 2)
+  )
+```
+
+---
+
+## 3.09 NOMS Child Q4 — Improved social connectedness (caregiver-reported)
+
+**Scoring:** An **increase** in score indicates a positive outcome. Range: 6–30; Sum = Q4a+…+Q4f.
+
+```{r q309-positive-outcome}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q4 <- pairs_primary_long_child |>
+  filter(str_detect(question, "^x4.*_score$"))
+
+score_diff_child_q4 <- pairs_primary_long_q4 |>
+  filter(!is.na(initial_score), !is.na(follow_up_score), !is.na(client_system_id)) |>
+  group_by(client_system_id) |>
+  summarise(
+    initial_total    = sum(initial_score, na.rm = TRUE),
+    followup_total   = sum(follow_up_score, na.rm = TRUE),
+    score_change     = followup_total - initial_total,
+    positive_outcome = case_when(
+      followup_total > initial_total ~ "improved",
+      followup_total < initial_total ~ "worsened",
+      TRUE                           ~ "no_change"
+    ),
+    positive_outcome  = factor(positive_outcome, levels = c("worsened", "no_change", "improved"))
+  ) |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  filter(between(initial_total, 6, 30), between(followup_total, 6, 30))
+
+score_diff_child_q4 |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+```
+
+```{r q309-summary-stats}
+#| echo: false
+#| warning: false
+#| message: false
+q4_child_score_long <- score_diff_child_q4 |>
+  ungroup() |>
+  select(client_system_id, initial_total, followup_total) |>
+  pivot_longer(
+    cols      = c(initial_total, followup_total),
+    names_to  = "score_type",
+    values_to = "score_value"
+  ) |>
+  mutate(
+    score_type = recode(score_type,
+                        "initial_total"  = "Initial",
+                        "followup_total" = "Follow-up"),
+    score_type = factor(score_type, levels = c("Initial", "Follow-up"))
+  )
+
+summary_stats_child_q4 <- q4_child_score_long |>
+  group_by(score_type) |>
+  summarise(
+    mean_score   = mean(score_value, na.rm = TRUE),
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score     = sd(score_value, na.rm = TRUE),
+    n            = sum(!is.na(score_value))
+  )
+
+summary_stats_child_q4
+```
+
+The percent of those who had total scores of 24 or higher (6 × 4) across Q4 at initial and discharge time points:
+
+```{r q309-pct-24}
+#| echo: false
+#| warning: false
+#| message: false
+score_diff_child_q4 |>
+  ungroup() |>
+  summarise(
+    initial_24  = round(100 * mean(initial_total[!is.na(initial_total)]   >= 24, na.rm = TRUE), 2),
+    followup_24 = round(100 * mean(followup_total[!is.na(followup_total)] >= 24, na.rm = TRUE), 2)
+  )
+```
+
+---
+
+## 3.10 NOMS Self Q4 — Improved social connectedness (youth-reported)
+
+**Scoring:** An **increase** in score indicates a positive outcome. Range: 6–30; Sum = Q4a+…+Q4f.
+
+```{r q310-positive-outcome}
+#| echo: false
+#| warning: false
+#| message: false
+pairs_primary_long_q4_self <- pairs_primary_long_self |>
+  filter(str_detect(question, "^x4.*_score$"))
+
+score_diff_self_q4 <- pairs_primary_long_q4_self |>
+  filter(!is.na(initial_score), !is.na(follow_up_score), !is.na(client_system_id)) |>
+  group_by(client_system_id) |>
+  summarise(
+    initial_total    = sum(initial_score, na.rm = TRUE),
+    followup_total   = sum(follow_up_score, na.rm = TRUE),
+    score_change     = followup_total - initial_total,
+    positive_outcome = case_when(
+      followup_total > initial_total ~ "improved",
+      followup_total < initial_total ~ "worsened",
+      TRUE                           ~ "no_change"
+    ),
+    positive_outcome  = factor(positive_outcome, levels = c("worsened", "no_change", "improved"))
+  ) |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  filter(between(initial_total, 6, 30), between(followup_total, 6, 30))
+
+score_diff_self_q4 |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+```
+
+```{r q310-summary-stats}
+#| echo: false
+#| warning: false
+#| message: false
+q4_self_score_long <- score_diff_self_q4 |>
+  ungroup() |>
+  select(client_system_id, initial_total, followup_total) |>
+  pivot_longer(
+    cols      = c(initial_total, followup_total),
+    names_to  = "score_type",
+    values_to = "score_value"
+  ) |>
+  mutate(
+    score_type = recode(score_type,
+                        "initial_total"  = "Initial",
+                        "followup_total" = "Follow-up"),
+    score_type = factor(score_type, levels = c("Initial", "Follow-up"))
+  )
+
+summary_stats_self_q4 <- q4_self_score_long |>
+  group_by(score_type) |>
+  summarise(
+    mean_score   = mean(score_value, na.rm = TRUE),
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score     = sd(score_value, na.rm = TRUE),
+    n            = sum(!is.na(score_value))
+  )
+
+summary_stats_self_q4
+```
+
+The percent of those who had total scores of 24 or higher across Q4 at initial and discharge time points:
+
+```{r q310-pct-24}
+#| echo: false
+#| warning: false
+#| message: false
+score_diff_self_q4 |>
+  ungroup() |>
+  summarise(
+    initial_24  = round(100 * mean(initial_total[!is.na(initial_total)]   >= 24, na.rm = TRUE), 2),
+    followup_24 = round(100 * mean(followup_total[!is.na(followup_total)] >= 24, na.rm = TRUE), 2)
+  )
+```
+
+---
+
+## 3.11 / 3.16 SDQ — Reductions in disruptive behaviors / improvements in coping
+
+**Scoring:** A **decrease** in score indicates a positive outcome. Four versions: P2–4; P4–10; P11–17; S11–17.
+
+- **3.11:** Externalizing score (sum of conduct and hyperactivity scales)
+- **3.16:** Total difficulties score
+
+**Assumptions:** Filtered out dates before 2024-01-01 and after the date the code was run. Filtered data that's >3 days from initial assessment and paired to the LAST follow-up.
+
+```{r sdq-function}
+#| echo: false
+#| warning: false
+#| message: false
+analyze_sdq <- function(paired, label = NULL) {
+
+  message("---- Running analysis for: ", label, " ----")
+
+  tab_total_overall <- paired |>
+    filter(!is.na(positive_outcome_total)) |>
+    tabyl(positive_outcome_total) |>
+    adorn_pct_formatting(digits = 0)
+
+  tab_ext_overall <- paired |>
+    filter(!is.na(positive_outcome_ext)) |>
+    tabyl(positive_outcome_ext) |>
+    adorn_pct_formatting(digits = 0)
+
+  list(
+    paired         = paired,
+    summary_total  = tab_total_overall,
+    summary_ext    = tab_ext_overall
+  )
+}
+```
+
+```{r sdq-run}
+#| echo: false
+#| warning: false
+#| message: false
+res_P24   <- analyze_sdq(sdq_P24_pairs,   label = "Parent SDQ (2–4)")
+cat("Parent SDQ (2-4) — total\n");   print(res_P24$summary_total)
+cat("Parent SDQ (2-4) — ext\n");     print(res_P24$summary_ext)
+
+res_P410  <- analyze_sdq(sdq_P410_pairs,  label = "Parent SDQ (4–10)")
+cat("Parent SDQ (4-10) — total\n");  print(res_P410$summary_total)
+cat("Parent SDQ (4-10) — ext\n");    print(res_P410$summary_ext)
+
+res_P1117 <- analyze_sdq(sdq_P1117_pairs, label = "Parent SDQ (11–17)")
+cat("Parent SDQ (11-17) — total\n"); print(res_P1117$summary_total)
+cat("Parent SDQ (11-17) — ext\n");   print(res_P1117$summary_ext)
+
+res_S1117 <- analyze_sdq(sdq_S1117_pairs, label = "Self SDQ (11–17)")
+cat("Self SDQ (11-17) — total\n");   print(res_S1117$summary_total)
+cat("Self SDQ (11-17) — ext\n");     print(res_S1117$summary_ext)
+
+sdq_list <- list(
+  "SDQ Parent (2-4)"   = res_P24,
+  "SDQ Parent (4-10)"  = res_P410,
+  "SDQ Parent (11-17)" = res_P1117,
+  "SDQ Self (11-17)"   = res_S1117
+)
+
+df_from_lists <- imap_dfr(sdq_list, ~ {
+  .x[[1]] |>
+    transmute(
+      subgroup        = .y,
+      initial_total   = initial_total,
+      follow_up_total = follow_up_total,
+      initial_ext     = initial_ext,
+      follow_up_ext   = follow_up_ext
+    )
+})
+```
+
+### Summary stats — total difficulties score
+
+```{r sdq-summary-stats-total}
+#| echo: false
+#| warning: false
+#| message: false
+sdq_subgroup_levels <- c(
+  "SDQ Parent (2-4)", "SDQ Parent (4-10)", "SDQ Parent (11-17)", "SDQ Self (11-17)"
+)
+
+sdq_long_total <- df_from_lists |>
+  pivot_longer(
+    cols      = c(initial_total, follow_up_total),
+    names_to  = "timepoint",
+    values_to = "value"
+  ) |>
+  mutate(
+    subgroup  = factor(subgroup,  levels = sdq_subgroup_levels),
+    timepoint = factor(timepoint, levels = c("initial_total", "follow_up_total"))
+  )
+
+summary_stats_sdq_total <- sdq_long_total |>
+  group_by(subgroup, timepoint) |>
+  summarise(
+    mean_score   = mean(value, na.rm = TRUE),
+    median_score = median(value, na.rm = TRUE),
+    sd_score     = sd(value, na.rm = TRUE),
+    n            = sum(!is.na(value)),
+    .groups      = "drop"
+  )
+
+summary_stats_sdq_total
+```
+
+### Summary stats — externalizing score
+
+```{r sdq-summary-stats-ext}
+#| echo: false
+#| warning: false
+#| message: false
+sdq_long_ext <- df_from_lists |>
+  pivot_longer(
+    cols      = c(initial_ext, follow_up_ext),
+    names_to  = "timepoint",
+    values_to = "value"
+  ) |>
+  mutate(
+    subgroup  = factor(subgroup,  levels = sdq_subgroup_levels),
+    timepoint = factor(timepoint, levels = c("initial_ext", "follow_up_ext"))
+  )
+
+summary_stats_sdq_ext <- sdq_long_ext |>
+  group_by(subgroup, timepoint) |>
+  summarise(
+    mean_score   = mean(value, na.rm = TRUE),
+    median_score = median(value, na.rm = TRUE),
+    sd_score     = sd(value, na.rm = TRUE),
+    n            = sum(!is.na(value)),
+    .groups      = "drop"
+  )
+
+summary_stats_sdq_ext
+```
+
+---
+
+## 3.12 PSS — Reduction in parent-related stress
+
+**Scoring:** A **decrease** in score indicates a positive outcome. Range: 18–90. Higher scores indicate higher perceived stress.
+
+**Assumptions:** Filtered out dates before 2024-01-01 and after the date the code was run. Filtered data that's >3 days from initial assessment and paired to the LAST follow-up. Total score = NA if 2+ items are missing.
+
+```{r q312-positive-outcome}
+#| echo: false
+#| warning: false
+#| message: false
+pss_paired |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+```
+
+```{r q312-summary-stats}
+#| echo: false
+#| warning: false
+#| message: false
+pss_paired_long <- pss_paired |>
+  ungroup() |>
+  select(client_system_id, initial_score, follow_up_score) |>
+  filter(!is.na(client_system_id), !is.na(initial_score), !is.na(follow_up_score)) |>
+  pivot_longer(
+    cols      = c(initial_score, follow_up_score),
+    names_to  = "score_type",
+    values_to = "score_value"
+  ) |>
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score"   = "Initial",
+                        "follow_up_score" = "Follow-up"),
+    score_type = factor(score_type, levels = c("Initial", "Follow-up"))
+  )
+
+summary_stats_pss <- pss_paired_long |>
+  group_by(score_type) |>
+  filter(!is.na(score_value)) |>
+  summarise(
+    mean_score   = mean(score_value, na.rm = TRUE),
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score     = sd(score_value, na.rm = TRUE),
+    n            = sum(!is.na(score_value))
+  )
+
+summary_stats_pss
+```
+
+---
+
+## 3.15 CPSS-5 — Reductions in PTSD symptoms
+
+**Scoring:** A **decrease** in score indicates a positive outcome. Range: 0–80. Higher scores indicate greater severity.
+
+**Assumptions:** Used LAST follow-up if 2+ assessments exist; filtered out NAs from follow-up date and positive outcome before calculating %.
+
+### Interviewer version
+
+```{r q315-i-positive-outcome}
+#| echo: false
+#| warning: false
+#| message: false
+cpss_i_paired |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+```
+
+```{r q315-i-summary-stats}
+#| echo: false
+#| warning: false
+#| message: false
+cpss_i_paired_long <- cpss_i_paired |>
+  ungroup() |>
+  filter(!is.na(client_system_id), !is.na(initial_score), !is.na(follow_up_score)) |>
+  select(client_system_id, initial_score, follow_up_score) |>
+  pivot_longer(
+    cols      = c(initial_score, follow_up_score),
+    names_to  = "score_type",
+    values_to = "score_value"
+  ) |>
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score"   = "Initial",
+                        "follow_up_score" = "Follow-up"),
+    score_type = factor(score_type, levels = c("Initial", "Follow-up"))
+  )
+
+summary_stats_cpss_i <- cpss_i_paired_long |>
+  group_by(score_type) |>
+  summarise(
+    mean_score   = mean(score_value, na.rm = TRUE),
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score     = sd(score_value, na.rm = TRUE),
+    n            = sum(!is.na(score_value))
+  )
+
+summary_stats_cpss_i
+```
+
+### Self version
+
+```{r q315-s-positive-outcome}
+#| echo: false
+#| warning: false
+#| message: false
+cpss_s_paired |>
+  filter(!is.na(positive_outcome)) |>
+  tabyl(positive_outcome) |>
+  adorn_pct_formatting(digits = 0)
+```
+
+```{r q315-s-summary-stats}
+#| echo: false
+#| warning: false
+#| message: false
+cpss_s_paired_long <- cpss_s_paired |>
+  ungroup() |>
+  filter(!is.na(client_system_id), !is.na(initial_score), !is.na(follow_up_score)) |>
+  select(client_system_id, initial_score, follow_up_score) |>
+  pivot_longer(
+    cols      = c(initial_score, follow_up_score),
+    names_to  = "score_type",
+    values_to = "score_value"
+  ) |>
+  mutate(
+    score_type = recode(score_type,
+                        "initial_score"   = "Initial",
+                        "follow_up_score" = "Follow-up"),
+    score_type = factor(score_type, levels = c("Initial", "Follow-up"))
+  )
+
+summary_stats_cpss_s <- cpss_s_paired_long |>
+  group_by(score_type) |>
+  summarise(
+    mean_score   = mean(score_value, na.rm = TRUE),
+    median_score = median(score_value, na.rm = TRUE),
+    sd_score     = sd(score_value, na.rm = TRUE),
+    n            = sum(!is.na(score_value))
+  )
+
+summary_stats_cpss_s
+```
