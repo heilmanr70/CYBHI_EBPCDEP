@@ -136,6 +136,7 @@ Ridgeline plot
 #| echo: false
 #| warning: false
 #| message: false
+
 summary_stats_pss <- pss_paired_long |>
   group_by(score_type) |>
   filter(!is.na(score_value)) |>

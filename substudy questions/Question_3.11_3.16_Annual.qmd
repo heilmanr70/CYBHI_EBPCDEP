@@ -199,6 +199,7 @@ sdq_subgroup_levels <- c(
 )
 
 sdq_long_total <- df_from_lists |>
+  filter(!is.na(initial_total), !is.na(follow_up_total)) |>
   pivot_longer(
     cols      = c(initial_total, follow_up_total),
     names_to  = "timepoint",
@@ -284,6 +285,7 @@ ridge_plot <- ggplot(sdq_long_total, aes(x = value, y = subgroup, fill = timepoi
 #| warning: false
 #| message: false
 sdq_long_ext <- df_from_lists |>
+  filter(!is.na(initial_ext), !is.na(follow_up_ext)) |>
   pivot_longer(
     cols      = c(initial_ext, follow_up_ext),
     names_to  = "timepoint",
