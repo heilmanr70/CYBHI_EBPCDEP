@@ -47,7 +47,7 @@ sat_combined <- read_csv(
 
 **Calculation:** This KPI represents the percent of clients that report services received in their preferred language on the satisfaction survey out of the total that completed the satisfaction survey by period(s).
 
-**Assumptions:** I cleaned dates with "002X" and "292X" and replaced them with "202X." I also filtered dates in the future (<= "2025-12-31"). I filtered out NAs for both the quarter label and the question first before calculating %.
+**Assumptions:** I cleaned dates with "002X" and "292X" and replaced them with "202X." I also filtered dates in the future (e.g, <= SysDate()). I filtered out NAs for both the quarter label and the question first before calculating %.
 
 The following table shows the percent of clients who received services in their preferred language on the satisfaction survey by quarter:
 
