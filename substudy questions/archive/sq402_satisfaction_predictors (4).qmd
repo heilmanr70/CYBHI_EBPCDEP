@@ -1,0 +1,1590 @@
+---
+title: "Study Question 4.02: Factors Predicting High Satisfaction with Services"
+subtitle: "CYBHI Scaling EBPs/CDEPs Workstream — Final Evaluation Report"
+author: "Behavioral Health Evaluation Strategies (BHES)"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: true
+    code-tools: false
+    embed-resources: true
+    fig-width: 9
+    fig-height: 6
+execute:
+  echo: true
+  warning: false
+  message: false
+params:
+  path_combined_all: "~/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/combined_satisfaction_clean.csv"
+  path_all_data: "~/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv"
+  path_grantee_lookup: ""
+  output_dir: "output/sq402"
+  data_through: ""
+  suppress_n: 60
+  score_source: "score"
+  link_by_provider: true
+  link_fallback_primary_client: true
+  large_program_pattern: "give ?thx"
+  shareable: true
+---
+
+# Purpose and approach
+
+**Study question 4.02:** What, if any, factors predicted high satisfaction with services ratings by clients?
+
+The interim report (January 30, 2026) answered this question with separate, unadjusted ordinal models for participant type, race, ethnicity, gender identity, and sexual orientation. It recommended that the final report add program context and geography, and move to adjusted models that account for participant characteristics, service exposure, and baseline severity. This analysis does that in five steps:
+
+1. **Descriptive rates** of high satisfaction for each candidate factor.
+2. **Unadjusted models** for each factor on its own (logistic for the binary outcome and proportional-odds for the 5-point rating, matching the interim approach) so final results can be compared directly with the interim report.
+3. **Variance partitioning** to estimate how much of the variation in satisfaction lies between providers and intervention models, rather than between participants.
+4. **An adjusted mixed-effects logistic model** with all candidate factors entered together and random intercepts for provider and intervention model.
+5. **Sensitivity analyses**: no random effects, the full 5-point ordinal outcome, excluding the single largest program, the CPS General Satisfaction domain as the outcome, and added baseline severity and clinical improvement.
+
+| Element | Definition |
+|---|---|
+| Analytic population | Participants who initiated an EBP/CDEP service, have a documented discharge (intervention end date), an assigned intervention, and a completed CPS satisfaction survey (same population as SQ 4.00). |
+| Primary outcome | **High satisfaction** = Agree (4) or Strongly Agree (5) on the overall satisfaction item: YSS-F item 1 ("Overall, I am satisfied with the services my child received"), YSS item 1 ("Overall, I am satisfied with the services I received"), or MHSIP item 1 ("I like the services that I received here"). |
+| Secondary outcomes | The full 5-point rating on the same item (ordinal models); a positive General Satisfaction domain score (domain mean > 3.5, at least two-thirds of domain items answered). |
+| Unit of analysis | One survey per respondent per survey version, linked to the discharged intervention it evaluates. |
+| Suppression | Any category with fewer than 60 respondents (the `suppress_n` parameter) is displayed as "Suppr." in descriptive tables and omitted from model tables, per the report's confidentiality standard. |
+
+::: {.callout-warning}
+## Verify before final rendering
+
+The script makes a few assumptions about the source data that could not be confirmed from column names alone. Each has a QA table below; review them on the first render.
+
+1. The `_score` columns in `combined_all` are coded 1 = Strongly Disagree through 5 = Strongly Agree for every survey type and provider (see the response–score concordance check).
+2. Survey version comes from `source` (caregiver → YSS-F, child → YSS, adult and senior → MHSIP). A cross-check flags any survey whose answered items belong to a different version than its `source`.
+3. Surveys link to interventions on `client_system_id` + `provider_system_id`, with a fallback to `primary_client_system_id` for caregiver-completed surveys recorded under the family's primary client.
+4. The `client_type` → participant type mapping and the county → census region crosswalk (the interim report used grantee-reported primary service county; `all_data$county` may be the service location county instead).
+5. `pre_measure_s` identifies a single scale for standardizing baseline severity, and NOMS is the only "higher = better" measure.
+6. Reference groups and recode rules match the values actually in your data. They were built from the category labels shown in the interim report's tables, not from an eInsight data dictionary. The raw-value crosswalk (end of the data preparation section) lists every raw value, where it was recoded, and any value that no rule matched.
+:::
+
+```{r}
+#| label: shareable-banner
+#| echo: false
+#| results: asis
+if (exists("params") && isTRUE(as.logical(params$shareable))) {
+  n0 <- if (!is.null(params$suppress_n)) params$suppress_n else 60
+  cat(sprintf(paste0(
+    "\n\n::: {.callout-note}\n## Shareable render\n\n",
+    "Raw category values seen fewer than %1$s times are masked, and data-quality counts below %1$s are shown as \"<%1$s\". ",
+    "Results tables use the same n < %1$s suppression as every render. Render with `shareable: false` to see the masked values locally.",
+    "\n\n:::\n\n"), n0))
+}
+```
+
+# Setup
+
+```{r}
+#| label: packages
+# Modeling packages load first so that dplyr's verbs (e.g., slice) take precedence.
+suppressPackageStartupMessages({
+  library(lme4)
+  library(ordinal)
+  library(tidyverse)
+  library(knitr)
+})
+
+options(dplyr.summarise.inform = FALSE, knitr.kable.NA = "", scipen = 999)
+theme_set(
+  theme_minimal(base_size = 12) +
+    theme(panel.grid.minor = element_blank(), plot.title.position = "plot")
+)
+```
+
+## Configuration and recode rules
+
+Edit this section if eInsight category labels differ from the patterns below. Everything downstream reads from these objects.
+
+```{r}
+#| label: config
+# Defaults are used when running chunks interactively; YAML params take precedence when rendering.
+defaults <- list(
+  path_combined_all = "~/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/combined_satisfaction_clean.csv",
+  path_all_data = "~/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv",
+  path_grantee_lookup = "",
+  output_dir = "output/sq402",
+  data_through = "",
+  suppress_n = 60,
+  score_source = "score",
+  link_by_provider = TRUE,
+  link_fallback_primary_client = TRUE,
+  large_program_pattern = "give ?thx",
+  shareable = FALSE
+)
+cfg <- modifyList(defaults, if (exists("params")) as.list(params) else list())
+
+SUPPRESS_N  <- as.integer(cfg$suppress_n)
+SUPPR       <- "Suppr."
+# Shareable render: masks raw values seen fewer than SUPPRESS_N times and shows QA counts of
+# 1 to SUPPRESS_N - 1 as "<SUPPRESS_N". Results tables are suppressed in every render.
+SHAREABLE   <- isTRUE(as.logical(cfg$shareable))
+MIN_MODEL_N <- 300   # minimum sample for subset (sensitivity) models
+LIKERT_LABELS <- c("Strongly disagree", "Disagree", "Undecided", "Agree", "Strongly agree")
+
+# Non-substantive responses are grouped as "Not reported" (the interim report's "No Response" / "N/A").
+NOT_REPORTED_PATTERN <- regex(paste(
+  "^\\s*$", "don.?t know", "do not know", "prefer not", "declin", "not applicable",
+  "^n/?a$", "not collected", "unknown", "^no .*selected$", "^none selected$", "^missing$",
+  sep = "|"), ignore_case = TRUE)
+
+# Reference groups (match the interim report where it named one).
+# If a reference level is absent or has n < suppress_n, the largest substantive level is used instead.
+REF <- list(
+  participant_type       = "Child (0-15)",
+  race                   = "White",
+  ethnicity              = "Mexican",
+  gender                 = "Woman/girl",
+  sexual_orientation_grp = "Straight",
+  insurance              = "Medi-Cal/Medi-Care",
+  lang_pref_met          = "Yes",
+  discharge_status       = "Successful completion",
+  service_length         = "3-6 months"
+)
+
+AGE_LEVELS     <- c("0-5", "6-11", "12-15", "16-17", "18-25", "26+")
+SERVICE_LEVELS <- c("<1 month", "1-3 months", "3-6 months", "6-12 months", "12+ months")
+
+# Baseline severity: scores are z-scored within these columns (must identify a single scale).
+SEVERITY_SCALE_VARS     <- c("pre_measure_s")
+HIGHER_IS_BETTER_PATTERN <- regex("noms|national outcome", ignore_case = TRUE)
+
+LARGE_PROGRAM_PATTERN <- regex(cfg$large_program_pattern, ignore_case = TRUE)
+
+LANG_COL <- "were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response"
+ID_COLS  <- c("client_system_id", "primary_client_system_id", "provider_system_id")
+
+# `source` records which eInsight export each survey came from (set in the satisfaction cleaning
+# notebook). The adult (18-59) and older adult (60+) exports use the same MHSIP item set (they share
+# columns in combined_all) and are combined here; the 60+ export is too small to report on its own.
+# Unmapped or missing `source` values fall back to the item-pattern version.
+SOURCE_VERSION_MAP <- c(
+  caregiver = "YSS-F (caregiver report)",
+  child     = "YSS (youth self-report)",
+  adult     = "MHSIP (adult self-report)",
+  senior    = "MHSIP (adult self-report)"
+)
+
+# Random-effect structure for mixed models (first term is kept if the crossed model fails).
+RE_TERMS    <- c("(1 | provider_system_id)", "(1 | intervention_name)")
+# nloptwrap without the post-fit derivative check is ~10x faster than the default with many
+# fixed effects. GLMER_NAGQ = 1 is the Laplace fit used for reporting; set to 0 for quick drafts
+# (fixed effects are then estimated in the PIRLS step; estimates are usually near-identical).
+GLMER_NAGQ  <- 1L
+GLMER_CTRL  <- glmerControl(optimizer = "nloptwrap", calc.derivs = FALSE)
+RUN_ORDINAL_MIXED <- TRUE   # clmm is the slowest model; set FALSE to skip the ordinal sensitivity model
+```
+
+```{r}
+#| label: recode-functions
+participant_type_from <- function(client_type, age) {
+  ct <- str_to_lower(coalesce(as.character(client_type), ""))
+  case_when(
+    str_detect(ct, "parent|caregiver|guardian|adult") ~ "Parent/caregiver",
+    str_detect(ct, "child")                           ~ "Child (0-15)",
+    str_detect(ct, "youth|young adult")               ~ "Youth (16-25)",
+    !is.na(age) & age < 16                            ~ "Child (0-15)",
+    !is.na(age) & age <= 25                           ~ "Youth (16-25)",
+    TRUE                                              ~ "Not reported"
+  )
+}
+
+classify_discharge <- function(x) {
+  x0 <- str_to_lower(coalesce(as.character(x), ""))
+  case_when(
+    str_detect(x0, "no reason") | x0 == ""                                 ~ "Other/no reason recorded",
+    str_detect(x0, "referred out|mutual|agreed|complet|met .*goal")        ~ "Successful completion",
+    str_detect(x0, "withdr|lost to follow|drop|disengag")                  ~ "Withdrew/lost to follow-up",
+    TRUE                                                                   ~ "Other/no reason recorded"
+  )
+}
+
+service_length_from <- function(start, end) {
+  d <- as.numeric(end - start)
+  case_when(
+    is.na(d) | d < 0 ~ "Not reported",
+    d < 30           ~ "<1 month",
+    d < 91           ~ "1-3 months",
+    d < 183          ~ "3-6 months",
+    d < 365          ~ "6-12 months",
+    TRUE             ~ "12+ months"
+  )
+}
+
+normalize_round <- function(x) {
+  num <- str_extract(as.character(x), "\\d+")
+  if_else(is.na(num), "Not reported", paste("Round", num))
+}
+
+# California Complete Count census regions (the 10 regions used in the interim report).
+REGION_XWALK <- list(
+  "1: Superior California" = c("Butte", "Colusa", "El Dorado", "Glenn", "Lassen", "Modoc", "Nevada",
+                               "Placer", "Plumas", "Sacramento", "Shasta", "Sierra", "Siskiyou",
+                               "Sutter", "Tehama", "Yolo", "Yuba"),
+  "2: North Coast" = c("Del Norte", "Humboldt", "Lake", "Mendocino", "Napa", "Sonoma", "Trinity"),
+  "3: San Francisco Bay Area" = c("Alameda", "Contra Costa", "Marin", "San Francisco", "San Mateo",
+                                  "Santa Clara", "Solano"),
+  "4: Northern San Joaquin Valley" = c("Alpine", "Amador", "Calaveras", "Madera", "Mariposa", "Merced",
+                                       "Mono", "San Joaquin", "Stanislaus", "Tuolumne"),
+  "5: Central Coast" = c("Monterey", "San Benito", "San Luis Obispo", "Santa Barbara", "Santa Cruz", "Ventura"),
+  "6: Southern San Joaquin Valley" = c("Fresno", "Inyo", "Kern", "Kings", "Tulare"),
+  "7: Inland Empire" = c("Riverside", "San Bernardino"),
+  "8: Los Angeles County" = "Los Angeles",
+  "9: Orange County" = "Orange",
+  "10: San Diego-Imperial" = c("San Diego", "Imperial")
+) |>
+  enframe("region", "county") |>
+  unnest(county)
+stopifnot(nrow(REGION_XWALK) == 58)
+
+census_region_from <- function(county) {
+  key <- county |>
+    as.character() |>
+    str_remove(regex("\\s+county$", ignore_case = TRUE)) |>
+    str_squish() |>
+    str_to_lower()
+  out <- REGION_XWALK$region[match(key, str_to_lower(REGION_XWALK$county))]
+  case_when(
+    !is.na(out)             ~ out,
+    is.na(key) | key == ""  ~ "Not reported",
+    TRUE                    ~ "Statewide/unmapped"
+  )
+}
+```
+
+```{r}
+#| label: cps-item-dictionary
+# CPS item stems by survey version. General Satisfaction (GS) domain items follow the
+# SAMHSA URS scoring convention: YSS-F/YSS items 1, 4, 5, 7, 10, 11; MHSIP items 1-3.
+# YSS and YSS-F share identical wording on items 12, 14, 15, so those stems are not used
+# to detect the survey version.
+stems <- list(
+  "YSS-F (caregiver report)" = c(
+    "x1_overall_i_am_satisfied_with_the_services_my_child_received",
+    "x2_i_helped_to_choose_my_childs_services",
+    "x3_i_helped_to_choose_my_childs_treatment_goals",
+    "x4_the_people_helping_my_child_stuck_with_us_no_matter_what",
+    "x5_i_felt_my_child_had_someone_to_talk_to_when_he_she_was_troubled",
+    "x6_i_participated_in_my_childs_treatment",
+    "x7_the_services_my_child_and_or_family_received_were_right_for_us",
+    "x8_the_location_of_services_was_convenient_for_us",
+    "x9_services_were_available_at_times_that_were_convenient_for_us",
+    "x10_my_family_got_the_help_we_wanted_for_my_child",
+    "x11_my_family_got_as_much_help_as_we_needed_for_my_child",
+    "x13_staff_respected_my_familys_religious_spiritual_beliefs"),
+  "YSS (youth self-report)" = c(
+    "x1_overall_i_am_satisfied_with_the_services_i_received",
+    "x2_i_helped_to_choose_my_services",
+    "x3_i_helped_to_choose_my_treatment_goals",
+    "x4_the_people_helping_me_stuck_with_me_no_matter_what",
+    "x5_i_felt_i_had_someone_to_talk_to_when_i_was_troubled",
+    "x6_i_participated_in_my_own_treatment",
+    "x7_i_received_services_that_were_right_for_me",
+    "x8_the_location_of_services_was_convenient_for_me",
+    "x9_services_were_available_at_times_that_were_convenient_for_me",
+    "x10_i_got_the_help_i_wanted",
+    "x11_i_got_as_much_help_as_i_needed",
+    "x13_staff_respected_my_religious_spiritual_beliefs"),
+  "MHSIP (adult self-report)" = c(
+    "x1_i_like_the_services_that_i_received_here",
+    "x2_if_i_had_other_choices_i_would_still_get_services_from_this_agency",
+    "x3_i_would_recommend_this_agency_to_a_friend_or_family_member",
+    "x4_the_location_of_services_was_convenient_parking_public_transportation_distance_etc",
+    "x5_staff_were_willing_to_see_me_as_often_as_i_felt_it_was_necessary",
+    "x6_staff_returned_my_calls_within_24_hours",
+    "x7_services_were_available_at_times_that_were_good_for_me",
+    "x8_i_was_able_to_get_all_the_services_i_thought_i_needed",
+    "x9_i_was_able_to_see_a_psychiatrist_when_i_wanted_to",
+    "x10_staff_here_believe_that_i_can_grow_change_and_recover",
+    "x11_i_felt_comfortable_asking_questions_about_my_treatment_and_medication",
+    "x12_i_felt_free_to_complain",
+    "x13_i_was_given_information_about_my_rights",
+    "x14_staff_encouraged_me_to_take_responsibility_for_how_i_live_my_life",
+    "x15_staff_told_me_what_side_effects_to_watch_out_for",
+    "x16_staff_respected_my_wishes_about_who_is_and_who_is_not_to_be_given_information_about_my_treatment")
+)
+
+item_dict <- enframe(stems, "version", "item_stem") |>
+  unnest(item_stem) |>
+  mutate(
+    item_num     = as.integer(str_extract(item_stem, "(?<=^x)\\d+")),
+    overall_item = item_num == 1,
+    gs_item      = if_else(str_detect(version, "MHSIP"), item_num %in% 1:3, item_num %in% c(1, 4, 5, 7, 10, 11))
+  )
+```
+
+```{r}
+#| label: helpers
+id_chr <- function(x) {
+  if (is.numeric(x)) x <- format(x, scientific = FALSE, trim = TRUE, digits = 15)
+  x <- str_trim(as.character(x))
+  x[x %in% c("", "NA")] <- NA_character_
+  x
+}
+
+to_date <- function(x) {
+  if (inherits(x, "Date")) return(x)
+  if (inherits(x, "POSIXt")) return(as_date(x))
+  as_date(parse_date_time(as.character(x),
+                          orders = c("Ymd", "mdY", "Ymd HMS", "mdY HMS", "Ymd HM", "mdY HM"),
+                          quiet = TRUE))
+}
+
+first_non_na <- function(x) x[!is.na(x)][1]
+
+first_substantive <- function(x) {
+  s <- x[!is.na(x) & !str_detect(as.character(x), NOT_REPORTED_PATTERN)]
+  if (length(s)) s[1] else first_non_na(x)
+}
+
+as_flag <- function(x) {
+  if (is.logical(x)) return(x)
+  x <- str_to_lower(str_trim(as.character(x)))
+  case_when(
+    x %in% c("1", "yes", "y", "true", "t", "positive") ~ TRUE,
+    x %in% c("0", "no", "n", "false", "f", "negative") ~ FALSE,
+    TRUE ~ NA
+  )
+}
+
+likert_from_text <- function(x) {
+  x <- str_to_lower(str_squish(as.character(x)))
+  case_when(
+    str_detect(x, "^strongly disagree")       ~ 1,
+    str_detect(x, "^disagree")                ~ 2,
+    str_detect(x, "undecided|neutral|neither") ~ 3,
+    str_detect(x, "^strongly agree")          ~ 5,
+    str_detect(x, "^agree")                   ~ 4,
+    TRUE                                      ~ NA_real_
+  )
+}
+
+recode_not_reported <- function(x) {
+  x <- str_squish(as.character(x))
+  if_else(is.na(x) | str_detect(x, NOT_REPORTED_PATTERN), "Not reported", x)
+}
+
+# Build a model-ready factor: small substantive levels are combined, "Other (combined)" and
+# "Not reported" are placed last, and the reference level is set (with a size check).
+prep_factor <- function(x, ref = NULL, min_n = SUPPRESS_N, lump = TRUE,
+                        order = c("freq", "given"), given_levels = NULL) {
+  order <- match.arg(order)
+  tail_levels <- c("Other (combined)", "Not reported")
+  x <- as.character(x)
+  x[is.na(x)] <- "Not reported"
+  if (lump) {
+    counts <- table(x)
+    small <- setdiff(names(counts)[counts < min_n], tail_levels)
+    if (length(small)) x[x %in% small] <- "Other (combined)"
+  }
+  f <- if (order == "freq") {
+    fct_infreq(x)
+  } else {
+    factor(x, levels = union(intersect(given_levels, unique(x)), sort(unique(x))))
+  }
+  f <- fct_relevel(f, intersect(tail_levels, levels(f)), after = Inf)
+  counts <- table(f)
+  if (!is.null(ref) && ref %in% levels(f) && counts[[ref]] >= min_n) {
+    f <- fct_relevel(f, ref)
+  } else {
+    substantive <- setdiff(names(counts)[counts >= min_n], tail_levels)
+    if (length(substantive)) f <- fct_relevel(f, names(which.max(counts[substantive])))
+  }
+  f
+}
+
+# A factor is reportable if at least two levels meet the suppression threshold.
+is_reportable <- function(x) sum(table(x) >= SUPPRESS_N) >= 2
+
+coef_or <- function(m) {
+  cf <- summary(m)$coefficients
+  tibble(term = rownames(cf), estimate = cf[, 1], std.error = cf[, 2], p.value = cf[, ncol(cf)]) |>
+    filter(term != "(Intercept)", !str_detect(term, "\\|")) |>
+    mutate(or = exp(estimate),
+           lcl = exp(estimate - qnorm(0.975) * std.error),
+           ucl = exp(estimate + qnorm(0.975) * std.error))
+}
+
+map_terms <- function(terms, vars) {
+  map_dfr(terms, function(t) {
+    hits <- vars[startsWith(t, vars)]
+    if (!length(hits)) return(tibble(term = t, variable = NA_character_, level = NA_character_))
+    v <- hits[which.max(nchar(hits))]
+    tibble(term = t, variable = v, level = substring(t, nchar(v) + 1))
+  })
+}
+
+fmt_pct <- function(x, d = 1) if_else(is.na(x), NA_character_, sprintf(paste0("%.", d, "f%%"), 100 * x))
+fmt_p   <- function(p) case_when(is.na(p) ~ NA_character_, p < 0.001 ~ "<0.001", TRUE ~ sprintf("%.3f", p))
+fmt_or  <- function(or, l, u) if_else(is.na(or), NA_character_, sprintf("%.2f (%.2f–%.2f)", or, l, u))
+fmt_n   <- function(n) format(n, big.mark = ",", trim = TRUE)
+fmt_n_qa <- function(n) if_else(SHAREABLE & !is.na(n) & n > 0 & n < SUPPRESS_N, paste0("<", SUPPRESS_N), fmt_n(n))
+list_or_none <- function(x) if (length(x)) paste(x, collapse = "; ") else "none"
+
+save_table <- function(df, name) {
+  if (nzchar(cfg$output_dir)) {
+    dir.create(cfg$output_dir, recursive = TRUE, showWarnings = FALSE)
+    write_csv(df, file.path(cfg$output_dir, paste0(name, ".csv")), na = "")
+  }
+  invisible(df)
+}
+```
+
+## Load data
+
+```{r}
+#| label: load
+read_any <- function(path) {
+  if (is.null(path) || !nzchar(path)) return(NULL)
+  if (!file.exists(path)) stop("File not found: ", path, call. = FALSE)
+  switch(tolower(tools::file_ext(path)),
+    rds     = readRDS(path),
+    csv     = readr::read_csv(path, col_types = readr::cols(.default = readr::col_character()),
+                              na = c("", "NA", "NULL")),
+    parquet = arrow::read_parquet(path),
+    stop("Unsupported file type: ", path, call. = FALSE))
+}
+
+# Objects already in the environment (interactive use) are used as-is.
+if (!exists("combined_all")) combined_all <- read_any(cfg$path_combined_all)
+if (!exists("all_data"))     all_data     <- read_any(cfg$path_all_data)
+grantee_lookup <- read_any(cfg$path_grantee_lookup)
+
+check_cols <- function(df, cols, name) {
+  missing <- setdiff(cols, names(df))
+  if (length(missing)) stop(name, " is missing required columns: ", paste(missing, collapse = ", "), call. = FALSE)
+}
+check_cols(combined_all, c("client_system_id", "provider_system_id"), "combined_all")
+check_cols(all_data, c("client_system_id", "provider_system_id", "intervention_name",
+                       "intervention_start", "intervention_end", "reason_for_discharge"), "all_data")
+
+tibble(
+  dataset = c("combined_all (satisfaction surveys)", "all_data (client/service records)"),
+  rows    = fmt_n(c(nrow(combined_all), nrow(all_data))),
+  columns = c(ncol(combined_all), ncol(all_data))
+) |> kable()
+```
+
+# Prepare satisfaction data
+
+```{r}
+#| label: sat-raw
+n_sat_file <- nrow(combined_all)
+
+sat_raw <- combined_all |>
+  as_tibble() |>
+  distinct() |>
+  mutate(across(any_of(ID_COLS), id_chr))
+n_sat_distinct <- nrow(sat_raw)
+
+date_col <- intersect(c("date_clean", "date_completed"), names(sat_raw))[1]
+sat_raw$survey_date   <- if (is.na(date_col)) as.Date(NA) else to_date(sat_raw[[date_col]])
+sat_raw$survey_type   <- if ("source" %in% names(sat_raw)) str_to_lower(str_squish(as.character(sat_raw$source))) else NA_character_
+sat_raw$lang_raw      <- if (LANG_COL %in% names(sat_raw)) as.character(sat_raw[[LANG_COL]]) else NA_character_
+if (!"primary_client_system_id" %in% names(sat_raw)) sat_raw$primary_client_system_id <- NA_character_
+
+if (nzchar(cfg$data_through)) {
+  sat_raw <- sat_raw |> filter(is.na(survey_date) | survey_date <= as.Date(cfg$data_through))
+}
+n_sat_window <- nrow(sat_raw)
+sat_raw <- sat_raw |> mutate(survey_id = row_number())
+
+# Item-level long format: one row per survey x item with the response text and score.
+sat_items_long <- sat_raw |>
+  select(survey_id, matches("^x\\d+_.*_(response|score)$")) |>
+  mutate(across(-survey_id, as.character)) |>
+  pivot_longer(-survey_id,
+               names_to = c("item_stem", ".value"),
+               names_pattern = "^(x\\d+_.*)_(response|score)$") |>
+  mutate(across(any_of(c("response", "score")), \(v) na_if(str_squish(v), ""))) |>
+  filter(!(is.na(response) & is.na(score))) |>
+  mutate(
+    score_num  = suppressWarnings(as.numeric(score)),
+    score_num  = if_else(score_num %in% 1:5, score_num, NA_real_),
+    score_text = likert_from_text(response),
+    item_value = if (cfg$score_source == "response") coalesce(score_text, score_num) else coalesce(score_num, score_text)
+  )
+```
+
+## QA: response–score concordance
+
+If the `_score` columns and the response text disagree, the score coding needs to be fixed before modeling. Discordance is shown by survey type and by provider: EHR imports are configured per grantee, so a reversed or shifted scale from an import would usually appear at a single provider. Set `score_source: "response"` to derive scores from the response text instead.
+
+```{r}
+#| label: qa-concordance
+concordance_base <- sat_items_long |>
+  filter(!is.na(score_num), !is.na(score_text)) |>
+  left_join(sat_raw |> select(survey_id, survey_type, provider_system_id), by = "survey_id")
+
+concordance <- concordance_base |>
+  summarise(item_responses = n(), discordant = sum(score_num != score_text), .by = survey_type) |>
+  mutate(survey_type = coalesce(survey_type, "(missing)"), pct_discordant = discordant / item_responses) |>
+  arrange(desc(pct_discordant))
+
+concordance_provider <- concordance_base |>
+  summarise(item_responses = n(), discordant = sum(score_num != score_text), .by = provider_system_id) |>
+  mutate(pct_discordant = discordant / item_responses) |>
+  arrange(desc(pct_discordant))
+flagged_providers <- concordance_provider |> filter(pct_discordant > 0.01)   # inspect interactively for IDs
+
+concordance |>
+  mutate(pct_discordant = if_else(SHAREABLE & discordant > 0 & discordant < SUPPRESS_N, SUPPR, fmt_pct(pct_discordant, 2)),
+         item_responses = fmt_n_qa(item_responses), discordant = fmt_n_qa(discordant)) |>
+  kable(col.names = c("Survey type (`source`)", "Item responses (text and score)", "Discordant", "% discordant"))
+
+tibble(
+  `Providers with scored items`           = nrow(concordance_provider),
+  `Providers with > 1% discordant items`  = nrow(flagged_providers),
+  `Their share of all item responses`     = fmt_pct(sum(flagged_providers$item_responses) /
+                                                      max(sum(concordance_provider$item_responses), 1))
+) |> kable(caption = "Response–score discordance by provider")
+
+sat_items_long |>
+  count(response = str_to_lower(response), score) |>
+  arrange(desc(n)) |>
+  slice_head(n = 15) |>
+  mutate(response = if_else(SHAREABLE & n < SUPPRESS_N, paste0("[masked: n < ", SUPPRESS_N, "]"), response),
+         n = fmt_n_qa(n)) |>
+  kable(caption = "Most common response text × score combinations")
+
+flagged_sources <- concordance |> filter(pct_discordant > 0.01)
+```
+
+```{r}
+#| label: qa-concordance-flag
+#| results: asis
+if (nrow(flagged_sources) || nrow(flagged_providers)) {
+  msg <- c(
+    if (nrow(flagged_sources)) paste0(
+      "More than 1% of item scores disagree with the response text for survey type(s): ",
+      paste(if (SHAREABLE) sprintf("**%s**", flagged_sources$survey_type)
+            else sprintf("**%s** (%s)", flagged_sources$survey_type, fmt_pct(flagged_sources$pct_discordant, 1)),
+            collapse = ", "), "."),
+    if (nrow(flagged_providers)) sprintf(
+      "**%s** provider(s) have more than 1%% discordant items (see `flagged_providers` for their IDs).", nrow(flagged_providers))
+  )
+  cat("\n\n::: {.callout-important}\n## Score coding needs review\n\n", paste(msg, collapse = " "),
+      " Fix the score coding, or set `score_source: \"response\"`, before interpreting results.\n\n:::\n\n")
+}
+```
+
+## Survey version and scoring
+
+```{r}
+#| label: sat-scoring
+version_counts <- sat_items_long |>
+  inner_join(item_dict |> select(item_stem, version), by = "item_stem") |>
+  count(survey_id, version)
+
+n_multi_version <- version_counts |> count(survey_id) |> filter(n > 1) |> nrow()
+
+detected_version <- version_counts |>
+  slice_max(n, by = survey_id, with_ties = FALSE) |>
+  select(survey_id, detected_version = version)
+
+# Version comes from `source`; the item-pattern version is a cross-check and a fallback.
+survey_version <- sat_raw |>
+  select(survey_id, survey_type) |>
+  mutate(source_version = unname(SOURCE_VERSION_MAP[survey_type])) |>
+  left_join(detected_version, by = "survey_id") |>
+  mutate(
+    version       = coalesce(source_version, detected_version),
+    version_basis = case_when(!is.na(source_version)   ~ "source",
+                              !is.na(detected_version) ~ "item pattern",
+                              TRUE                     ~ "none")
+  )
+
+n_version_mismatch <- with(survey_version, sum(!is.na(source_version) & !is.na(detected_version) &
+                                                 source_version != detected_version))
+n_version_fallback <- sum(survey_version$version_basis == "item pattern")
+
+gs_total <- item_dict |> filter(gs_item) |> count(version, name = "gs_total")
+
+sat_scores <- sat_items_long |>
+  inner_join(item_dict, by = "item_stem") |>
+  semi_join(survey_version |> filter(!is.na(version)) |> select(survey_id, version), by = c("survey_id", "version")) |>
+  summarise(
+    sat_overall = first_non_na(item_value[overall_item]),
+    gs_answered = sum(!is.na(item_value[gs_item])),
+    gs_mean     = if (any(!is.na(item_value[gs_item]))) mean(item_value[gs_item], na.rm = TRUE) else NA_real_,
+    .by = c(survey_id, version)
+  ) |>
+  left_join(gs_total, by = "version") |>
+  mutate(gs_positive = if_else(gs_answered >= ceiling(gs_total * 2 / 3), as.integer(gs_mean > 3.5), NA_integer_))
+
+sat <- sat_raw |>
+  select(survey_id, client_system_id, primary_client_system_id,
+         sat_provider_system_id = provider_system_id, survey_date, survey_type, lang_raw) |>
+  left_join(survey_version |> select(survey_id, version, version_basis), by = "survey_id") |>
+  left_join(sat_scores |> select(-version), by = "survey_id") |>
+  mutate(
+    high_sat = as.integer(sat_overall >= 4),
+    sat_ord  = factor(sat_overall, levels = 1:5, labels = LIKERT_LABELS, ordered = TRUE),
+    lang_lower = str_to_lower(str_squish(lang_raw)),
+    lang_pref_met = case_when(
+      str_detect(lang_lower, "^yes\\b|^y$") ~ "Yes",
+      str_detect(lang_lower, "^no\\b|^n$")  ~ "No",
+      TRUE                                  ~ "Not reported"
+    )
+  ) |>
+  select(-lang_lower)
+
+survey_version |>
+  count(survey_type = coalesce(survey_type, "(missing)"),
+        answered = coalesce(detected_version, "No items answered")) |>
+  pivot_wider(names_from = answered, values_from = n, values_fill = 0) |>
+  mutate(across(-survey_type, fmt_n_qa)) |>
+  rename(`Survey type (source)` = survey_type) |>
+  kable(caption = "QA: survey type from `source` vs. the item set actually answered")
+```
+
+Surveys whose answered items belong to a different version than their `source`: **`r fmt_n_qa(n_version_mismatch)`**. These are scored using the items of their `source` version; more than a handful suggests a column-alignment problem in an export. Surveys with a missing or unmapped `source`, versioned from their answered items instead: **`r fmt_n_qa(n_version_fallback)`**. Surveys with answered items from more than one version: **`r fmt_n_qa(n_multi_version)`**.
+
+# Prepare client and service data
+
+```{r}
+#| label: all-data-prep
+ad <- all_data |>
+  as_tibble() |>
+  mutate(
+    across(any_of(ID_COLS), id_chr),
+    intervention_name  = str_squish(as.character(intervention_name)),
+    intervention_start = to_date(intervention_start),
+    intervention_end   = to_date(intervention_end),
+    across(any_of("age_at_start_of_treatment_in_years"), \(v) suppressWarnings(as.numeric(v)))
+  )
+for (dc in c("pre_completion_date", "post_completion_date")) {
+  ad[[dc]] <- if (dc %in% names(ad)) to_date(ad[[dc]]) else as.Date(NA)
+}
+
+# Remove eInsight test/demo accounts (the satisfaction cleaning notebook drops the same accounts
+# from the survey exports). Blank provider_id values are kept.
+n_ad_demo <- 0L
+if ("provider_id" %in% names(ad)) {
+  is_demo   <- coalesce(str_detect(as.character(ad$provider_id), "DEMO"), FALSE)
+  n_ad_demo <- sum(is_demo)
+  ad        <- ad[!is_demo, ]
+}
+
+KEYS <- c("client_system_id", "provider_system_id", "intervention_name", "intervention_start")
+
+INTERVENTION_VARS <- c("provider", "funding_round", "location", "county", "intervention_end",
+                       "reason_for_discharge", "age_at_start_of_treatment_in_years")
+DEMO_VARS <- c("client_type", "recoded_race", "recoded_ethn", "gender_identity", "sexual_orientation",
+               "insurance_status", "preferred_language", "primary_language", "housing_status",
+               "urban_rural", "highest_caregiver_education_level")
+
+# One row per client x provider x intervention episode.
+interventions <- ad |>
+  filter(!is.na(client_system_id), !is.na(intervention_name)) |>
+  summarise(across(any_of(INTERVENTION_VARS), first_non_na), .by = all_of(KEYS))
+
+# One row per client: demographics from the earliest record with a substantive value.
+clients <- ad |>
+  filter(!is.na(client_system_id)) |>
+  arrange(client_system_id, intervention_start) |>
+  summarise(across(any_of(DEMO_VARS), first_substantive), .by = client_system_id)
+
+# QA: clients whose demographic values conflict across records.
+demo_conflicts <- ad |>
+  select(any_of(c("client_system_id", DEMO_VARS))) |>
+  distinct() |>
+  pivot_longer(-client_system_id, names_to = "field", values_transform = as.character) |>
+  filter(!is.na(value), !str_detect(value, NOT_REPORTED_PATTERN)) |>
+  distinct() |>
+  count(client_system_id, field) |>
+  summarise(clients_with_conflicting_values = sum(n > 1), .by = field)
+
+demo_conflicts |>
+  arrange(desc(clients_with_conflicting_values)) |>
+  mutate(clients_with_conflicting_values = fmt_n_qa(clients_with_conflicting_values)) |>
+  kable(caption = "Clients with more than one substantive value for a demographic field (earliest substantive value is used)")
+```
+
+Test/demo records removed from `all_data`: **`r fmt_n_qa(n_ad_demo)`**.
+
+```{r}
+#| label: baseline-outcomes
+# Baseline severity: pre-scores standardized within scale and signed so that higher = more severe.
+baseline <- NULL
+if (all(c("pre_score", SEVERITY_SCALE_VARS) %in% names(ad))) {
+  baseline <- ad |>
+    mutate(pre_score = suppressWarnings(as.numeric(pre_score))) |>
+    filter(!is.na(pre_score), if_all(all_of(SEVERITY_SCALE_VARS), \(v) !is.na(v))) |>
+    arrange(pre_completion_date) |>
+    slice_head(n = 1, by = all_of(c(KEYS, SEVERITY_SCALE_VARS))) |>
+    mutate(z = (pre_score - mean(pre_score)) / sd(pre_score), n_scale = n(),
+           .by = all_of(SEVERITY_SCALE_VARS)) |>
+    filter(n_scale >= 30, is.finite(z)) |>
+    mutate(severity_z = if_else(str_detect(.data[[SEVERITY_SCALE_VARS[1]]], HIGHER_IS_BETTER_PATTERN), -z, z)) |>
+    summarise(baseline_severity = mean(severity_z), n_baseline_measures = n(), .by = all_of(KEYS))
+}
+
+# Clinical improvement: met the positive-outcome definition on at least half of paired measures
+# (initial to most recent follow-up).
+outcomes <- NULL
+if (all(c("positive_outcomes", "post_score") %in% names(ad))) {
+  outcomes <- ad |>
+    mutate(post_score = suppressWarnings(as.numeric(post_score)), pos_flag = as_flag(positive_outcomes)) |>
+    filter(!is.na(post_score), !is.na(pos_flag)) |>
+    arrange(desc(post_completion_date)) |>
+    slice_head(n = 1, by = all_of(c(KEYS, intersect(SEVERITY_SCALE_VARS, names(ad))))) |>
+    summarise(n_paired_measures = n(), share_positive = mean(pos_flag), .by = all_of(KEYS)) |>
+    mutate(clinical_improvement = if_else(share_positive >= 0.5, "Improved on most measures",
+                                          "Did not improve on most measures"))
+}
+
+if (!is.null(baseline)) {
+  ad |>
+    filter(!is.na(.data[[SEVERITY_SCALE_VARS[1]]])) |>
+    distinct(scale = .data[[SEVERITY_SCALE_VARS[1]]]) |>
+    mutate(polarity = if_else(str_detect(scale, HIGHER_IS_BETTER_PATTERN), "Higher = better (sign flipped)", "Lower = better")) |>
+    arrange(scale) |>
+    kable(caption = "Scales used for baseline severity and assumed polarity")
+}
+```
+
+# Build the analytic sample
+
+Each survey is linked to a discharged intervention episode for the same client at the same provider. When a client has several discharged episodes, the survey is assigned to the episode whose end date is closest to the survey date. Surveys that do not link on the respondent's client ID are retried on `primary_client_system_id` (caregiver-completed surveys recorded under the family's primary client). Following the report's participant-level rule, one survey is retained per respondent per survey version: the one linked to their earliest intervention.
+
+```{r}
+#| label: linkage
+interventions_discharged <- interventions |> filter(!is.na(intervention_end))
+if (nzchar(cfg$data_through)) {
+  interventions_discharged <- interventions_discharged |> filter(intervention_end <= as.Date(cfg$data_through))
+}
+
+link_surveys <- function(s, id_col, by_provider) {
+  x <- s |> mutate(link_client_id = .data[[id_col]]) |> filter(!is.na(link_client_id))
+  y <- interventions_discharged |>
+    rename(int_client_id = client_system_id) |>
+    mutate(int_provider_id = provider_system_id)
+  keys <- c(link_client_id = "int_client_id")
+  if (isTRUE(by_provider)) keys <- c(keys, sat_provider_system_id = "int_provider_id")
+  x |>
+    inner_join(y, by = keys, relationship = "many-to-many") |>
+    mutate(days_end_to_survey = as.numeric(survey_date - intervention_end),
+           gap = abs(days_end_to_survey)) |>
+    arrange(survey_id, gap, intervention_start) |>
+    distinct(survey_id, .keep_all = TRUE) |>
+    select(-any_of("int_provider_id"))
+}
+
+sat_valid <- sat |> filter(!is.na(sat_overall))
+
+linked_1 <- link_surveys(sat_valid, "client_system_id", cfg$link_by_provider) |>
+  mutate(link_method = "Respondent client ID")
+
+linked_2 <- NULL
+if (isTRUE(cfg$link_fallback_primary_client)) {
+  linked_2 <- sat_valid |>
+    anti_join(linked_1, by = "survey_id") |>
+    link_surveys("primary_client_system_id", cfg$link_by_provider) |>
+    mutate(link_method = "Primary (family) client ID")
+}
+
+analytic <- bind_rows(linked_1, linked_2) |>
+  mutate(respondent_key = coalesce(client_system_id, paste0("survey_", survey_id))) |>
+  arrange(respondent_key, version, intervention_start, gap) |>
+  distinct(respondent_key, version, .keep_all = TRUE) |>
+  left_join(clients, by = c(link_client_id = "client_system_id"))
+
+join_keys <- c(link_client_id = "client_system_id", "provider_system_id", "intervention_name", "intervention_start")
+if (!is.null(baseline)) analytic <- analytic |> left_join(baseline, by = join_keys)
+if (!is.null(outcomes)) analytic <- analytic |> left_join(outcomes, by = join_keys)
+if (!is.null(grantee_lookup)) {
+  analytic <- analytic |>
+    left_join(grantee_lookup |>
+                mutate(provider_system_id = id_chr(provider_system_id)) |>
+                select(provider_system_id, any_of(c("implementation_track", "entity_type", "modality"))) |>
+                distinct(provider_system_id, .keep_all = TRUE),
+              by = "provider_system_id")
+}
+
+for (v in setdiff(c(DEMO_VARS, "funding_round", "county", "reason_for_discharge"), names(analytic))) {
+  analytic[[v]] <- NA_character_
+}
+for (v in c("baseline_severity", "age_at_start_of_treatment_in_years")) {
+  if (!v %in% names(analytic)) analytic[[v]] <- NA_real_
+}
+if (!"clinical_improvement" %in% names(analytic)) analytic$clinical_improvement <- NA_character_
+
+flow <- tribble(
+  ~step, ~n,
+  "Survey records in combined_all", n_sat_file,
+  "After removing exact duplicate records", n_sat_distinct,
+  "Within data window", n_sat_window,
+  "Survey version identified", sum(!is.na(sat$version)),
+  "Valid (1–5) response on the overall satisfaction item", nrow(sat_valid),
+  "Linked to a discharged intervention on respondent client ID", nrow(linked_1),
+  "Linked on primary (family) client ID (fallback)", if (is.null(linked_2)) 0L else nrow(linked_2),
+  "Analytic sample (one survey per respondent per version)", nrow(analytic)
+)
+flow_display <- flow |> mutate(n = fmt_n_qa(n))
+flow_display |> kable(col.names = c("Step", "Surveys"))
+save_table(flow_display, "01_sample_flow")
+```
+
+```{r}
+#| label: qa-timing
+analytic |>
+  summarise(
+    `Median days, discharge to survey` = median(days_end_to_survey, na.rm = TRUE),
+    `Surveys > 30 days before discharge` = fmt_pct(mean(days_end_to_survey < -30, na.rm = TRUE)),
+    `Surveys > 90 days after discharge`  = fmt_pct(mean(days_end_to_survey > 90, na.rm = TRUE)),
+    `Survey date missing` = fmt_pct(mean(is.na(days_end_to_survey)))
+  ) |>
+  kable(caption = "Timing of satisfaction surveys relative to discharge (CPS is a discharge-only survey)")
+```
+
+## Derive candidate factors
+
+```{r}
+#| label: derive-factors
+analytic <- analytic |>
+  mutate(
+    funding_round_raw      = as.character(funding_round),
+    participant_type_raw   = participant_type_from(client_type, age_at_start_of_treatment_in_years),
+    participant_type       = prep_factor(participant_type_raw, REF$participant_type, lump = FALSE),
+    respondent             = prep_factor(version, lump = FALSE),
+    age_group              = prep_factor(
+                               as.character(cut(age_at_start_of_treatment_in_years,
+                                                breaks = c(-Inf, 5, 11, 15, 17, 25, Inf), labels = AGE_LEVELS)),
+                               lump = FALSE, order = "given", given_levels = AGE_LEVELS),
+    race                   = prep_factor(recode_not_reported(recoded_race), REF$race),
+    ethnicity              = prep_factor(recode_not_reported(recoded_ethn), REF$ethnicity),
+    gender                 = prep_factor(recode_not_reported(gender_identity), REF$gender),
+    sexual_orientation_grp = prep_factor(recode_not_reported(sexual_orientation), REF$sexual_orientation_grp),
+    insurance              = prep_factor(recode_not_reported(insurance_status), REF$insurance),
+    preferred_language_grp = prep_factor(recode_not_reported(preferred_language)),
+    lang_pref_met          = prep_factor(lang_pref_met, REF$lang_pref_met, lump = FALSE),
+    housing                = prep_factor(recode_not_reported(housing_status)),
+    urban_rural_grp        = prep_factor(recode_not_reported(urban_rural)),
+    funding_round          = prep_factor(normalize_round(funding_round), order = "given",
+                                         given_levels = paste("Round", 1:5)),
+    census_region          = prep_factor(census_region_from(county)),
+    discharge_status       = prep_factor(classify_discharge(reason_for_discharge), REF$discharge_status),
+    service_length         = prep_factor(service_length_from(intervention_start, intervention_end),
+                                         REF$service_length, lump = FALSE, order = "given",
+                                         given_levels = SERVICE_LEVELS)
+  )
+
+for (v in intersect(c("implementation_track", "entity_type", "modality"), names(analytic))) {
+  analytic[[v]] <- prep_factor(recode_not_reported(analytic[[v]]))
+}
+
+# Largest single program (for sensitivity analysis): matched by pattern, else the program with the most surveys.
+large_program_names <- analytic |>
+  distinct(intervention_name) |>
+  filter(str_detect(coalesce(intervention_name, ""), LARGE_PROGRAM_PATTERN)) |>
+  pull(intervention_name)
+if (!length(large_program_names)) {
+  large_program_names <- analytic |> count(intervention_name, sort = TRUE) |> slice_head(n = 1) |> pull(intervention_name)
+}
+analytic <- analytic |> mutate(large_program = if_else(intervention_name %in% large_program_names, "Yes", "No"))
+
+CANDIDATE_VARS <- c(
+  participant_type       = "Participant type",
+  respondent             = "Survey version (respondent)",
+  age_group              = "Age at start of services (years)",
+  race                   = "Race",
+  ethnicity              = "Ethnicity",
+  gender                 = "Gender identity",
+  sexual_orientation_grp = "Sexual orientation",
+  insurance              = "Insurance status",
+  preferred_language_grp = "Preferred language",
+  lang_pref_met          = "Services in preferred language",
+  housing                = "Housing status",
+  urban_rural_grp        = "Urban/rural",
+  funding_round          = "Funding round",
+  census_region          = "Census region",
+  implementation_track   = "Implementation track",
+  entity_type            = "Entity type",
+  modality               = "Modality (EBP/CDEP)",
+  discharge_status       = "Discharge reason",
+  service_length         = "Length of services"
+)
+CANDIDATE_VARS <- CANDIDATE_VARS[names(CANDIDATE_VARS) %in% names(analytic)]
+ALL_LABELS <- c(CANDIDATE_VARS,
+                baseline_severity    = "Baseline severity (per 1 SD, higher = more severe)",
+                clinical_improvement = "Clinical improvement")
+
+reportable_vars <- names(CANDIDATE_VARS)[map_lgl(names(CANDIDATE_VARS), \(v) is_reportable(analytic[[v]]))]
+
+# Adjusted model: ethnicity is modeled separately (recorded for a subset and nested within race);
+# age is represented by participant type; survey source, housing and language concordance are
+# reported descriptively. Edit this list to change the adjusted model.
+ADJ_VARS <- intersect(
+  c("participant_type", "respondent", "race", "gender", "sexual_orientation_grp", "insurance",
+    "preferred_language_grp", "urban_rural_grp", "funding_round", "census_region",
+    "implementation_track", "entity_type", "modality", "discharge_status", "service_length"),
+  reportable_vars
+)
+
+```
+
+## QA: raw values and recodes
+
+The recode rules were written from the category labels shown in the interim report's tables, not from an eInsight data dictionary, so raw values in the extract may be spelled or coded differently. This section lists every raw value, the category it was assigned to, and the rule that assigned it. Values that no rule matched fall into a default category ("Not reported", "Not scored", "Other/no reason recorded", or "Statewide/unmapped"); those are listed first. Fix them by editing the recode rules in the configuration section. Counts below `r SUPPRESS_N` are shown as "<`r SUPPRESS_N`". In shareable renders, raw values seen fewer than `r SUPPRESS_N` times are also masked (a rare value could be free text) and combined into one row per field, assigned category, and rule.
+
+```{r}
+#| label: qa-recode-crosswalk
+# raw column in the extract = derived model variable (labels come from CANDIDATE_VARS)
+RECODE_MAP <- c(
+  client_type          = "participant_type",
+  recoded_race         = "race",
+  recoded_ethn         = "ethnicity",
+  gender_identity      = "gender",
+  sexual_orientation   = "sexual_orientation_grp",
+  insurance_status     = "insurance",
+  preferred_language   = "preferred_language_grp",
+  lang_raw             = "lang_pref_met",
+  housing_status       = "housing",
+  urban_rural          = "urban_rural_grp",
+  funding_round_raw    = "funding_round",
+  county               = "census_region",
+  reason_for_discharge = "discharge_status",
+  survey_type          = "respondent"
+)
+RECODE_MAP <- RECODE_MAP[names(RECODE_MAP) %in% names(analytic) & RECODE_MAP %in% names(CANDIDATE_VARS)]
+
+field_xwalk <- imap_dfr(RECODE_MAP, function(recoded, raw) {
+  analytic |>
+    count(raw_value = as.character(.data[[raw]]), recoded_to = as.character(.data[[recoded]])) |>
+    mutate(variable = recoded, field = CANDIDATE_VARS[[recoded]])
+})
+
+# CPS item response text -> score (covers all items, all survey versions)
+cps_field <- "CPS item responses (text → score)"
+cps_xwalk <- sat_items_long |>
+  count(raw_value = response, score_text) |>
+  transmute(variable = "cps_items", field = cps_field, raw_value,
+            recoded_to = if_else(is.na(score_text), "Not scored",
+                                 paste0(score_text, " = ", LIKERT_LABELS[score_text])),
+            n)
+
+recode_xwalk <- bind_rows(field_xwalk, cps_xwalk) |>
+  mutate(
+    field = factor(field, levels = c(unname(CANDIDATE_VARS[RECODE_MAP]), cps_field)),
+    non_substantive = !is.na(raw_value) & str_detect(raw_value, NOT_REPORTED_PATTERN),
+    fell_through = !is.na(raw_value) & !non_substantive & (
+      recoded_to %in% c("Not reported", "Not scored") |
+      (variable == "discharge_status" & recoded_to == "Other/no reason recorded" &
+         !str_detect(str_to_lower(raw_value), "other|no reason")) |
+      (variable == "census_region" & recoded_to == "Statewide/unmapped")
+    ),
+    rule = case_when(
+      is.na(raw_value) & recoded_to %in% c("Not reported", "Not scored") ~ "Blank",
+      is.na(raw_value)                                ~ "Blank; assigned from another field (e.g., age)",
+      fell_through                                    ~ "REVIEW: no rule matched; default category used",
+      non_substantive                                 ~ "Non-substantive response",
+      recoded_to == "Other (combined)"                ~ "Combined: group below threshold",
+      str_squish(raw_value) == recoded_to             ~ "Unchanged",
+      TRUE                                            ~ "Recoded by rule"
+    ),
+    raw_value = coalesce(raw_value, "(blank)"),
+    n_disp    = if_else(n < SUPPRESS_N, paste0("<", SUPPRESS_N), fmt_n(n))
+  ) |>
+  arrange(field, recoded_to, desc(n))
+
+if (SHAREABLE) {
+  recode_xwalk <- recode_xwalk |>
+    mutate(masked = n < SUPPRESS_N & raw_value != "(blank)",
+           grp    = if_else(masked, "<masked>", raw_value)) |>
+    summarise(
+      k            = n(),
+      n            = sum(n),
+      fell_through = any(fell_through),
+      raw_value    = if (first(masked)) sprintf("[%d value%s seen < %d times, masked]", k,
+                                                if (k == 1) "" else "s", SUPPRESS_N) else first(raw_value),
+      .by = c(field, variable, recoded_to, rule, masked, grp)
+    ) |>
+    mutate(n_disp = if_else(n < SUPPRESS_N, paste0("<", SUPPRESS_N), fmt_n(n))) |>
+    arrange(field, recoded_to, desc(n))
+}
+
+needs_review <- recode_xwalk |> filter(fell_through)
+
+if (nrow(needs_review)) {
+  needs_review |>
+    select(field, raw_value, recoded_to, n_disp) |>
+    kable(col.names = c("Field", "Raw value", "Assigned to (default)", "n"),
+          caption = "Raw values that no recode rule matched: review these")
+} else {
+  knitr::asis_output("**Every non-blank raw value matched a recode rule.**")
+}
+
+recode_xwalk_display <- recode_xwalk |>
+  mutate(first = row_number() == 1, .by = field) |>
+  transmute(field = if_else(first, as.character(field), ""), raw_value, recoded_to, rule, n = n_disp)
+save_table(recode_xwalk_display, "00_recode_crosswalk")
+```
+
+::: {.callout-note collapse="true"}
+## Full raw-value crosswalk (click to expand)
+
+```{r}
+#| label: qa-recode-crosswalk-full
+recode_xwalk_display |>
+  kable(col.names = c("Field", "Raw value", "Recoded to", "Rule", "n"))
+```
+:::
+
+# Results
+
+## Overall satisfaction
+
+```{r}
+#| label: overall
+overall <- analytic |>
+  count(sat_ord) |>
+  mutate(pct = n / sum(n))
+
+n_analytic   <- nrow(analytic)
+overall_pct  <- mean(analytic$high_sat)
+
+overall |>
+  mutate(n = fmt_n(n), pct = fmt_pct(pct)) |>
+  kable(col.names = c("Overall satisfaction rating", "n", "%"))
+
+ggplot(overall, aes(x = pct, y = "", fill = sat_ord)) +
+  geom_col(position = position_stack(reverse = TRUE), width = 0.5) +
+  geom_text(aes(label = fmt_pct(pct)), position = position_stack(vjust = 0.5, reverse = TRUE), size = 3.5) +
+  scale_x_continuous(labels = scales::percent) +
+  scale_fill_brewer(palette = "RdYlBu", direction = 1) +
+  labs(x = NULL, y = NULL, fill = NULL,
+       title = sprintf("%s of respondents reported high satisfaction (n = %s)", fmt_pct(overall_pct), fmt_n(n_analytic))) +
+  theme(legend.position = "bottom")
+```
+
+## High satisfaction by candidate factor
+
+```{r}
+#| label: descriptives
+describe_factor <- function(data, var) {
+  data |>
+    summarise(n = n(), n_high = sum(high_sat), mean_score = mean(sat_overall), .by = all_of(var)) |>
+    rename(level = all_of(var)) |>
+    arrange(level) |>
+    mutate(variable = var, characteristic = CANDIDATE_VARS[[var]], level = as.character(level),
+           pct_high = n_high / n)
+}
+
+desc_all <- map_dfr(names(CANDIDATE_VARS), \(v) describe_factor(analytic, v))
+
+desc_display <- desc_all |>
+  mutate(
+    suppressed    = n < SUPPRESS_N,
+    n_disp        = if_else(suppressed, SUPPR, fmt_n(n)),
+    pct_disp      = if_else(suppressed, SUPPR, fmt_pct(pct_high)),
+    mean_disp     = if_else(suppressed, SUPPR, sprintf("%.2f", mean_score)),
+    characteristic = if_else(row_number() == 1, characteristic, ""),
+    .by = variable
+  ) |>
+  select(characteristic, level, n_disp, pct_disp, mean_disp)
+
+desc_display |>
+  kable(col.names = c("Characteristic", "Group", "n", "% high satisfaction", "Mean rating (1–5)"))
+save_table(desc_display, "02_descriptives_by_factor")
+
+desc_plot_data <- desc_all |> filter(n >= SUPPRESS_N)
+n_plot_rows <- nrow(desc_plot_data)
+```
+
+```{r}
+#| label: descriptives-plot
+#| fig-height: !expr max(6, 0.22 * n_plot_rows)
+desc_plot_data |>
+  mutate(level = fct_rev(fct_inorder(paste(variable, level, sep = "::")))) |>
+  ggplot(aes(x = pct_high, y = level)) +
+  geom_vline(xintercept = overall_pct, linetype = "dashed", colour = "grey50") +
+  geom_point(aes(size = n), colour = "#1f4e79") +
+  scale_y_discrete(labels = \(x) str_remove(x, "^.*::")) +
+  scale_x_continuous(labels = scales::percent) +
+  scale_size_area(max_size = 5, labels = scales::comma) +
+  facet_wrap(~characteristic, scales = "free_y", ncol = 2) +
+  labs(x = "% high satisfaction (Agree/Strongly agree)", y = NULL, size = "n",
+       title = "High satisfaction by participant, program, and service characteristics",
+       subtitle = "Dashed line = overall rate; groups with n < suppression threshold not shown")
+```
+
+## Unadjusted models (comparable to the interim report)
+
+Each factor is modeled on its own. Odds ratios above 1 indicate higher odds of high satisfaction than the reference group. The overall p-value for each factor is a likelihood-ratio test; Benjamini–Hochberg adjustment is applied across factors because these comparisons are exploratory.
+
+```{r}
+#| label: unadjusted
+fit_unadjusted <- function(v) {
+  d <- analytic |> select(high_sat, sat_ord, all_of(v)) |> drop_na() |> droplevels()
+  if (!is_reportable(d[[v]])) return(NULL)
+  m1 <- glm(reformulate(v, "high_sat"), family = binomial, data = d)
+  m0 <- glm(high_sat ~ 1, family = binomial, data = d)
+  lrt_p <- anova(m0, m1, test = "Chisq")$`Pr(>Chi)`[2]
+  mo  <- tryCatch(clm(reformulate(v, "sat_ord"), data = d), error = \(e) NULL)
+  mo0 <- tryCatch(clm(sat_ord ~ 1, data = d), error = \(e) NULL)
+  ord_p <- if (!is.null(mo) && !is.null(mo0)) anova(mo0, mo)$`Pr(>Chisq)`[2] else NA_real_
+  levels_tab <- tibble(level = levels(d[[v]]), is_ref = level == levels(d[[v]])[1])
+  lg <- coef_or(m1) |> mutate(level = substring(term, nchar(v) + 1)) |> select(level, or, lcl, ucl, p.value)
+  od <- if (!is.null(mo)) {
+    coef_or(mo) |> mutate(level = substring(term, nchar(v) + 1)) |>
+      select(level, or_ord = or, lcl_ord = lcl, ucl_ord = ucl, p_ord = p.value)
+  } else tibble(level = character())
+  list(
+    summary = tibble(variable = v, n = nrow(d), lrt_p = lrt_p, ord_p = ord_p),
+    levels  = levels_tab |> left_join(lg, by = "level") |> left_join(od, by = "level") |> mutate(variable = v)
+  )
+}
+
+unadj <- map(names(CANDIDATE_VARS), fit_unadjusted) |> compact()
+
+unadj_summary <- map_dfr(unadj, "summary") |>
+  mutate(lrt_p_bh = p.adjust(lrt_p, method = "BH"),
+         ord_p_bh = p.adjust(ord_p, method = "BH"))
+
+unadj_levels <- map_dfr(unadj, "levels") |>
+  left_join(desc_all |> select(variable, level, n, pct_high), by = c("variable", "level")) |>
+  filter(n >= SUPPRESS_N)
+
+unadj_display <- unadj_levels |>
+  mutate(
+    characteristic = CANDIDATE_VARS[variable],
+    logit_or = if_else(is_ref, "Ref.", coalesce(fmt_or(or, lcl, ucl), "Not estimable")),
+    logit_p  = if_else(is_ref, "", fmt_p(p.value)),
+    ord_or   = if_else(is_ref, "Ref.", coalesce(fmt_or(or_ord, lcl_ord, ucl_ord), "Not estimable")),
+    ord_p    = if_else(is_ref, "", fmt_p(p_ord)),
+    characteristic = if_else(row_number() == 1, characteristic, ""),
+    .by = variable
+  ) |>
+  select(characteristic, level, n, pct_high, logit_or, logit_p, ord_or, ord_p) |>
+  mutate(n = fmt_n(n), pct_high = fmt_pct(pct_high))
+
+unadj_display |>
+  kable(col.names = c("Characteristic", "Group", "n", "% high", "Logistic OR (95% CI)", "p",
+                      "Ordinal OR (95% CI)", "p"))
+save_table(unadj_display, "03_unadjusted_models")
+
+unadj_summary |>
+  mutate(characteristic = CANDIDATE_VARS[variable],
+         across(c(lrt_p, lrt_p_bh, ord_p, ord_p_bh), fmt_p), n = fmt_n(n)) |>
+  select(characteristic, n, lrt_p, lrt_p_bh, ord_p, ord_p_bh) |>
+  kable(col.names = c("Characteristic", "n", "Logistic LRT p", "BH-adjusted", "Ordinal LRT p", "BH-adjusted"),
+        caption = "Overall test of each factor (unadjusted)")
+
+not_reportable <- setdiff(names(CANDIDATE_VARS), unadj_summary$variable)
+```
+
+Factors not modeled because fewer than two groups met the n ≥ `r SUPPRESS_N` threshold: **`r list_or_none(unname(CANDIDATE_VARS[not_reportable]))`**.
+
+## How much does satisfaction vary between programs?
+
+The interim report cautioned that subgroup differences "may reflect differences in who completes the satisfaction item, program context, or measurement/administration patterns." Before adjusting for participant characteristics, this section estimates how much of the variation in high satisfaction lies between providers and between intervention models. The intraclass correlation (ICC) is the share of total (latent-scale) variation attributable to each grouping level; the median odds ratio (MOR) is the typical odds ratio between two randomly chosen providers (1.0 = no difference).
+
+```{r}
+#| label: variance-partitioning
+vp_data <- analytic |> filter(!is.na(provider_system_id), !is.na(intervention_name))
+
+m0_crossed <- tryCatch(
+  glmer(as.formula(paste("high_sat ~ 1 +", paste(RE_TERMS, collapse = " + "))),
+        data = vp_data, family = binomial, control = GLMER_CTRL),
+  error = \(e) NULL)
+m0 <- m0_crossed %||% glmer(as.formula(paste("high_sat ~ 1 +", RE_TERMS[1])),
+                            data = vp_data, family = binomial, control = GLMER_CTRL)
+
+vc <- as.data.frame(VarCorr(m0)) |>
+  transmute(level = grp, variance = vcov) |>
+  mutate(icc = variance / (sum(variance) + pi^2 / 3),
+         mor = exp(sqrt(2 * variance) * qnorm(0.75)))
+
+icc_provider <- vc$icc[vc$level == "provider_system_id"]
+icc_total    <- sum(vc$icc)
+mor_provider <- vc$mor[vc$level == "provider_system_id"]
+
+vc |>
+  mutate(level = dplyr::recode(level, provider_system_id = "Provider (grantee)", intervention_name = "Intervention model"),
+         across(c(variance, mor), \(x) sprintf("%.2f", x)), icc = fmt_pct(icc)) |>
+  kable(col.names = c("Grouping level", "Variance (logit scale)", "ICC", "Median odds ratio"))
+
+provider_rates <- vp_data |>
+  summarise(n = n(), pct_high = mean(high_sat), n_not_high = sum(high_sat == 0), .by = provider_system_id)
+
+tibble(
+  `Providers with surveys` = nrow(provider_rates),
+  `Providers with n ≥ threshold` = sum(provider_rates$n >= SUPPRESS_N),
+  `Median surveys per provider` = median(provider_rates$n)
+) |> kable()
+```
+
+```{r}
+#| label: provider-distribution
+provider_rates |>
+  filter(n >= SUPPRESS_N) |>
+  ggplot(aes(x = pct_high)) +
+  geom_histogram(binwidth = 0.05, boundary = 0, fill = "#1f4e79", colour = "white") +
+  geom_vline(xintercept = overall_pct, linetype = "dashed") +
+  scale_x_continuous(labels = scales::percent, limits = c(0, 1)) +
+  labs(x = "% high satisfaction within provider", y = "Providers",
+       title = "Distribution of provider-level high-satisfaction rates",
+       subtitle = sprintf("Providers with at least %s surveys; dashed line = overall rate", SUPPRESS_N))
+```
+
+```{r}
+#| label: concentration
+# Where do the low and mixed ratings come from? (Providers are anonymized; inspect
+# `provider_rates` interactively for TA targeting.)
+total_not_high <- sum(provider_rates$n_not_high)
+concentration <- provider_rates |>
+  arrange(desc(n_not_high)) |>
+  mutate(rank = row_number(), cum_share = cumsum(n_not_high) / total_not_high)
+
+top5_share <- concentration$cum_share[min(5, nrow(concentration))]
+top1_share <- concentration$cum_share[1]
+
+large_prog_tab <- analytic |>
+  summarise(n = n(), pct_high = mean(high_sat), .by = large_program) |>
+  mutate(share_of_not_high = map2_dbl(large_program, n, \(lp, nn) {
+    sum(analytic$high_sat[analytic$large_program == lp] == 0) / sum(analytic$high_sat == 0)
+  }))
+
+large_prog_tab |>
+  mutate(large_program = if_else(large_program == "Yes", paste("Largest program:", paste(large_program_names, collapse = ", ")), "All other programs"),
+         n = if_else(n < SUPPRESS_N, SUPPR, fmt_n(n)), pct_high = fmt_pct(pct_high), share_of_not_high = fmt_pct(share_of_not_high)) |>
+  kable(col.names = c("Program group", "n", "% high satisfaction", "Share of all non-high ratings"))
+```
+
+The single provider with the most non-high ratings accounts for **`r fmt_pct(top1_share)`** of all Undecided/Disagree/Strongly Disagree ratings, and the top five providers account for **`r fmt_pct(top5_share)`**. Provider accounts for an estimated **`r fmt_pct(icc_provider)`** of the latent variation in high satisfaction (**`r fmt_pct(icc_total)`** including intervention model).
+
+## Adjusted model
+
+All reportable participant, program, and service factors are entered together in a mixed-effects logistic regression with random intercepts for provider and intervention model. Odds ratios are adjusted for every other factor in the table and for unmeasured differences between providers and intervention models. The model-adjusted percentage is the average predicted probability of high satisfaction if every respondent had been in that group (standardized to the analytic sample).
+
+```{r}
+#| label: fit-function
+fit_adjusted <- function(data, outcome, vars, engine = c("glmer", "glm", "clmm"), re_terms = RE_TERMS) {
+  engine <- match.arg(engine)
+  d <- data |>
+    select(all_of(c(outcome, vars, "provider_system_id", "intervention_name"))) |>
+    filter(!is.na(.data[[outcome]]), !is.na(provider_system_id), !is.na(intervention_name)) |>
+    drop_na(all_of(vars)) |>
+    droplevels()
+  keep <- vars[map_lgl(vars, \(v) n_distinct(d[[v]]) > 1)]
+  rhs  <- if (length(keep)) paste(keep, collapse = " + ") else "1"
+  build <- function(re) as.formula(paste(outcome, "~", rhs, if (length(re)) paste("+", paste(re, collapse = " + ")) else ""))
+
+  fit_once <- function(re) {
+    warns <- character()
+    m <- withCallingHandlers(
+      tryCatch(switch(engine,
+        glmer = glmer(build(re), data = d, family = binomial, nAGQ = GLMER_NAGQ, control = GLMER_CTRL),
+        clmm  = clmm(build(re), data = d),
+        glm   = glm(build(character()), data = d, family = binomial)),
+        error = \(e) e),
+      warning = function(w) { warns <<- c(warns, conditionMessage(w)); invokeRestart("muffleWarning") })
+    list(model = m, warnings = unique(warns), re = re)
+  }
+
+  res <- fit_once(if (engine == "glm") character() else re_terms)
+  if (inherits(res$model, "error") && engine != "glm" && length(re_terms) > 1) res <- fit_once(re_terms[1])
+  # clmm: if the crossed model's Hessian is not positive definite (typically a near-zero
+  # intervention-model variance when programs are nested in providers), refit with provider only.
+  if (engine == "clmm" && !inherits(res$model, "error") && length(res$re) > 1) {
+    v <- tryCatch(vcov(res$model), error = \(e) NULL)
+    if (is.null(v) || anyNA(v)) {
+      alt <- fit_once(re_terms[1])
+      if (!inherits(alt$model, "error")) res <- alt
+    }
+  }
+  if (inherits(res$model, "error")) stop("Model failed: ", conditionMessage(res$model), call. = FALSE)
+  c(res, list(data = d, vars = keep, dropped = setdiff(vars, keep), outcome = outcome, engine = engine))
+}
+
+model_or_table <- function(fit) {
+  d  <- fit$data
+  cf <- coef_or(fit$model)
+  cf <- bind_cols(cf |> select(-term), map_terms(cf$term, fit$vars)) |>
+    mutate(level = if_else(level == "", "Per 1 SD increase", level))
+  rows <- map_dfr(fit$vars, function(v) {
+    if (is.factor(d[[v]])) {
+      count(d, level = .data[[v]]) |>
+        mutate(level = as.character(level), is_ref = level == levels(d[[v]])[1], variable = v)
+    } else {
+      tibble(level = "Per 1 SD increase", n = sum(!is.na(d[[v]])), is_ref = FALSE, variable = v)
+    }
+  })
+  rows |>
+    left_join(cf |> select(variable, level, or, lcl, ucl, p.value), by = c("variable", "level")) |>
+    mutate(characteristic = unname(ALL_LABELS[variable]))
+}
+
+# Joint Wald test of all coefficients for each factor (equivalent to a type II test in a
+# main-effects model). Computed directly so it works identically for glm, glmer, and clmm.
+term_tests <- function(fit) {
+  m  <- fit$model
+  b  <- if (inherits(m, "merMod")) fixef(m) else coef(m)
+  V  <- tryCatch(as.matrix(vcov(m)), error = \(e) NULL)
+  tm <- map_terms(names(b), fit$vars) |> filter(!is.na(variable))
+  map_dfr(fit$vars, function(v) {
+    nm <- intersect(tm$term[tm$variable == v], colnames(V))
+    if (is.null(V) || !length(nm) || anyNA(b[nm])) {
+      return(tibble(variable = v, chisq = NA_real_, df = NA_real_, p = NA_real_))
+    }
+    chisq <- tryCatch(as.numeric(t(b[nm]) %*% solve(V[nm, nm, drop = FALSE], b[nm])), error = \(e) NA_real_)
+    tibble(variable = v, chisq = chisq, df = length(nm), p = pchisq(chisq, length(nm), lower.tail = FALSE))
+  })
+}
+
+# Model-standardized % high satisfaction: each respondent's linear predictor (including their
+# provider/intervention random effects) is shifted as if they were in level l, then averaged.
+# Exact for additive models (no interactions); avoids refitting model frames with predict(newdata).
+adjusted_pcts <- function(fit) {
+  d    <- fit$data
+  eta  <- predict(fit$model, type = "link")
+  beta <- if (inherits(fit$model, "merMod")) fixef(fit$model) else coef(fit$model)
+  map_dfr(fit$vars[map_lgl(fit$vars, \(v) is.factor(d[[v]]))], function(v) {
+    lv <- levels(d[[v]])
+    b  <- c(0, unname(beta[paste0(v, lv[-1])]))
+    b[is.na(b)] <- 0
+    names(b) <- lv
+    contrib <- b[as.character(d[[v]])]
+    tibble(variable = v, level = lv, adj_pct = map_dbl(lv, \(l) mean(plogis(eta - contrib + b[[l]]))))
+  })
+}
+
+model_diagnostics <- function(fit, label) {
+  tibble(
+    model = label,
+    n = nrow(fit$data),
+    random_effects = if (length(fit$re)) paste(str_remove_all(fit$re, "[()1| ]"), collapse = " + ") else "None",
+    singular = if (inherits(fit$model, "merMod")) isSingular(fit$model)
+               else if (inherits(fit$model, "clmm")) is.null(tryCatch(vcov(fit$model), error = \(e) NULL))
+               else NA,
+    dropped_factors = list_or_none(fit$dropped),
+    warnings = list_or_none(str_trunc(fit$warnings, 90))
+  )
+}
+```
+
+```{r}
+#| label: main-model
+fit_main <- fit_adjusted(analytic, "high_sat", ADJ_VARS, engine = "glmer")
+
+main_tab   <- model_or_table(fit_main)
+main_tests <- term_tests(fit_main)
+main_adj   <- adjusted_pcts(fit_main)
+main_obs   <- map_dfr(fit_main$vars, \(v) fit_main$data |>
+                        summarise(obs_pct = mean(high_sat), .by = all_of(v)) |>
+                        transmute(variable = v, level = as.character(.data[[v]]), obs_pct))
+
+main_display <- main_tab |>
+  filter(n >= SUPPRESS_N) |>
+  left_join(main_obs, by = c("variable", "level")) |>
+  left_join(main_adj, by = c("variable", "level")) |>
+  left_join(main_tests |> select(variable, term_p = p), by = "variable") |>
+  mutate(
+    or_disp  = if_else(is_ref, "Ref.", coalesce(fmt_or(or, lcl, ucl), "Not estimable")),
+    p_disp   = if_else(is_ref, "", fmt_p(p.value)),
+    term_p   = if_else(row_number() == 1, fmt_p(term_p), ""),
+    characteristic = if_else(row_number() == 1, characteristic, ""),
+    .by = variable
+  ) |>
+  transmute(characteristic, term_p, level, n = fmt_n(n), obs = fmt_pct(obs_pct), adj = fmt_pct(adj_pct), or_disp, p_disp)
+
+main_display |>
+  kable(col.names = c("Characteristic", "Overall p (joint Wald χ²)", "Group", "n", "Observed % high",
+                      "Model-adjusted % high", "Adjusted OR (95% CI)", "p"))
+save_table(main_display, "04_adjusted_model")
+```
+
+```{r}
+#| label: forest-plot
+#| fig-height: !expr max(6, 0.25 * nrow(filter(main_tab, n >= SUPPRESS_N)))
+main_tab |>
+  filter(n >= SUPPRESS_N, !is.na(or) | is_ref) |>
+  mutate(or = if_else(is_ref, 1, or), lcl = if_else(is_ref, 1, lcl), ucl = if_else(is_ref, 1, ucl),
+         sig = !is_ref & p.value < 0.05,
+         level = fct_rev(fct_inorder(paste(variable, level, sep = "::"))),
+         characteristic = fct_inorder(characteristic)) |>
+  ggplot(aes(x = or, y = level)) +
+  geom_vline(xintercept = 1, colour = "grey50") +
+  geom_errorbar(aes(xmin = lcl, xmax = ucl), width = 0.2, colour = "grey40", orientation = "y") +
+  geom_point(aes(shape = is_ref, colour = sig), size = 2.5) +
+  scale_shape_manual(values = c(`FALSE` = 16, `TRUE` = 1), labels = c("Comparison", "Reference"), name = NULL) +
+  scale_colour_manual(values = c(`FALSE` = "grey30", `TRUE` = "#c0392b"), labels = c("p ≥ 0.05", "p < 0.05"), name = NULL) +
+  scale_x_log10() +
+  scale_y_discrete(labels = \(x) str_remove(x, "^.*::")) +
+  facet_grid(characteristic ~ ., scales = "free_y", space = "free_y", switch = "y") +
+  labs(x = "Adjusted odds ratio of high satisfaction (log scale)", y = NULL,
+       title = "Adjusted odds ratios, mixed-effects logistic model") +
+  theme(strip.placement = "outside", strip.text.y.left = element_text(angle = 0, hjust = 1, face = "bold"),
+        legend.position = "bottom")
+```
+
+## Sensitivity analyses
+
+```{r}
+#| label: sensitivity
+analytic_excl_large <- analytic |> filter(large_program == "No")
+
+fits <- list(main = fit_main)
+fits$no_re    <- fit_adjusted(analytic, "high_sat", ADJ_VARS, engine = "glm")
+if (RUN_ORDINAL_MIXED) {
+  fits$ordinal <- tryCatch(fit_adjusted(analytic, "sat_ord", ADJ_VARS, engine = "clmm"), error = \(e) NULL)
+}
+fits$gs       <- tryCatch(fit_adjusted(analytic, "gs_positive", ADJ_VARS, engine = "glmer"), error = \(e) NULL)
+if (nrow(analytic_excl_large) >= MIN_MODEL_N) {
+  fits$excl_large <- tryCatch(fit_adjusted(analytic_excl_large, "high_sat", ADJ_VARS, engine = "glmer"), error = \(e) NULL)
+}
+
+# Service exposure and clinical course (subsets with assessment data).
+sev_data <- analytic |> filter(!is.na(baseline_severity))
+if (nrow(sev_data) >= MIN_MODEL_N) {
+  fits$severity <- tryCatch(fit_adjusted(sev_data, "high_sat", c(ADJ_VARS, "baseline_severity"), engine = "glmer"),
+                            error = \(e) NULL)
+}
+imp_data <- analytic |>
+  filter(!is.na(baseline_severity), !is.na(clinical_improvement)) |>
+  mutate(clinical_improvement = factor(clinical_improvement,
+                                       levels = c("Did not improve on most measures", "Improved on most measures")))
+if (nrow(imp_data) >= MIN_MODEL_N && is_reportable(imp_data$clinical_improvement)) {
+  fits$improvement <- tryCatch(fit_adjusted(imp_data, "high_sat", c(ADJ_VARS, "baseline_severity", "clinical_improvement"),
+                                            engine = "glmer"), error = \(e) NULL)
+}
+
+# Ethnicity model: respondents with ethnicity recorded, ethnicity in place of race.
+eth_data <- analytic |> filter(ethnicity != "Not reported") |> mutate(ethnicity = fct_drop(ethnicity))
+if (nrow(eth_data) >= MIN_MODEL_N && is_reportable(eth_data$ethnicity)) {
+  fits$ethnicity <- tryCatch(fit_adjusted(eth_data, "high_sat", c(setdiff(ADJ_VARS, "race"), "ethnicity"), engine = "glmer"),
+                             error = \(e) NULL)
+}
+fits <- compact(fits)
+
+MODEL_LABELS <- c(
+  main        = "Main: mixed logistic",
+  no_re       = "No random effects",
+  ordinal     = "Ordinal mixed (5-point)",
+  excl_large  = paste("Excl.", paste(large_program_names, collapse = "/")),
+  gs          = "GS domain outcome",
+  severity    = "+ baseline severity",
+  improvement = "+ clinical improvement",
+  ethnicity   = "Ethnicity subset"
+)
+
+imap_dfr(fits, \(f, k) model_diagnostics(f, MODEL_LABELS[[k]])) |>
+  mutate(n = fmt_n(n)) |>
+  kable(caption = "Model diagnostics")
+```
+
+### Robustness of adjusted odds ratios
+
+Adjusted odds ratios for each group across model specifications (* p < 0.05). Consistent direction and significance across columns indicates a finding that does not depend on a single modeling choice.
+
+```{r}
+#| label: robustness
+robust_long <- imap_dfr(fits[intersect(c("main", "no_re", "ordinal", "excl_large", "gs", "severity"), names(fits))],
+  function(f, k) {
+    model_or_table(f) |>
+      filter(!is_ref, n >= SUPPRESS_N) |>
+      transmute(variable, level, model = MODEL_LABELS[[k]],
+                cell = if_else(is.na(or), "n/e", paste0(sprintf("%.2f", or), if_else(coalesce(p.value < 0.05, FALSE), "*", ""))))
+  })
+
+robust_display <- main_tab |>
+  filter(!is_ref, n >= SUPPRESS_N) |>
+  select(variable, characteristic, level) |>
+  left_join(robust_long |> pivot_wider(names_from = model, values_from = cell), by = c("variable", "level")) |>
+  mutate(characteristic = if_else(row_number() == 1, characteristic, ""), .by = variable) |>
+  select(-variable)
+
+robust_display |> rename(Characteristic = characteristic, Group = level) |> kable()
+save_table(robust_display, "05_robustness")
+```
+
+### Clinical course and ethnicity models
+
+```{r}
+#| label: subset-models
+show_terms <- function(fit_name, vars) {
+  if (!fit_name %in% names(fits)) return(invisible(NULL))
+  model_or_table(fits[[fit_name]]) |>
+    filter(variable %in% vars, n >= SUPPRESS_N) |>
+    mutate(or = if_else(is_ref, "Ref.", coalesce(fmt_or(or, lcl, ucl), "Not estimable")),
+           p = if_else(is_ref, "", fmt_p(p.value)), n = fmt_n(n)) |>
+    select(characteristic, level, n, or, p) |>
+    kable(col.names = c("Characteristic", "Group", "n", "Adjusted OR (95% CI)", "p"),
+          caption = sprintf("%s (n = %s; adjusted for all main-model factors)",
+                            MODEL_LABELS[[fit_name]], fmt_n(nrow(fits[[fit_name]]$data))))
+}
+
+show_terms("severity", "baseline_severity")
+show_terms("improvement", c("baseline_severity", "clinical_improvement"))
+show_terms("ethnicity", "ethnicity")
+```
+
+The clinical-improvement model is exploratory: improvement and satisfaction are measured at the same point (discharge), so an association does not show that improvement causes satisfaction.
+
+## Summary of factors
+
+```{r}
+#| label: predictor-summary
+tests_by_model <- imap_dfr(fits[intersect(c("main", "excl_large", "ordinal", "gs"), names(fits))],
+                           \(f, k) term_tests(f) |> mutate(model = k))
+
+pred_summary <- tibble(variable = ADJ_VARS) |>
+  left_join(unadj_summary |> select(variable, unadj = lrt_p_bh), by = "variable") |>
+  left_join(tests_by_model |> select(variable, model, p) |> pivot_wider(names_from = model, values_from = p),
+            by = "variable")
+for (k in c("main", "excl_large", "ordinal", "gs")) if (!k %in% names(pred_summary)) pred_summary[[k]] <- NA_real_
+
+pred_summary <- pred_summary |>
+  mutate(
+    signal = case_when(
+      main < 0.05 & coalesce(excl_large, 0) < 0.05 & coalesce(ordinal, 0) < 0.05 ~ "Robust",
+      main < 0.05 ~ "Adjusted only in some specifications",
+      unadj < 0.05 ~ "Unadjusted only (explained by other factors or program context)",
+      TRUE ~ "No evidence of association"
+    )
+  )
+
+pred_summary |>
+  mutate(characteristic = CANDIDATE_VARS[variable], across(c(unadj, main, excl_large, ordinal, gs), fmt_p)) |>
+  select(characteristic, unadj, main, excl_large, ordinal, gs, signal) |>
+  kable(col.names = c("Characteristic", "Unadjusted (BH)", "Adjusted: main", "Adjusted: excl. largest program",
+                      "Adjusted: ordinal", "Adjusted: GS domain", "Interpretation"))
+save_table(pred_summary, "06_predictor_summary")
+
+robust_vars     <- unname(CANDIDATE_VARS[pred_summary$variable[pred_summary$signal == "Robust"]])
+partial_vars    <- unname(CANDIDATE_VARS[pred_summary$variable[pred_summary$signal == "Adjusted only in some specifications"]])
+explained_vars  <- unname(CANDIDATE_VARS[pred_summary$variable[str_detect(pred_summary$signal, "^Unadjusted only")]])
+
+icc_label <- case_when(icc_total < 0.05 ~ "modestly", icc_total < 0.15 ~ "moderately", TRUE ~ "substantially")
+```
+
+# Draft findings for the report
+
+::: {.callout-note}
+## Auto-populated summary (review before use)
+
+- Among **`r fmt_n(n_analytic)`** respondents who completed a satisfaction survey at discharge, **`r fmt_pct(overall_pct)`** reported high satisfaction (Agree or Strongly Agree on the overall satisfaction item).
+- Satisfaction clustered `r icc_label` by program: provider accounted for an estimated **`r fmt_pct(icc_provider)`** of the variation in high satisfaction (**`r fmt_pct(icc_total)`** including intervention model; median odds ratio between providers = **`r sprintf("%.2f", mor_provider)`**). The five providers with the most non-high ratings accounted for **`r fmt_pct(top5_share)`** of all such ratings.
+- Factors associated with high satisfaction after adjustment and robust across specifications: **`r list_or_none(robust_vars)`**.
+- Factors significant in the main adjusted model but not every sensitivity specification: **`r list_or_none(partial_vars)`**.
+- Factors associated with satisfaction only in unadjusted models, where the difference was accounted for by other participant factors or program context: **`r list_or_none(explained_vars)`**.
+:::
+
+Interpretation notes for the narrative:
+
+- These are associations among respondents with a linked discharge survey, not causal effects. Respondents may differ systematically from participants who did not complete a survey.
+- "Not reported" categories for demographic items mostly reflect settings that cannot collect those items (for example, school-based programs). Differences for these categories are best read as a data-collection and program-context signal, as in the interim report.
+- Program-level factors (funding round, census region, and grantee attributes) are estimated from differences between providers, so their precision depends on the number of providers rather than the number of respondents.
+
+# Session information
+
+```{r}
+#| label: session-info
+sessionInfo()
+```
