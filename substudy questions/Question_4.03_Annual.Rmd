@@ -51,3 +51,123 @@ sat_combined <- read_csv(
 
 **Final analysis:** Regression - outcomes = high satisfaction (4/5 vs other). Same predictors as for 3.01; subset for CDEPs from SPSS file
 
+## Satisfaction Surveys
+
+Satisfaction is defined two ways below. The first is the percent of individuals who answered question 1 as "Agree" or "Strongly Agree." The second is the percent of individuals who selected "Agree" or "Strongly Agree" on 80% or more of the questions completed. High satisfaction on question 1 is defined as a score of 4 or 5.
+
+**Assumptions:** Distinct by client system ID and joined to satisfaction survey data; must have an intervention named; data used: satisfaction survey and all data (demo+discharge joined)
+
+```{r}
+#| label: setup-satisfaction
+#| include: false
+
+sat_all <- read_csv(params$satisfaction_data_path, show_col_types = FALSE)
+
+# Unified Q1 score — coalesce across three survey-specific Q1 columns
+sat_all <- sat_all |>
+  mutate(
+    q1_score = coalesce(
+      x1_overall_i_am_satisfied_with_the_services_my_child_received_score,
+      x1_overall_i_am_satisfied_with_the_services_i_received_score,
+      x1_i_like_the_services_that_i_received_here_score
+    )
+  )
+
+all_data_distinct <- all_data |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  mutate(
+    provider_system_id = as.character(provider_system_id),
+    client_system_id   = as.character(client_system_id)
+  )
+
+sat_all_data <- sat_all |>
+  mutate(
+    provider_system_id = as.character(provider_system_id),
+    client_system_id   = as.character(client_system_id)
+  ) |>
+  left_join(all_data_distinct,
+            by = c("provider", "provider_id", "provider_system_id", "client_system_id")) |>
+  filter(!is.na(intervention_name))
+
+score_cols <- names(sat_all_data)[str_detect(names(sat_all_data), "_score$")]
+
+# Overall Q1 high satisfaction rate
+pct_4_5 <- sat_all_data |>
+  summarise(
+    pct_4_5 = round(100 * sum(q1_score %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q1_score)), 1)
+  ) |>
+  pull(pct_4_5)
+
+# Overall combined survey high satisfaction rate (>= 80% of questions at 4 or 5)
+df2 <- sat_all_data |>
+  select(all_of(score_cols)) |>
+  mutate(across(everything(), as.numeric)) |>
+  mutate(across(everything(), ~ na_if(., 0))) |>
+  rowwise() |>
+  summarise(
+    n_answered = sum(!is.na(c_across(everything()))),
+    n_agree    = sum(c_across(everything()) %in% c(4, 5), na.rm = TRUE),
+    pct_agree  = n_agree / n_answered
+  ) |>
+  ungroup() |>
+  summarise(
+    n_total           = n(),
+    n_meeting_80pct   = sum(pct_agree >= 0.8, na.rm = TRUE),
+    pct_meeting_80pct = round(100 * n_meeting_80pct / n_total, 1)
+  )
+```
+
+### Question 1 Satisfaction
+
+Overall, [`r pct_4_5`%]{custom-style="DHCS Stat"} of survey respondents were highly satisfied based on question 1. The following table shows high satisfaction by round:
+
+```{r}
+#| label: tbl-q1-satisfaction-round
+q1_by_round <- sat_all_data |>
+  filter(!is.na(funding_round)) |>
+  group_by(funding_round) |>
+  summarise(
+    n_surveys = n(),
+    pct_4_5 = round(100 * sum(q1_score %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q1_score)), 1),
+    .groups = "drop"
+  ) |>
+  adorn_totals("row") %>%
+  rename(n = n_surveys) |>
+  apply_suppression(label_col = "funding_round", n_col = "n", pct_col = "pct_4_5")
+
+dhcs_table(q1_by_round, caption = "Question 1 high satisfaction, by funding round")
+```
+
+### Combined Survey Satisfaction
+
+Overall, [`r df2$pct_meeting_80pct`%]{custom-style="DHCS Stat"} of survey respondents were highly satisfied, defined as selecting "Agree" or "Strongly Agree" on 80% or more of the questions completed. The following table shows high combined satisfaction by round, for clients where both a client ID and intervention name were available:
+
+**Assumptions:** Must have an intervention name; data used: satisfaction survey and all data (demo+discharge joined)
+
+```{r}
+#| label: tbl-combined-satisfaction-round
+combined_by_round <- sat_all_data |>
+  filter(!is.na(funding_round)) |>
+  group_by(funding_round) |>
+  select(funding_round, all_of(score_cols)) |>
+  mutate(across(all_of(score_cols), as.numeric)) |>
+  mutate(across(all_of(score_cols), ~ na_if(., 0))) |>
+  rowwise() |>
+  summarise(
+    n_answered = sum(!is.na(c_across(all_of(score_cols)))),
+    n_agree    = sum(c_across(all_of(score_cols)) %in% c(4, 5), na.rm = TRUE),
+    pct_agree  = n_agree / n_answered
+  ) |>
+  summarise(
+    n_total           = n(),
+    n_meeting_80pct   = sum(pct_agree >= 0.8, na.rm = TRUE),
+    pct_meeting_80pct = round(100 * n_meeting_80pct / n_total, 1)
+  ) |>
+  adorn_totals("row") %>%
+  rename(n = n_total) |>
+  apply_suppression(label_col = "funding_round", n_col = "n", pct_col = "pct_meeting_80pct")
+
+dhcs_table(combined_by_round, caption = "Combined survey high satisfaction (>=80% agree/strongly agree), by funding round")
+```
+
+
