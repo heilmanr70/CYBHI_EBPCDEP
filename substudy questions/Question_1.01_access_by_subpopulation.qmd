@@ -1,0 +1,736 @@
+---
+title: "Final Report Data Analysis: Study Questions 1.01 and 1.02"
+author: "Cristin Young"
+date: today
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-depth: 3
+    code-tools: false
+execute:
+  echo: false
+  warning: false   # warning text can quote raw data values, so it stays off in every render
+  message: false
+params:
+  shareable: true
+  suppress_n: 60
+---
+
+```{r}
+#| label: shareable-banner
+#| echo: false
+#| results: asis
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+if (exists("params") && isTRUE(as.logical(params$shareable))) {
+  k0 <- if (!is.null(params$suppress_n)) as.integer(params$suppress_n) else 60L
+  cat(sprintf(paste0(
+    "\n\n::: {.callout-note}\n## Shareable render\n\n",
+    "Counts from 1 to %1$s are shown as \"Suppr.\", along with any other cell, total, or percentage ",
+    "that would let a suppressed count be recovered by subtraction. Zeros are also hidden in any row ",
+    "or column with fewer than %2$s clients, and a row whose total is suppressed shows counts without ",
+    "percentages. Raw category values that are not in ",
+    "the codebook and were recorded for fewer than %2$s clients are masked, and data-quality counts below ",
+    "%2$s are shown as \"<%2$s\". Render with `shareable: false` to see exact counts locally.\n:::\n\n"),
+    k0 - 1L, k0))
+}
+```
+
+# 1. Did the EBP/CDEP Workstream increase access to services for targeted populations?
+
+## 1.01 Did improved access to services affect all subpopulations?
+
+Cross-tab of study population by relevant demographic data
+
+Total number of clients served and by demographics
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated timeframe, where "served" means that a client had a new intervention start date attached to them during the designated timeframe.
+
+**Calculation:** Aggregated count of clients served by period with an intervention type and start date listed; intervention does not need to be completed; assumes dates before 2024 are correct and any rows with these dates have not been revised.
+
+**Assumptions:** This is discharge data from EInsight, so clients can appear multiple times (multiple interventions, or the same intervention on multiple dates). Filtered out dates before 2024-01-01; dates were not otherwise cleaned.
+
+```{r}
+#| label: setup
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(knitr)
+})
+options(dplyr.summarise.inform = FALSE, knitr.kable.NA = "", scipen = 999)
+```
+
+```{r}
+#| label: config
+# Defaults are used when running chunks interactively; YAML params take precedence when rendering.
+defaults <- list(
+  path_discharge   = "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv",
+  path_demographic = "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv",
+  output_dir       = "output/sq101",
+  start_date       = "2024-01-01",
+  suppress_n       = 60,
+  shareable        = FALSE
+)
+cfg <- modifyList(defaults, if (exists("params")) as.list(params) else list())
+
+# Shareable render: counts of 1 to SUPPRESS_N - 1 are suppressed in every results table (with
+# complementary suppression), raw values outside the codebook seen for fewer than SUPPRESS_N clients
+# are masked, and QA counts of 1 to SUPPRESS_N - 1 display as "<SUPPRESS_N". The default (internal)
+# render shows exact counts and raw values and must not be shared.
+SUPPRESS_N <- as.integer(cfg$suppress_n)
+SHAREABLE  <- isTRUE(as.logical(cfg$shareable))
+RUN_MODE   <- if (SHAREABLE) "SHAREABLE" else "INTERNAL"
+SUPPR      <- "Suppr."
+MASKED     <- "Unrecognized value (masked)"
+NOT_REPORTED <- "Not reported / missing"
+
+# ---- Codebooks (label = code). The *_num columns and the "known value" lists both come from here. ----
+INSURANCE_CODES <- c(
+  "Private Insurance" = 1L, "Medi-Cal/Medi-Care" = 2L, "No insurance/Indigent" = 3L,
+  "Other" = 4L, "Veterans Benefits" = 5L
+)
+SEXUAL_ORIENTATION_CODES <- c(
+  "Asexual" = 1L, "Bisexual" = 2L, "Lesbian/Gay" = 3L, "Other" = 4L,
+  "Pansexual" = 5L, "Same Gender Loving" = 6L, "Straight" = 7L
+)
+GENDER_IDENTITY_CODES <- c(
+  "Genderqueer" = 1L, "Man/boy" = 2L, "Non-binary" = 3L, "Transgender man/boy" = 4L,
+  "Transgender woman/girl" = 5L, "Two-spirit" = 6L, "Woman/girl" = 7L
+)
+LANGUAGE_CODES <- c("English" = 1L, "Spanish" = 2L, "Other" = 3L)
+HOUSING_CODES  <- c("Housed" = 1L, "Unhoused" = 2L, "Other (i.e. treatment facility)" = 3L)
+
+# Race and ethnicity arrive as numeric codes (code_num, ethn_num). Code 0 is a non-response.
+RACE_LABELS <- c(
+  "1" = "Asian", "2" = "Black or African American", "3" = "Hispanic or Latino",
+  "4" = "Middle Eastern or North African", "5" = "Native American/American Indian or Alaska Native",
+  "6" = "Native Hawaiian or Pacific Islander", "7" = "White", "8" = "2+ races selected"
+)
+ETHN_LABELS <- c(
+  "1" = "Chinese", "2" = "Asian Indian", "3" = "Filipino", "4" = "Vietnamese", "5" = "Korean",
+  "6" = "Japanese", "7" = "African American", "8" = "Jamaican", "9" = "Haitian", "10" = "Nigerian",
+  "11" = "Somali", "12" = "Mexican", "13" = "Puerto Rican", "14" = "Salvadoran", "15" = "Cuban",
+  "16" = "Dominican", "17" = "Guatemalan", "18" = "Native Hawaiian", "19" = "Samoan", "20" = "Chamorro",
+  "21" = "English", "22" = "German", "23" = "Irish", "24" = "Italian", "25" = "Polish",
+  "26" = "Scottish", "88" = "2+ ethnicities selected"
+)
+CODE_0_LABEL <- "Not reported (code 0)"
+
+# ---- Non-substantive responses, recoded to NA ----
+NR_BASE <- c("Don't Know", "Prefer Not To Answer", "Not Applicable")
+NR_INSURANCE          <- c(NR_BASE, "No Insurance Status Selected")
+NR_SEXUAL_ORIENTATION <- c(NR_BASE, "No Sexual Orientation Selected")
+# Both spellings: the earlier script used "Identify"; the interim report cites "No Gender Identity Selected".
+NR_GENDER_IDENTITY    <- c(NR_BASE, "No Gender Identify Selected", "No Gender Identity Selected")
+
+dir.create(cfg$output_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+```{r}
+#| label: helpers
+fmt_n <- function(n) formatC(as.numeric(n), format = "f", digits = 0, big.mark = ",")
+fmt_n_qa <- function(n) {
+  ifelse(SHAREABLE & !is.na(n) & n > 0 & n < SUPPRESS_N, paste0("<", SUPPRESS_N), fmt_n(n))
+}
+fmt_pct <- function(p, digits = 1) {
+  ifelse(is.na(p) | is.nan(p), "", sprintf(paste0("%.", digits, "f%%"), 100 * p))
+}
+
+# Squish, send non-substantive responses and blanks to NA, and optionally collapse everything
+# outside `keep` into `other`. Missing values stay missing (they are not collapsed into `other`).
+clean_category <- function(x, non_response = NR_BASE, keep = NULL, other = NULL) {
+  x <- str_squish(as.character(x))
+  x <- if_else(x %in% non_response | x == "", NA_character_, x)
+  if (!is.null(keep)) x <- if_else(is.na(x) | x %in% keep, x, other)
+  x
+}
+
+code_to_label <- function(code, labels) {
+  code_chr <- str_squish(as.character(code))
+  case_when(
+    is.na(code_chr) | code_chr == "" ~ NA_character_,
+    code_chr == "0"                  ~ CODE_0_LABEL,
+    code_chr %in% names(labels)      ~ unname(labels[code_chr]),
+    TRUE                             ~ paste0("Code ", code_chr, " (not in codebook)")
+  )
+}
+
+# Shareable render only: a value outside `known` that fewer than SUPPRESS_N distinct clients carry is
+# the most likely to be free text, so it is replaced with MASKED. Counting clients (not rows) keeps a
+# single client's repeated rows from pushing a free-text value over the threshold.
+mask_rare_values <- function(x, id, known = character()) {
+  if (!SHAREABLE) return(x)
+  unknown <- !is.na(x) & !(x %in% known)
+  if (!any(unknown)) return(x)
+  n_clients <- tapply(id[unknown], x[unknown], n_distinct)
+  rare <- names(n_clients)[n_clients < SUPPRESS_N]
+  if_else(x %in% rare, MASKED, x)
+}
+
+# ---- Primary and complementary suppression ----
+# `x` holds every published or derivable number in a table (cells and totals). Each element of `lines`
+# indexes entries tied by one additive constraint, with the total LAST (a row's cells, then its total).
+# Counts of 1 to k - 1 are suppressed, then more entries are suppressed until:
+#   (a) no line has exactly one suppressed entry, which subtraction would recover;
+#   (b) in a line whose total is shown, the suppressed cells add up to at least k, so their combined
+#       count (total minus the shown cells) is not itself a small count; and
+#   (c) no suppressed count below k, and no sum of two suppressed counts that is below k, can be
+#       solved for exactly from all of the table's constraints taken together (checked by matrix rank).
+# Extra suppressions go to the entry with the lowest `weight` (by default, the smallest count).
+# An entry with weight Inf is never chosen, e.g. because another table already shows it.
+pick_entry <- function(cand, weight) {
+  cand <- cand[is.finite(weight[cand])]
+  if (length(cand) == 0L) NA_integer_ else cand[which.min(weight[cand])]
+}
+
+recoverable_entries <- function(x, lines, s, k) {
+  sup <- which(s)
+  if (length(sup) == 0L) return(integer())
+  A <- do.call(rbind, lapply(lines, function(ln) {
+    row <- numeric(length(x))
+    row[ln] <- c(rep(1, length(ln) - 1L), -1)
+    row[sup]
+  }))
+  A <- A[rowSums(A != 0) > 0, , drop = FALSE]
+  if (nrow(A) == 0L) return(integer())
+  r <- qr(A)$rank
+  solvable <- function(v) qr(rbind(A, v))$rank == r
+  unit <- function(j) as.numeric(seq_along(sup) == j)
+  small <- which(x[sup] < k)
+  hits <- sup[small[vapply(small, function(j) solvable(unit(j)), logical(1))]]
+  if (length(hits) == 0L && length(small) > 1L) {
+    for (pr in combn(small, 2, simplify = FALSE)) {
+      if (sum(x[sup[pr]]) < k && solvable(unit(pr[1]) + unit(pr[2]))) {
+        hits <- sup[pr]
+        break
+      }
+    }
+  }
+  hits
+}
+
+suppress_lines <- function(x, lines, k = SUPPRESS_N, init = NULL, weight = x) {
+  s <- !is.na(x) & x > 0 & x < k
+  if (!is.null(init)) s <- s | init
+  open_entries <- function(idx) idx[!s[idx] & x[idx] > 0]
+  repeat {
+    j <- NA_integer_
+    for (ln in lines) {
+      tot <- ln[length(ln)]
+      cells <- ln[-length(ln)]
+      small_sum <- !s[tot] && any(s[cells]) && sum(x[cells][s[cells]]) < k
+      if (sum(s[ln]) == 1L || small_sum) {
+        j <- pick_entry(open_entries(ln), weight)
+        if (is.na(j)) j <- pick_entry(open_entries(seq_along(x)), weight)
+        if (!is.na(j)) break
+      }
+    }
+    if (is.na(j)) {
+      rec <- recoverable_entries(x, lines, s, k)
+      if (length(rec) > 0L) {
+        near <- unique(unlist(lines[vapply(lines, function(ln) any(rec %in% ln), logical(1))]))
+        j <- pick_entry(open_entries(near), weight)
+        if (is.na(j)) j <- pick_entry(open_entries(seq_along(x)), weight)
+      }
+    }
+    if (is.na(j)) break
+    s[j] <- TRUE
+  }
+  s
+}
+
+# One-way frequency table in the interim report's layout: N, % of all, and % excluding N/As.
+# `not_reported` lists labels (besides NA) that count as non-substantive. The result carries the
+# categories it shows and hides, so a cross-tab of the same variable can match them (see `like`).
+tab_one_way <- function(x, label = "Category", order = character(), not_reported = character(),
+                        show_valid = TRUE, digits = 1) {
+  if (length(x) == 0L) return(tibble(!!label := "No records"))
+  x <- if_else(is.na(x), NOT_REPORTED, as.character(x))
+  nr_labels <- c(not_reported, NOT_REPORTED)
+  counts <- count(tibble(category = x), category)
+  present <- counts$category
+  lv <- c(intersect(setdiff(order, nr_labels), present),
+          sort(setdiff(present, c(order, nr_labels))),
+          intersect(nr_labels, present))
+  counts <- counts[match(lv, counts$category), ]
+
+  n <- counts$n
+  is_sub <- !(counts$category %in% nr_labels)
+  m <- length(n)
+  i_sub <- m + 1L; i_nr <- m + 2L; i_tot <- m + 3L
+  x_all <- c(n, sum(n[is_sub]), sum(n[!is_sub]), sum(n))
+  lines <- list(c(which(is_sub), i_sub), c(which(!is_sub), i_nr), c(i_sub, i_nr, i_tot))
+  s <- if (SHAREABLE) suppress_lines(x_all, lines) else rep(FALSE, length(x_all))
+  sc <- s[seq_len(m)]
+
+  body <- tibble(
+    category = counts$category,
+    N = if_else(sc, SUPPR, fmt_n(n)),
+    `%` = if_else(sc | s[i_tot], SUPPR, fmt_pct(n / x_all[i_tot], digits)),
+    `% (excluding N/As)` = case_when(
+      !is_sub         ~ "N/A",
+      sc | s[i_sub]   ~ SUPPR,
+      TRUE            ~ fmt_pct(n / x_all[i_sub], digits)
+    )
+  )
+  subtotal <- tibble(
+    category = "Subtotal: substantive responses",
+    N = if_else(s[i_sub], SUPPR, fmt_n(x_all[i_sub])),
+    `%` = if_else(s[i_sub] | s[i_tot], SUPPR, fmt_pct(x_all[i_sub] / x_all[i_tot], digits)),
+    `% (excluding N/As)` = if_else(s[i_sub], SUPPR, "100.0%")
+  )
+  total <- tibble(category = "Total", N = if_else(s[i_tot], SUPPR, fmt_n(x_all[i_tot])),
+                  `%` = if_else(s[i_tot], SUPPR, "100.0%"), `% (excluding N/As)` = "")
+
+  out <- if (show_valid) {
+    bind_rows(body[is_sub, ], subtotal, body[!is_sub, ], total)
+  } else {
+    bind_rows(body, total) |> select(-`% (excluding N/As)`)
+  }
+  out <- rename(out, !!label := category)
+  attr(out, "hidden") <- counts$category[sc]
+  attr(out, "shown")  <- counts$category[!sc]
+  out
+}
+
+# Two-way table with row percentages and counts, e.g. "45% (1,234)", plus a Total row and an N column.
+# Every row and column (including the Total row and N column) is a suppression line. Extra
+# suppressions go to inner cells first and to a row total only as a last resort. A row whose total is
+# hidden shows counts without percentages, because its percentages would reveal that total.
+# `like`: an earlier table of the same column variable (one-way or two-way). Its hidden categories
+# start hidden in this table's Total row, and categories it shows are never hidden here, so the two
+# tables cannot be combined to recover a suppressed count. When `like` is given, the grand total is
+# also treated as shown elsewhere and is never used as a complementary suppression.
+tab_two_way <- function(rows, cols, row_label = "Group", col_order = character(), digits = 0,
+                        like = NULL) {
+  if (length(rows) == 0L) return(tibble(!!row_label := "No records"))
+  row_lv <- as.character(sort(unique(rows[!is.na(rows)])))
+  rows <- if_else(is.na(rows), NOT_REPORTED, as.character(rows))
+  cols <- if_else(is.na(cols), NOT_REPORTED, as.character(cols))
+  if (any(rows == NOT_REPORTED)) row_lv <- c(row_lv, NOT_REPORTED)
+  present <- unique(cols)
+  col_lv <- c(intersect(setdiff(col_order, NOT_REPORTED), present),
+              sort(setdiff(present, c(col_order, NOT_REPORTED))),
+              intersect(NOT_REPORTED, present))
+
+  m <- unclass(table(factor(rows, row_lv), factor(cols, col_lv)))
+  R <- nrow(m); C <- ncol(m)
+  ext <- rbind(cbind(m, rowSums(m)), c(colSums(m), sum(m)))
+  idx <- matrix(seq_along(ext), nrow(ext))
+  lines <- c(lapply(seq_len(nrow(ext)), function(i) idx[i, ]),
+             lapply(seq_len(ncol(ext)), function(j) idx[, j]))
+  x <- as.vector(ext)
+
+  s <- rep(FALSE, length(x))
+  if (SHAREABLE) {
+    weight <- x
+    weight[idx[seq_len(R), C + 1]] <- x[idx[seq_len(R), C + 1]] + 1e9   # row totals: last resort
+    total_row <- idx[R + 1, seq_len(C)]
+    if (!is.null(like)) {
+      s[total_row[col_lv %in% attr(like, "hidden")]] <- TRUE
+      weight[total_row[col_lv %in% attr(like, "shown")]] <- Inf
+      weight[idx[R + 1, C + 1]] <- Inf
+    }
+    s <- suppress_lines(x, lines, init = s, weight = weight)
+  }
+  s_mat <- matrix(s, nrow(ext))
+  shown_s <- s_mat
+  if (SHAREABLE) {
+    # In a row or column whose total is below k, zeros are hidden too: otherwise they would show
+    # which categories the small group falls into (e.g., a row that is zero everywhere but one cell).
+    small_row <- ext[, C + 1] > 0 & ext[, C + 1] < SUPPRESS_N
+    small_col <- ext[R + 1, ] > 0 & ext[R + 1, ] < SUPPRESS_N
+    shown_s <- s_mat | (ext == 0 & (outer(small_row, rep(TRUE, C + 1)) | outer(rep(TRUE, R + 1), small_col)))
+  }
+
+  pct <- ext / ext[, C + 1]
+  cell <- matrix(paste0(fmt_pct(pct, digits), " (", fmt_n(ext), ")"), nrow(ext))
+  no_pct <- s_mat[, C + 1]                      # rows (including Total) whose total is hidden
+  cell[no_pct, ] <- matrix(fmt_n(ext[no_pct, , drop = FALSE]), sum(no_pct))
+  cell[shown_s] <- SUPPR
+  cell[, C + 1] <- ifelse(s_mat[, C + 1], SUPPR, fmt_n(ext[, C + 1]))
+  colnames(cell) <- c(col_lv, "N")
+  out <- as_tibble(cell) |> mutate(!!row_label := c(row_lv, "Total"), .before = 1)
+  attr(out, "hidden") <- union(attr(like, "hidden"), col_lv[s_mat[R + 1, seq_len(C)]])
+  attr(out, "shown")  <- col_lv[!s_mat[R + 1, seq_len(C)]]
+  out
+}
+
+# Show a table and keep a copy for the CSV export at the end.
+EXPORT <- list()
+show_table <- function(tbl, id, caption = NULL) {
+  EXPORT[[id]] <<- tbl
+  kable(tbl, caption = caption, align = c("l", rep("r", ncol(tbl) - 1)))
+}
+
+# Unique clients (first row per client) among rows that pass the given filters.
+clients_with <- function(...) {
+  all_data_filtered |> filter(...) |> distinct(client_system_id, .keep_all = TRUE)
+}
+```
+
+```{r}
+#| label: load_data
+discharge_data_filtered <- read_csv(cfg$path_discharge, show_col_types = FALSE, progress = FALSE)
+all_data <- read_csv(cfg$path_demographic, show_col_types = FALSE, progress = FALSE)
+
+qa_flow <- tibble(step = "Discharge file: rows read", n = nrow(discharge_data_filtered))
+qa_flow <- bind_rows(qa_flow, tibble(step = "Demographic file: rows read", n = nrow(all_data)))
+```
+
+```{r}
+#| label: prep_data
+# Add year and apply base filters to discharge data
+discharge_data_filtered <- discharge_data_filtered |>
+  mutate(intervention_start_year = year(intervention_start)) |>
+  filter(
+    !is.na(intervention_start),
+    !is.na(intervention_name)
+  )
+
+# Clean all demographic variables in one pass
+all_data <- all_data |>
+  mutate(
+    insurance_status_clean   = clean_category(insurance_status, NR_INSURANCE),
+    insurance_num            = unname(INSURANCE_CODES[insurance_status_clean]),
+
+    sexual_orientation_clean = clean_category(sexual_orientation, NR_SEXUAL_ORIENTATION),
+    sexual_orientation_num   = unname(SEXUAL_ORIENTATION_CODES[sexual_orientation_clean]),
+
+    gender_identity_clean    = clean_category(gender_identity, NR_GENDER_IDENTITY),
+    gender_identity_num      = unname(GENDER_IDENTITY_CODES[gender_identity_clean]),
+
+    preferred_language_clean = clean_category(preferred_language, NR_BASE, c("English", "Spanish"), "Other"),
+    preferred_language_num   = unname(LANGUAGE_CODES[preferred_language_clean]),
+
+    primary_language_clean   = clean_category(primary_language, NR_BASE, c("English", "Spanish"), "Other"),
+    primary_language_num     = unname(LANGUAGE_CODES[primary_language_clean]),
+
+    housing_status_clean     = clean_category(housing_status, NR_BASE, c("Housed", "Unhoused"),
+                                              "Other (i.e. treatment facility)"),
+    housing_status_num       = unname(HOUSING_CODES[housing_status_clean]),
+
+    race_label = code_to_label(code_num, RACE_LABELS),
+    ethn_label = code_to_label(ethn_num, ETHN_LABELS)
+  )
+
+# Base filtered dataset: start date onward, with intervention start and name
+all_data_filtered <- all_data |>
+  filter(
+    intervention_start >= cfg$start_date,
+    !is.na(intervention_start),
+    !is.na(intervention_name)
+  )
+
+# Values each field is allowed to take without masking (client_type has no codebook, so any of its
+# values seen for fewer than SUPPRESS_N clients is masked in a shareable render).
+KNOWN_VALUES <- list(
+  insurance_status_clean   = names(INSURANCE_CODES),
+  sexual_orientation_clean = names(SEXUAL_ORIENTATION_CODES),
+  gender_identity_clean    = names(GENDER_IDENTITY_CODES),
+  preferred_language_clean = names(LANGUAGE_CODES),
+  primary_language_clean   = names(LANGUAGE_CODES),
+  housing_status_clean     = names(HOUSING_CODES),
+  race_label               = c(unname(RACE_LABELS), CODE_0_LABEL),
+  ethn_label               = c(unname(ETHN_LABELS), CODE_0_LABEL)
+)
+all_data_filtered <- all_data_filtered |>
+  mutate(
+    across(all_of(names(KNOWN_VALUES)),
+           ~ mask_rare_values(.x, client_system_id, KNOWN_VALUES[[cur_column()]])),
+    client_type = mask_rare_values(as.character(client_type), client_system_id)
+  )
+
+clients <- all_data_filtered |> distinct(client_system_id, .keep_all = TRUE)
+
+qa_flow <- bind_rows(
+  qa_flow,
+  tibble(step = paste0("Discharge file: rows with intervention start and name, from ", cfg$start_date),
+         n = sum(discharge_data_filtered$intervention_start >= cfg$start_date)),
+  tibble(step = paste0("Demographic file: rows with intervention start and name, from ", cfg$start_date),
+         n = nrow(all_data_filtered)),
+  tibble(step = "Demographic file: unique clients (client_system_id)", n = nrow(clients))
+)
+
+RACE_ORDER <- c(unname(RACE_LABELS), CODE_0_LABEL)
+ETHN_ORDER <- c(unname(ETHN_LABELS), CODE_0_LABEL)
+```
+
+### Total clients served
+
+Counts are intervention records by start year (a client with more than one intervention is counted once per record).
+
+```{r}
+#| label: client_serve
+discharge_data_filtered |>
+  filter(intervention_start >= cfg$start_date) |>
+  pull(intervention_start_year) |>
+  tab_one_way("Intervention start year", show_valid = FALSE) |>
+  rename(`Intervention records (N)` = N) |>
+  show_table("total_records_by_year")
+```
+
+### Race
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by race.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and race is recoded as follows:
+
+**Codebook:**
+
+0. NA, don't know, prefer not to answer
+1. Asian
+2. Black or African American
+3. Hispanic or Latino
+4. Middle Eastern or North African
+5. Native American/American Indian or Alaska Native
+6. Native Hawaiian or Pacific Islander
+7. White
+8. 2+ races selected
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have race characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients). The "% (excluding N/As)" column excludes both code 0 and blank values.
+
+```{r}
+#| label: race
+t1 <- tab_one_way(clients$race_label, "Race", RACE_ORDER, not_reported = CODE_0_LABEL)
+show_table(t1, "race")
+
+d <- clients_with(!is.na(client_type), !is.na(race_label))
+tab_two_way(d$client_type, d$race_label, "Client type", RACE_ORDER, like = t1) |>
+  show_table("race_by_client_type")
+```
+
+### Ethnicity
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by ethnicity.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and ethnicity is recoded as follows:
+
+**Codebook:**
+
+0. NA, don't know, prefer not to answer
+`Chinese` = 1, `Asian Indian` = 2, `Filipino` = 3, `Vietnamese` = 4, `Korean` = 5, `Japanese` = 6, `African American` = 7, `Jamaican` = 8, `Haitian` = 9, `Nigerian` = 10, `Somali` = 11, `Mexican` = 12, `Puerto Rican` = 13, `Salvadoran` = 14, `Cuban` = 15, `Dominican` = 16, `Guatemalan` = 17, `Native Hawaiian` = 18, `Samoan` = 19, `Chamorro` = 20, `English` = 21, `German` = 22, `Irish` = 23, `Italian` = 24, `Polish` = 25, `Scottish` = 26, `2+ ethnicities selected` = 88
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have race characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients). The "% (excluding N/As)" column excludes both code 0 and blank values.
+
+```{r}
+#| label: ethnicity
+tab_one_way(clients$ethn_label, "Ethnicity", ETHN_ORDER, not_reported = CODE_0_LABEL) |>
+  show_table("ethnicity")
+```
+
+### Insurance status
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by insurance status.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and insurance is recoded as follows:
+
+**Codebook:**
+
+0. NA, don't know, prefer not to answer
+1. Private insurance
+2. Medi-Cal/Medi-Care
+3. No insurance/Indigent
+4. Other
+5. Veterans Benefits
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have insurance status characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients).
+
+```{r}
+#| label: insurance
+t1 <- tab_one_way(clients$insurance_status_clean, "Insurance status", names(INSURANCE_CODES))
+show_table(t1, "insurance")
+
+d <- clients_with(!is.na(client_type), !is.na(insurance_status_clean))
+tab_two_way(d$client_type, d$insurance_status_clean, "Client type", names(INSURANCE_CODES), like = t1) |>
+  show_table("insurance_by_client_type")
+```
+
+### Sexual orientation
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by sexual orientation.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and sexual orientation is recoded as follows:
+
+**Codebook:**
+
+0. NA, don't know, prefer not to answer, no sexual orientation selected
+1. Asexual
+2. Bisexual
+3. Lesbian/Gay
+4. Other
+5. Pansexual
+6. Same Gender Loving
+7. Straight
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have sexual orientation characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients).
+
+```{r}
+#| label: sexual_orientation
+t1 <- tab_one_way(clients$sexual_orientation_clean, "Sexual orientation", names(SEXUAL_ORIENTATION_CODES))
+show_table(t1, "sexual_orientation")
+
+d <- clients_with(!is.na(client_type), !is.na(sexual_orientation_clean))
+tab_two_way(d$client_type, d$sexual_orientation_clean, "Client type", names(SEXUAL_ORIENTATION_CODES),
+            like = t1) |>
+  show_table("sexual_orientation_by_client_type")
+```
+
+### Gender identity
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by gender identity.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and gender identity is recoded as follows:
+
+**Codebook:**
+
+0. NA, don't know, prefer not to answer
+1. Genderqueer
+2. Man/boy
+3. Non-binary
+4. Transgender man/boy
+5. Transgender woman/girl
+6. Two-spirit
+7. Woman/girl
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have gender identity characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients).
+
+```{r}
+#| label: gender_identity
+tab_one_way(clients$gender_identity_clean, "Gender identity", names(GENDER_IDENTITY_CODES)) |>
+  show_table("gender_identity")
+```
+
+### Preferred language
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by preferred language.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and preferred language is recoded as follows:
+
+**Codebook:**
+
+0. NA, don't know, prefer not to answer, no preferred language selected
+1. English
+2. Spanish
+3. Other
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have preferred language characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients). Any language other than English or Spanish is grouped into "Other".
+
+```{r}
+#| label: preferred_language
+d <- clients_with(!is.na(preferred_language_clean))
+t1 <- tab_two_way(d$intervention_start_quarter, d$preferred_language_clean, "Start quarter", names(LANGUAGE_CODES))
+show_table(t1, "preferred_language_by_quarter")
+
+d <- clients_with(!is.na(client_type), !is.na(preferred_language_clean))
+tab_two_way(d$client_type, d$preferred_language_clean, "Client type", names(LANGUAGE_CODES), like = t1) |>
+  show_table("preferred_language_by_client_type")
+```
+
+### Primary language
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by primary language.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and primary language is recoded as follows:
+
+**Codebook:**
+
+0. NA, don't know, prefer not to answer, no primary language selected
+1. English
+2. Spanish
+3. Other
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have primary language characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients). Any language other than English or Spanish is grouped into "Other".
+
+```{r}
+#| label: primary_language
+d <- clients_with(!is.na(primary_language_clean))
+t1 <- tab_two_way(d$intervention_start_quarter, d$primary_language_clean, "Start quarter", names(LANGUAGE_CODES))
+show_table(t1, "primary_language_by_quarter")
+
+d <- clients_with(!is.na(client_type), !is.na(primary_language_clean))
+tab_two_way(d$client_type, d$primary_language_clean, "Client type", names(LANGUAGE_CODES), like = t1) |>
+  show_table("primary_language_by_client_type")
+```
+
+### Housing status
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by housing status.
+
+**Calculation:** This KPI represents an ***aggregated count*** of clients served by quarter and uses client demographic data, where NA values are removed and housing status is recoded as follows:
+
+**Codebook:**
+
+0. NA, don't know, prefer not to answer, no housing status selected
+1. Housed
+2. Unhoused
+3. Other (i.e. treatment facility)
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have housing status characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients).
+
+```{r}
+#| label: housing_status
+d <- clients_with(!is.na(housing_status_clean))
+t1 <- tab_two_way(d$intervention_start_quarter, d$housing_status_clean, "Start quarter", names(HOUSING_CODES))
+show_table(t1, "housing_by_quarter")
+
+d <- clients_with(!is.na(client_type), !is.na(housing_status_clean))
+tab_two_way(d$client_type, d$housing_status_clean, "Client type", names(HOUSING_CODES), like = t1) |>
+  show_table("housing_by_client_type")
+```
+
+## 1.02 How does access differ compared to previous access to services before EBP/CDEP funding? For each subpopulation?
+
+Cross-tab of demographics and grant types: Total number of clients served and by demographic, and by whether grant was start up or expansion
+
+```{r}
+#| label: q102
+# Placeholder. Once the start-up vs. expansion column is available, the same helpers apply, e.g.:
+# d <- clients_with(!is.na(grant_type), !is.na(race_label))
+# tab_two_way(d$grant_type, d$race_label, "Grant type", RACE_ORDER) |> show_table("race_by_grant_type")
+```
+
+# Data quality checks
+
+These counts are for review, not reporting.
+
+```{r}
+#| label: qa
+#| results: asis
+qa_flow |>
+  mutate(n = fmt_n_qa(n)) |>
+  rename(Step = step, N = n) |>
+  show_table("qa_sample_flow", caption = "Sample flow")
+
+unrecognized <- map_dfr(names(KNOWN_VALUES), function(f) {
+  tibble(field = f, value = all_data_filtered[[f]], id = all_data_filtered$client_system_id) |>
+    filter(!is.na(value), !(value %in% KNOWN_VALUES[[f]])) |>
+    summarise(clients = n_distinct(id), records = n(), .by = c(field, value))
+})
+
+if (nrow(unrecognized) == 0) {
+  cat("Every non-missing value matched the codebook.\n")
+} else {
+  unrecognized |>
+    arrange(field, desc(clients)) |>
+    mutate(clients = fmt_n_qa(clients), records = fmt_n_qa(records)) |>
+    rename(Field = field, `Value (not in codebook)` = value, Clients = clients, Records = records) |>
+    show_table("qa_unrecognized_values",
+               caption = "Values kept as their own category because no codebook entry matched them")
+}
+```
+
+```{r}
+#| label: export
+export_long <- imap_dfr(EXPORT, function(tbl, id) {
+  first <- names(tbl)[1]
+  tbl |>
+    mutate(across(everything(), as.character), row_order = row_number()) |>
+    rename(row = all_of(first)) |>
+    pivot_longer(-c(row, row_order), names_to = "column", values_to = "value") |>
+    mutate(table = id, row_header = first, .before = 1)
+}) |>
+  mutate(render_mode = RUN_MODE, suppress_n = SUPPRESS_N, .before = 1)
+
+export_path <- file.path(cfg$output_dir, paste0("sq101_tables_", RUN_MODE, ".csv"))
+write_csv(export_long, export_path, na = "")
+```
