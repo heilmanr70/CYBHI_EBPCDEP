@@ -5,7 +5,7 @@ date: "`r Sys.Date()`"
 format:
   html:
     self-contained: true
-    df-print: paged
+    df-print: kable
     toc: true
     toc-depth: 3
     toc-location: left
@@ -17,13 +17,25 @@ execute:
   message: false
 ---
 
+```{=html}
+<style>
+  table { display: block; overflow-x: auto; width: 100%; }
+</style>
+```
+
 ::: {.callout-note title="TO DOs"}
 [ ] anything <11 needs to be suppressed. If only one item is suppressed, also suppress the total (so people can't back calculate).
 :::
 
+**Data Note**
+
+Data Source: Scaling EBPs/CDEPs eInsight Data Platform (https://cybhi.einsight.net/nova-login) | Datasets Used: Individual- and assessment-level records, from intake to discharge |
+Dates Represented: June 1, 2024 - June 30, 2026 | Date downloaded: July 17, 2026 | 
+Prepared by Behavioral Health Evaluation Strategies, LLC.
+
 ## Period
 
-2024-01-01 - 2026-03-31
+2024-06-01 - 2026-06-30
 
 ## Setup
 
@@ -38,12 +50,12 @@ knitr::opts_chunk$set(rownames.print = FALSE)
 
 # load in all data
 discharge_data <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv") %>% 
-  filter(intervention_start >= "2024-01-01",
-         intervention_start <= "2026-03-31")
+  filter(intervention_start >= "2024-06-01",
+         intervention_start <= "2026-06-30")
 
 all_data <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv") %>% 
-    filter(intervention_start >= "2024-01-01",
-           intervention_start <= "2026-03-31")
+    filter(intervention_start >= "2024-06-01",
+           intervention_start <= "2026-06-30")
 
 discharge_data_distinct <- discharge_data %>% 
   distinct(client_system_id, .keep_all = TRUE)
@@ -59,9 +71,9 @@ cat("Discharge data rows (total):", nrow(discharge_data), "\n")
 ## Outcomes Data by Round
 
 ### Participants Served
-**Data used**: Discharge data, which includes 382 clients that had more than one complete intervention.
+**Data used**: Discharge data, which includes clients that had more than one complete intervention.
 
-**Nitty gritty cleaning**: took out DEMO data; checked to see which `client_ids` had `pre_measure_s` AND `post_measure_s` per row (i.e., had a complete intervention); left those in; filtered only for `intervention_start >= "2024-01-01" & <= "2026-03-31"`
+**Nitty gritty cleaning**: took out DEMO data; checked to see which `client_ids` had `pre_measure_s` AND `post_measure_s` per row (i.e., had a complete intervention); left those in; filtered only for `intervention_start >= "2024-06-01" & <= "2026-06-30"`
 ```{r}
 #| label: tbl-participants-served-by-round
 
@@ -74,7 +86,7 @@ discharge_data %>%
 ### Participants with end dates
 **Data used**: Discharge data, which includes 382 clients that had more than one complete intervention.
 
-**Nitty gritty cleaning**: took out DEMO data; checked to see which `client_ids` had `pre_measure_s` AND `post_measure_s` per row (i.e., had a complete intervention); left those in; filtered only for `intervention_start >= "2024-01-01" & <= "2026-03-31"`
+**Nitty gritty cleaning**: took out DEMO data; checked to see which `client_ids` had `pre_measure_s` AND `post_measure_s` per row (i.e., had a complete intervention); left those in; filtered only for `intervention_start >= "2024-06-01" & <= "2026-06-30"`
 ```{r}
 #| label: tbl-participants-with-end-date-by-round
 
@@ -88,7 +100,7 @@ discharge_data %>%
 ### Improved outcomes
 **Data used**: Discharge data
 
-**Nitty gritty cleaning**: took out DEMO data; checked to see which `client_ids` had `pre_measure_s` AND `post_measure_s` per row (i.e., had a complete intervention); left those in; filtered only for `intervention_start >= "2024-01-01" & <= "2026-03-31"`
+**Nitty gritty cleaning**: took out DEMO data; checked to see which `client_ids` had `pre_measure_s` AND `post_measure_s` per row (i.e., had a complete intervention); left those in; filtered only for `intervention_start >= "2024-06-01" & <= "2026-06-30"`
 ```{r}
 #| label: tbl-count-outcomes
 
@@ -104,7 +116,7 @@ discharge_data %>%
   filter(!is.na(intervention_start),
          !is.na(intervention_end),
          !is.na(reason_for_discharge)) %>% 
-  tabyl(positive_outcomes) %>%               
+  tabyl(positive_outcomes) %>%             
   adorn_pct_formatting(digits = 1)
 ```
 

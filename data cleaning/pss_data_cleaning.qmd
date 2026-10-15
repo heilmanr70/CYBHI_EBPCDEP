@@ -18,25 +18,25 @@ This notebook prepares **CYBHI EBP/CDEP** Parenting Stress Scale (PSS) assessmen
 
 **Scoring:**
 
--   18 items. Responses are stored as text and mapped to numeric values: Strongly Disagree = 1, Disagree = 2, Undecided = 3, Agree = 4, Strongly Agree = 5.
--   Items 1, 2, 5, 6, 7, 8, 17, and 18 are **reverse scored** using the formula `6 − raw_score`.
--   Total score range: 18–90. Higher scores indicate greater perceived stress.
--   **A lower follow-up score indicates a positive outcome.**
--   Total score is set to `NA` if 2 or more items are missing.
+- 18 items. Responses are stored as text and mapped to numeric values: Strongly Disagree = 1, Disagree = 2, Undecided = 3, Agree = 4, Strongly Agree = 5.
+- Items 1, 2, 5, 6, 7, 8, 17, and 18 are **reverse scored** using the formula `6 − raw_score`.
+- Total score range: 18–90. Higher scores indicate greater perceived stress.
+- **A lower follow-up score indicates a positive outcome.**
+- Total score is set to `NA` if 2 or more items are missing.
 
 **Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 assessments exist) is the follow-up. Clients with only one assessment are excluded.
 
 **Output:**
 
 | File | Contents |
-|------------------------------------|------------------------------------|
+|----|----|
 | `pss_paired_clean.csv` | One row per client: initial/follow-up scores, `positive_outcome`, `score_change`, quarter labels |
 
 ------------------------------------------------------------------------
 
 ## Open Issues / Action Items
 
--   [ ] The `missing_count` threshold of 2 for treating total score as `NA` — confirm this is the correct PSS rule.
+- [ ] The `missing_count` threshold of 2 for treating total score as `NA` — confirm this is the correct PSS rule.
 
 ------------------------------------------------------------------------
 
