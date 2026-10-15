@@ -41,7 +41,7 @@ library(readr)
 library(tidyverse)
 library(janitor)
 
-discharge_data_filtered <- read_csv("/Users/cristin/Dropbox/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
+discharge_data_filtered <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv")
 discharge_data_filtered <- discharge_data_filtered %>% 
   filter(!is.na(intervention_start), # has to have an intervention start date
          !is.na(intervention_name)) # has to have an intervention type named
@@ -66,72 +66,72 @@ client_serve
 library(zoo)
 
 # caregiver
-caregiver_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-caregiver.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE) 
-h1 <- unlist(caregiver_raw[1, ], use.names = FALSE)           # question text row
-h2 <- unlist(caregiver_raw[2, ], use.names = FALSE)           # subheaders
-h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
-h1_ff <- str_squish(h1_ff)
-new_names <- ifelse(
-  is.na(h1_ff) | h1_ff == "",
-  h2,                                  # keep subheader only
-  paste(h1_ff, h2, sep = " - ")        # combine when applicable
-)
-new_names <- janitor::make_clean_names(new_names)
-caregiver <- caregiver_raw[-c(1, 2), ]
-names(caregiver) <- new_names
-caregiver <- caregiver %>%
-  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+caregiver <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/satisfaction_caregiver_clean.csv", na = c("-", "", "NA", "N/A", "0")) # col_names = FALSE) 
+# h1 <- unlist(caregiver_raw[1, ], use.names = FALSE)           # question text row
+# h2 <- unlist(caregiver_raw[2, ], use.names = FALSE)           # subheaders
+# h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+# h1_ff <- str_squish(h1_ff)
+# new_names <- ifelse(
+#   is.na(h1_ff) | h1_ff == "",
+#   h2,                                  # keep subheader only
+#   paste(h1_ff, h2, sep = " - ")        # combine when applicable
+# )
+# new_names <- janitor::make_clean_names(new_names)
+# caregiver <- caregiver_raw[-c(1, 2), ]
+# names(caregiver) <- new_names
+# caregiver <- caregiver %>%
+#   filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
 
 # child
-child_raw <- read.csv("/Users/cristin/Dropbox/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-child_13-17.csv", na = c("-", "", "NA", "N/A", "0"), header = FALSE) 
-h1 <- unlist(child_raw[1, ], use.names = FALSE)           # question text row
-h2 <- unlist(child_raw[2, ], use.names = FALSE)           # subheaders
-h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
-h1_ff <- str_squish(h1_ff)
-new_names <- ifelse(
-  is.na(h1_ff) | h1_ff == "",
-  h2,                                  # keep subheader only
-  paste(h1_ff, h2, sep = " - ")        # combine when applicable
-)
-new_names <- janitor::make_clean_names(new_names)
-child <- child_raw[-c(1, 2), ]
-names(child) <- new_names
-child <- child %>%
-  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+child <- read.csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/satisfaction_child_clean.csv", na = c("-", "", "NA", "N/A", "0")) # header = FALSE)
+# h1 <- unlist(child_raw[1, ], use.names = FALSE)           # question text row
+# h2 <- unlist(child_raw[2, ], use.names = FALSE)           # subheaders
+# h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+# h1_ff <- str_squish(h1_ff)
+# new_names <- ifelse(
+#   is.na(h1_ff) | h1_ff == "",
+#   h2,                                  # keep subheader only
+#   paste(h1_ff, h2, sep = " - ")        # combine when applicable
+# )
+# new_names <- janitor::make_clean_names(new_names)
+# child <- child_raw[-c(1, 2), ]
+# names(child) <- new_names
+# child <- child %>%
+#   filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
 
 # adult
-adult_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-adult_18-59.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE)
-h1 <- unlist(adult_raw[1, ], use.names = FALSE)           # question text row
-h2 <- unlist(adult_raw[2, ], use.names = FALSE)           # subheaders
-h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
-h1_ff <- str_squish(h1_ff)
-new_names <- ifelse(
-  is.na(h1_ff) | h1_ff == "",
-  h2,                                  # keep subheader only
-  paste(h1_ff, h2, sep = " - ")        # combine when applicable
-)
-new_names <- janitor::make_clean_names(new_names)
-adult <- adult_raw[-c(1, 2), ]
-names(adult) <- new_names
-adult <- adult %>%
-  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+adult <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/satisfaction_adult_clean.csv", na = c("-", "", "NA", "N/A", "0")) #col_names = FALSE)
+# h1 <- unlist(adult_raw[1, ], use.names = FALSE)           # question text row
+# h2 <- unlist(adult_raw[2, ], use.names = FALSE)           # subheaders
+# h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+# h1_ff <- str_squish(h1_ff)
+# new_names <- ifelse(
+#   is.na(h1_ff) | h1_ff == "",
+#   h2,                                  # keep subheader only
+#   paste(h1_ff, h2, sep = " - ")        # combine when applicable
+# )
+# new_names <- janitor::make_clean_names(new_names)
+# adult <- adult_raw[-c(1, 2), ]
+# names(adult) <- new_names
+# adult <- adult %>%
+#   filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
 
 # senior
-senior_raw <- read_csv("/Users/cristin/Dropbox/Data/eInsight Exports/Satisfaction Survey Export/Satisfaction_survey-adult_60_plus.csv", na = c("-", "", "NA", "N/A", "0"), col_names = FALSE) 
-h1 <- unlist(senior_raw[1, ], use.names = FALSE)           # question text row
-h2 <- unlist(senior_raw[2, ], use.names = FALSE)           # subheaders
-h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
-h1_ff <- str_squish(h1_ff)
-new_names <- ifelse(
-  is.na(h1_ff) | h1_ff == "",
-  h2,                                  # keep subheader only
-  paste(h1_ff, h2, sep = " - ")        # combine when applicable
-)
-new_names <- janitor::make_clean_names(new_names)
-senior <- senior_raw[-c(1, 2), ]
-names(senior) <- new_names
-senior <- senior %>%
-  filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
+senior <- read_csv("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/satisfaction_senior_clean.csv", na = c("-", "", "NA", "N/A", "0")) #col_names = FALSE) 
+# h1 <- unlist(senior_raw[1, ], use.names = FALSE)           # question text row
+# h2 <- unlist(senior_raw[2, ], use.names = FALSE)           # subheaders
+# h1_ff <- na.locf(h1, na.rm = FALSE)                 # carries last non-NA to the right
+# h1_ff <- str_squish(h1_ff)
+# new_names <- ifelse(
+#   is.na(h1_ff) | h1_ff == "",
+#   h2,                                  # keep subheader only
+#   paste(h1_ff, h2, sep = " - ")        # combine when applicable
+# )
+# new_names <- janitor::make_clean_names(new_names)
+# senior <- senior_raw[-c(1, 2), ]
+# names(senior) <- new_names
+# senior <- senior %>%
+#   filter(!if_any(c(provider_id), ~ str_detect(as.character(.x), "DEMO")))
 ```
 
 Satisfaction is defined two ways below. The first is the percent of individuals who answered question 1 as "Agree" or "Strongly Agree" on the satisfaction survey. The second definition is the percent of individuals who selected "Agree" or "Strongly Agree" on 80% or more of the questions completed.
@@ -147,169 +147,162 @@ Satisfaction is defined two ways below. The first is the percent of individuals 
 #| warning: false
 #| message: false
 #| include: false
-combined_q1 <- bind_rows(
-  caregiver %>% 
-    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
-           date_completed, matches("^x1_")) %>% 
-    rename(q1 = matches("^x1_")) %>% 
-    mutate(source = "caregiver"),
-  child %>% 
-    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
-           date_completed, matches("^x1_")) %>% 
-    rename(q1 = matches("^x1_")) %>% 
-    mutate(source = "child"),
-  adult %>% 
-    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
-           date_completed, matches("^x1_")) %>% 
-    rename(q1 = matches("^x1_")) %>% 
-    mutate(source = "adult"),
-  senior %>% 
-    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
-           date_completed, matches("^x1_")) %>% 
-    rename(q1 = matches("^x1_")) %>% 
-    mutate(source = "senior"))
-```
+# combined_q1 <- bind_rows(
+#   caregiver %>% 
+#     select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+#            date_completed, matches("^x1_")) %>% 
+#     rename(q1 = matches("^x1_")) %>% 
+#     mutate(source = "caregiver"),
+#   child %>% 
+#     select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+#            date_completed, matches("^x1_")) %>% 
+#     rename(q1 = matches("^x1_")) %>% 
+#     mutate(source = "child"),
+#   adult %>% 
+#     select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+#            date_completed, matches("^x1_")) %>% 
+#     rename(q1 = matches("^x1_")) %>% 
+#     mutate(source = "adult"),
+#   senior %>% 
+#     select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+#            date_completed, matches("^x1_")) %>% 
+#     rename(q1 = matches("^x1_")) %>% 
+#     mutate(source = "senior"))
 
-The following table shows high survey satisfaction by quarter.
+sat_all <- read_csv(
+  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/combined_satisfaction_clean.csv",
+  show_col_types = FALSE
+)
 
-```{r}
-#| echo: false
-#| warning: false
-#| message: false
-
-# combining all satisfaction survey data
-combined_all <- bind_rows(
-  caregiver %>% 
-    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
-           date_completed, matches("^x")) %>% 
-    rename(q = matches("^x")) %>% 
-    mutate(source = "caregiver"),
-  child %>% 
-    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
-           date_completed, matches("^x")) %>% 
-    rename(q = matches("^x")) %>% 
-    mutate(source = "child"),
-  adult %>% 
-    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
-           date_completed, matches("^x")) %>% 
-    rename(q = matches("^x")) %>% 
-    mutate(source = "adult"),
-  senior %>% 
-    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
-           date_completed, matches("^x")) %>% 
-    rename(q = matches("^x")) %>% 
-    mutate(source = "senior"))
-
-# first clean date column
-#unique(combined_all$date_completed)
-combined_all <- combined_all %>% 
+# Unified Q1 score — coalesce across three survey-specific Q1 columns
+sat_all <- sat_all |>
   mutate(
-    date_clean = str_replace(date_completed, "^00", "20"), # replace 00xx with 20xx
-    date_clean = str_replace(date_clean, "^29", "20"), # replace 29xx with 20xx
-    date_clean = as.Date(date_clean)
-  )
-#unique(combined_all$date_clean)
-
-# add in a quarter column 
-combined_all <- combined_all %>% 
-  filter(!is.na(date_clean),
-         date_clean <= "2025-12-31") %>% 
-  mutate(quarter_label = paste0("Q", quarter(date_clean), " ", year(date_clean)),
-       quarter_label = factor(quarter_label, levels = unique(quarter_label)) #to sort chronologically
+    q1_score = coalesce(
+      x1_overall_i_am_satisfied_with_the_services_my_child_received_score,
+      x1_overall_i_am_satisfied_with_the_services_i_received_score,
+      x1_i_like_the_services_that_i_received_here_score
+    )
   )
 
-# Question 1 satisfaction by round
-pct_4_5_round <- combined_all %>% 
-  filter(!is.na(quarter_label)) %>% 
-  group_by(quarter_label) %>% 
+all_data_distinct <- discharge_data_filtered |>
+  distinct(client_system_id, .keep_all = TRUE) |> 
+  mutate(
+    provider_system_id = as.character(provider_system_id),
+    client_system_id   = as.character(client_system_id)
+  )
+
+sat_all_data <- sat_all |>
+  mutate(
+    provider_system_id = as.character(provider_system_id),
+    client_system_id   = as.character(client_system_id)
+  ) |>
+  left_join(all_data_distinct,
+            by = c("provider", "provider_id", "provider_system_id", "client_system_id")) |>
+  filter(!is.na(intervention_name))
+
+score_cols <- names(sat_all_data)[str_detect(names(sat_all_data), "_score$")]
+
+# Overall Q1 high satisfaction rate
+pct_4_5 <- sat_all_data |>
   summarise(
-    pct_4_5 = round((100 * sum(q2 %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q2))), 1)
-  )
+    pct_4_5 = round(100 * sum(q1_score %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q1_score)), 1)
+  ) |>
+  pull(pct_4_5)
 
-pct_4_5_round 
-```
-
-#### Combined Survey Satisfaction
-
-```{r}
-#| echo: false
-#| warning: false
-#| message: false
-#| include: false
-
-summary_agree <- combined_all %>%
-  # keep only question columns
-  select(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) %>%
-  mutate(across(everything(), ~ as.numeric(.))) 
-
-df2 <- summary_agree %>% 
-  mutate(across(everything(), ~ na_if(., 0))) %>% 
-  # calculate per-person proportion of "Agree"/"Strongly Agree"
-  rowwise() %>%
+# Overall combined survey high satisfaction rate (>= 80% of questions at 4 or 5)
+df2 <- sat_all_data |>
+  select(all_of(score_cols)) |>
+  mutate(across(everything(), as.numeric)) |>
+  mutate(across(everything(), ~ na_if(., 0))) |>
+  rowwise() |>
   summarise(
     n_answered = sum(!is.na(c_across(everything()))),
-    n_agree = sum(c_across(everything()) %in% c(4,5), na.rm = TRUE),
-    pct_agree = n_agree / n_answered
-  ) %>%
-  ungroup() %>% 
+    n_agree    = sum(c_across(everything()) %in% c(4, 5), na.rm = TRUE),
+    pct_agree  = n_agree / n_answered
+  ) |>
+  ungroup() |>
   summarise(
-    n_total = n(),
-    n_meeting_80pct = sum(pct_agree >= 0.8, na.rm = TRUE),
-    pct_meeting_80pct = round((100 * n_meeting_80pct / n_total), 1)
+    n_total           = n(),
+    n_meeting_80pct   = sum(pct_agree >= 0.8, na.rm = TRUE),
+    pct_meeting_80pct = round(100 * n_meeting_80pct / n_total, 1)
   )
 
 df2
-
-# CONFIRMED THIS WORKS THE SAME AS ABOVE
-df3 <- summary_agree %>%   
-  mutate(across(everything(), ~ na_if(., 0))) %>% 
-  rowwise() %>% 
-  mutate(count_4 = sum(c(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) == "4", na.rm = TRUE), 
-         count_5 = sum(c(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) == "5", na.rm = TRUE),
-         n_4_5 = sum(c(count_4, count_5), na.rm = TRUE),
-         n_total = sum(!is.na(c_across(starts_with("q")))),
-         perc_4_5 = n_4_5 / n_total
-         ) %>% 
-  ungroup() 
-
-df4 <- df3 %>% 
-  summarise(
-    n_total = n(),
-    n_meeting_80pct = sum(perc_4_5 >= 0.8, na.rm = TRUE),
-    pct_meeting_80pct = round((100 * n_meeting_80pct / n_total), 1)
-  )
-
-df4
 ```
 
-The following table shows high survey satisfaction results by quarter, for data where both `client_id` and `quarter_label` were available.
+### Question 1 Satisfaction
+
+Overall, `{r} pct_4_5`% of survey respondents were highly satisfied based on question 1. The following table shows high satisfaction by round:
 
 ```{r}
-#| echo: false
-#| warning: false
-#| message: false
+#| label: tbl-q1-satisfaction-round
 
-summary_agree_quarter <- combined_all %>%
-  filter(!is.na(quarter_label)) %>% 
-  group_by(quarter_label) %>% 
-  # keep only question columns
-  select(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) %>%
-  mutate(across(everything(), ~ as.numeric(.))) %>% 
-  # calculate per-person proportion of "Agree"/"Strongly Agree"
-  rowwise() %>%
+sat_all_data |> 
+  filter(!is.na(funding_round)) |> 
+  group_by(funding_round) |> 
   summarise(
-    n_answered = sum(!is.na(c_across(everything()))),
-    n_agree = sum(c_across(everything()) %in% c(4, 5)),
-    pct_agree = n_agree / n_answered
-  ) %>%
-  summarise(
-    n_total = n(),
-    n_meeting_80pct = sum(pct_agree >= 0.8, na.rm = TRUE),
-    pct_meeting_80pct = round((100 * n_meeting_80pct / n_total), 1)
+    n_surveys = n(),
+    pct_4_5 = round(100 * sum(q1_score %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q1_score)), 1),
+    .groups = "drop"
   )
-
-summary_agree_quarter
 ```
+
+### Combined Survey Satisfaction
+
+Overall, `{r} df2$pct_meeting_80pct`% of survey respondents were highly satisfied, defined as selecting "Agree" or "Strongly Agree" on 80% or more of the questions completed. The following table shows high combined satisfaction by round, for clients where both a client ID and intervention name were available:
+
+**Assumptions:** Must have an intervention name; data used: satisfaction survey and all data (demo+discharge joined)
+```{r}
+#| label: tbl-combined-satisfaction-round
+
+sat_all_data |>
+  filter(!is.na(funding_round)) |>
+  group_by(funding_round) |>
+  select(funding_round, all_of(score_cols)) |>
+  mutate(across(all_of(score_cols), as.numeric)) |>
+  mutate(across(all_of(score_cols), ~ na_if(., 0))) |>
+  rowwise() |>
+  summarise(
+    n_answered = sum(!is.na(c_across(all_of(score_cols)))),
+    n_agree    = sum(c_across(all_of(score_cols)) %in% c(4, 5), na.rm = TRUE),
+    pct_agree  = n_agree / n_answered
+  ) |>
+  summarise(
+    n_total           = n(),
+    n_meeting_80pct   = sum(pct_agree >= 0.8, na.rm = TRUE),
+    pct_meeting_80pct = round(100 * n_meeting_80pct / n_total, 1)
+  )
+```
+
+
+<!-- The following table shows high survey satisfaction results by quarter, for data where both `client_id` and `quarter_label` were available. -->
+
+<!-- ```{r} -->
+<!-- #| echo: false -->
+<!-- #| warning: false -->
+<!-- #| message: false -->
+
+<!-- summary_agree_quarter <- combined_all %>% -->
+<!--   filter(!is.na(quarter_label)) %>%  -->
+<!--   group_by(quarter_label) %>%  -->
+<!--   # keep only question columns -->
+<!--   select(q2, q4, q6, q8, q10, q12, q14, q16, q18, q20, q22, q24, q26, q28, q30) %>% -->
+<!--   mutate(across(everything(), ~ as.numeric(.))) %>%  -->
+<!--   # calculate per-person proportion of "Agree"/"Strongly Agree" -->
+<!--   rowwise() %>% -->
+<!--   summarise( -->
+<!--     n_answered = sum(!is.na(c_across(everything()))), -->
+<!--     n_agree = sum(c_across(everything()) %in% c(4, 5)), -->
+<!--     pct_agree = n_agree / n_answered -->
+<!--   ) %>% -->
+<!--   summarise( -->
+<!--     n_total = n(), -->
+<!--     n_meeting_80pct = sum(pct_agree >= 0.8, na.rm = TRUE), -->
+<!--     pct_meeting_80pct = round((100 * n_meeting_80pct / n_total), 1) -->
+<!--   ) -->
+
+<!-- summary_agree_quarter -->
+<!-- ``` -->
 
 ## Client_end
 
@@ -380,50 +373,84 @@ The following table shows the percent of clients who received services in their 
 #| warning: false
 #| message: false
 # combining all satisfaction survey data
-client_lang_all <- bind_rows(
-  caregiver %>% 
-    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
-           date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
-    mutate(source = "caregiver"),
-  child %>% 
-    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
-           date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
-    mutate(source = "child"),
-  adult %>% 
-    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
-           date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
-    mutate(source = "adult"),
-  senior %>% 
-    select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
-           date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
-    mutate(source = "senior"))
+# client_lang_all <- bind_rows(
+#   caregiver %>% 
+#     select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+#            date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+#     mutate(source = "caregiver"),
+#   child %>% 
+#     select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+#            date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+#     mutate(source = "child"),
+#   adult %>% 
+#     select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+#            date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+#     mutate(source = "adult"),
+#   senior %>% 
+#     select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+#            date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+#     mutate(source = "senior"))
+# 
+# # first clean date column
+# client_lang_all <- client_lang_all %>% 
+#   mutate(
+#     date_clean = str_replace(date_completed, "^00", "20"), # replace 00xx with 20xx
+#     date_clean = str_replace(date_clean, "^29", "20"), # replace 29xx with 20xx
+#     date_clean = as.Date(date_clean)
+#   )
+# 
+# # add in a quarter column 
+# client_lang_all <- client_lang_all %>% 
+#   filter(!is.na(date_clean),
+#          date_clean <= "2025-12-31") %>% 
+#   mutate(quarter_label = paste0("Q", quarter(date_clean), " ", year(date_clean)),
+#        quarter_label = factor(quarter_label, levels = unique(quarter_label)) #to sort chronologically
+#   )
+# 
+# tab <- client_lang_all %>% 
+#   filter(!is.na(quarter_label),
+#          !is.na(were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response)) %>% 
+#   tabyl(quarter_label, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+#   adorn_totals("row") %>% 
+#   adorn_percentages("row") %>%
+#   adorn_pct_formatting(digits = 0) %>%
+#   adorn_ns() 
+# 
+# tab 
 
-# first clean date column
-client_lang_all <- client_lang_all %>% 
-  mutate(
-    date_clean = str_replace(date_completed, "^00", "20"), # replace 00xx with 20xx
-    date_clean = str_replace(date_clean, "^29", "20"), # replace 29xx with 20xx
-    date_clean = as.Date(date_clean)
-  )
-
-# add in a quarter column 
-client_lang_all <- client_lang_all %>% 
-  filter(!is.na(date_clean),
-         date_clean <= "2025-12-31") %>% 
-  mutate(quarter_label = paste0("Q", quarter(date_clean), " ", year(date_clean)),
-       quarter_label = factor(quarter_label, levels = unique(quarter_label)) #to sort chronologically
-  )
-
-tab <- client_lang_all %>% 
-  filter(!is.na(quarter_label),
-         !is.na(were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response)) %>% 
-  tabyl(quarter_label, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
-  adorn_totals("row") %>% 
-  adorn_percentages("row") %>%
-  adorn_pct_formatting(digits = 0) %>%
-  adorn_ns() 
-
-tab 
+# client_lang_all <- bind_rows(
+#   caregiver %>% 
+#     select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+#            date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+#     mutate(source = "caregiver"),
+#   child %>% 
+#     select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+#            date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+#     mutate(source = "child"),
+#   adult %>% 
+#     select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+#            date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+#     mutate(source = "adult"),
+#   senior %>% 
+#     select(provider, provider_id, provider_system_id, client_system_id, collection, cps_id, 
+#            date_completed, were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response) %>% 
+#     mutate(source = "senior"))
+# 
+# # first clean date column
+# client_lang_all <- client_lang_all %>% 
+#   mutate(
+#     date_clean = str_replace(date_completed, "^00", "20"), # replace 00xx with 20xx
+#     date_clean = str_replace(date_clean, "^29", "20"), # replace 29xx with 20xx
+#     date_clean = as.Date(date_clean)
+#   )
+# 
+# # add in a quarter column 
+# client_lang_all <- client_lang_all %>% 
+#   filter(!is.na(date_clean),
+#          date_clean <= "2025-12-31") %>% 
+#   mutate(quarter_label = paste0("Q", quarter(date_clean), " ", year(date_clean)),
+#        quarter_label = factor(quarter_label, levels = unique(quarter_label)) #to sort chronologically
+#   )
 ```
 
 ## Improved mental health (NOMS)

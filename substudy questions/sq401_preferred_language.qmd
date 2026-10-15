@@ -1,0 +1,433 @@
+---
+title: "Final Report Data Analysis: Study Question 4.01"
+author: "Tristan Burgess and Cristin Young"
+date: today
+format:
+  html:
+    embed-resources: true
+    toc: true
+    code-tools: false
+execute:
+  echo: false
+  warning: false   # warning text can quote raw data values, so it stays off in every render
+  message: false
+params:
+  shareable: false
+  suppress_n: 60
+editor_options:
+  chunk_output_type: inline
+  markdown:
+    wrap: 72
+---
+
+```{r}
+#| label: shareable-banner
+#| echo: false
+#| results: asis
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+if (exists("params") && isTRUE(as.logical(params$shareable))) {
+  k0 <- if (!is.null(params$suppress_n)) as.integer(params$suppress_n) else 60L
+  cat(sprintf(paste0(
+    "\n\n::: {.callout-note}\n## Shareable render\n\n",
+    "Counts from 1 to %1$s are shown as \"Suppr.\", along with any other cell, total, or percentage ",
+    "that would let a suppressed count be recovered by subtraction. Zeros are also hidden in any row ",
+    "or column with fewer than %2$s surveys, and a row whose total is suppressed shows counts without ",
+    "percentages. Response values that are not in the expected list and were given by fewer than ",
+    "%2$s respondents are masked, and data-quality counts below %2$s are shown as \"<%2$s\". ",
+    "Render with `shareable: false` to see exact counts locally.\n:::\n\n"),
+    k0 - 1L, k0))
+}
+```
+
+# 4. What percentage of clients reported high satisfaction with services?
+
+```{r}
+#| label: setup
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(knitr)
+})
+options(dplyr.summarise.inform = FALSE, knitr.kable.NA = "", scipen = 999)
+```
+
+```{r}
+#| label: config
+# Defaults are used when running chunks interactively; YAML params take precedence when rendering.
+defaults <- list(
+  assess_dir        = "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data",
+  file_satisfaction = "combined_satisfaction_clean.csv",   # produced by data cleaning/satisfaction_data_cleaning.qmd
+  output_dir        = "output/sq401",
+  suppress_n        = 60,
+  shareable         = FALSE
+)
+cfg <- modifyList(defaults, if (exists("params")) as.list(params) else list())
+
+# Shareable render: counts of 1 to SUPPRESS_N - 1 are suppressed in every results table (with
+# complementary suppression), response values outside KNOWN_LANG_RESPONSES given by fewer than
+# SUPPRESS_N respondents are masked, and QA counts of 1 to SUPPRESS_N - 1 display as "<SUPPRESS_N".
+# The default (internal) render shows exact counts and raw values and must not be shared.
+SUPPRESS_N   <- as.integer(cfg$suppress_n)
+SHAREABLE    <- isTRUE(as.logical(cfg$shareable))
+RUN_MODE     <- if (SHAREABLE) "SHAREABLE" else "INTERNAL"
+SUPPR        <- "Suppr."
+MASKED       <- "Unrecognized value (masked)"
+NOT_REPORTED <- "Not reported / missing"
+
+LANG_COL <- "were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response"
+# Expected answers to the preferred-language item. Other values are kept as their own category
+# (as before); in a shareable render, any of them given by fewer than SUPPRESS_N respondents is masked.
+KNOWN_LANG_RESPONSES <- c("Yes", "No", "S\u00ed", "Si")   # "S\u00ed" is "Sí"
+ID_COL <- "client_system_id"   # counts respondents for masking; rows are used if the column is absent
+
+dir.create(cfg$output_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+```{r}
+#| label: helpers
+fmt_n <- function(n) formatC(as.numeric(n), format = "f", digits = 0, big.mark = ",")
+fmt_n_qa <- function(n) {
+  ifelse(SHAREABLE & !is.na(n) & n > 0 & n < SUPPRESS_N, paste0("<", SUPPRESS_N), fmt_n(n))
+}
+fmt_pct <- function(p, digits = 1) {
+  ifelse(is.na(p) | is.nan(p), "", sprintf(paste0("%.", digits, "f%%"), 100 * p))
+}
+
+# Squish, send non-substantive responses and blanks to NA, and optionally collapse everything
+# outside `keep` into `other`. Missing values stay missing (they are not collapsed into `other`).
+clean_category <- function(x, non_response = NR_BASE, keep = NULL, other = NULL) {
+  x <- str_squish(as.character(x))
+  x <- if_else(x %in% non_response | x == "", NA_character_, x)
+  if (!is.null(keep)) x <- if_else(is.na(x) | x %in% keep, x, other)
+  x
+}
+
+code_to_label <- function(code, labels) {
+  code_chr <- str_squish(as.character(code))
+  case_when(
+    is.na(code_chr) | code_chr == "" ~ NA_character_,
+    code_chr == "0"                  ~ CODE_0_LABEL,
+    code_chr %in% names(labels)      ~ unname(labels[code_chr]),
+    TRUE                             ~ paste0("Code ", code_chr, " (not in codebook)")
+  )
+}
+
+# Shareable render only: a value outside `known` that fewer than SUPPRESS_N distinct clients carry is
+# the most likely to be free text, so it is replaced with MASKED. Counting clients (not rows) keeps a
+# single client's repeated rows from pushing a free-text value over the threshold.
+mask_rare_values <- function(x, id, known = character()) {
+  if (!SHAREABLE) return(x)
+  unknown <- !is.na(x) & !(x %in% known)
+  if (!any(unknown)) return(x)
+  n_clients <- tapply(id[unknown], x[unknown], n_distinct)
+  rare <- names(n_clients)[n_clients < SUPPRESS_N]
+  if_else(x %in% rare, MASKED, x)
+}
+
+# ---- Primary and complementary suppression ----
+# `x` holds every published or derivable number in a table (cells and totals). Each element of `lines`
+# indexes entries tied by one additive constraint, with the total LAST (a row's cells, then its total).
+# Counts of 1 to k - 1 are suppressed, then more entries are suppressed until:
+#   (a) no line has exactly one suppressed entry, which subtraction would recover;
+#   (b) in a line whose total is shown, the suppressed cells add up to at least k, so their combined
+#       count (total minus the shown cells) is not itself a small count; and
+#   (c) no suppressed count below k, and no sum of two suppressed counts that is below k, can be
+#       solved for exactly from all of the table's constraints taken together (checked by matrix rank).
+# Extra suppressions go to the entry with the lowest `weight` (by default, the smallest count).
+# An entry with weight Inf is never chosen, e.g. because another table already shows it.
+pick_entry <- function(cand, weight) {
+  cand <- cand[is.finite(weight[cand])]
+  if (length(cand) == 0L) NA_integer_ else cand[which.min(weight[cand])]
+}
+
+recoverable_entries <- function(x, lines, s, k) {
+  sup <- which(s)
+  if (length(sup) == 0L) return(integer())
+  A <- do.call(rbind, lapply(lines, function(ln) {
+    row <- numeric(length(x))
+    row[ln] <- c(rep(1, length(ln) - 1L), -1)
+    row[sup]
+  }))
+  A <- A[rowSums(A != 0) > 0, , drop = FALSE]
+  if (nrow(A) == 0L) return(integer())
+  r <- qr(A)$rank
+  solvable <- function(v) qr(rbind(A, v))$rank == r
+  unit <- function(j) as.numeric(seq_along(sup) == j)
+  small <- which(x[sup] < k)
+  hits <- sup[small[vapply(small, function(j) solvable(unit(j)), logical(1))]]
+  if (length(hits) == 0L && length(small) > 1L) {
+    for (pr in combn(small, 2, simplify = FALSE)) {
+      if (sum(x[sup[pr]]) < k && solvable(unit(pr[1]) + unit(pr[2]))) {
+        hits <- sup[pr]
+        break
+      }
+    }
+  }
+  hits
+}
+
+suppress_lines <- function(x, lines, k = SUPPRESS_N, init = NULL, weight = x) {
+  s <- !is.na(x) & x > 0 & x < k
+  if (!is.null(init)) s <- s | init
+  open_entries <- function(idx) idx[!s[idx] & x[idx] > 0]
+  repeat {
+    j <- NA_integer_
+    for (ln in lines) {
+      tot <- ln[length(ln)]
+      cells <- ln[-length(ln)]
+      small_sum <- !s[tot] && any(s[cells]) && sum(x[cells][s[cells]]) < k
+      if (sum(s[ln]) == 1L || small_sum) {
+        j <- pick_entry(open_entries(ln), weight)
+        if (is.na(j)) j <- pick_entry(open_entries(seq_along(x)), weight)
+        if (!is.na(j)) break
+      }
+    }
+    if (is.na(j)) {
+      rec <- recoverable_entries(x, lines, s, k)
+      if (length(rec) > 0L) {
+        near <- unique(unlist(lines[vapply(lines, function(ln) any(rec %in% ln), logical(1))]))
+        j <- pick_entry(open_entries(near), weight)
+        if (is.na(j)) j <- pick_entry(open_entries(seq_along(x)), weight)
+      }
+    }
+    if (is.na(j)) break
+    s[j] <- TRUE
+  }
+  s
+}
+
+# One-way frequency table in the interim report's layout: N, % of all, and % excluding N/As.
+# `not_reported` lists labels (besides NA) that count as non-substantive. The result carries the
+# categories it shows and hides, so a cross-tab of the same variable can match them (see `like`).
+tab_one_way <- function(x, label = "Category", order = character(), not_reported = character(),
+                        show_valid = TRUE, digits = 1) {
+  if (length(x) == 0L) return(tibble(!!label := "No records"))
+  x <- if_else(is.na(x), NOT_REPORTED, as.character(x))
+  nr_labels <- c(not_reported, NOT_REPORTED)
+  counts <- count(tibble(category = x), category)
+  present <- counts$category
+  lv <- c(intersect(setdiff(order, nr_labels), present),
+          sort(setdiff(present, c(order, nr_labels))),
+          intersect(nr_labels, present))
+  counts <- counts[match(lv, counts$category), ]
+
+  n <- counts$n
+  is_sub <- !(counts$category %in% nr_labels)
+  m <- length(n)
+  i_sub <- m + 1L; i_nr <- m + 2L; i_tot <- m + 3L
+  x_all <- c(n, sum(n[is_sub]), sum(n[!is_sub]), sum(n))
+  lines <- list(c(which(is_sub), i_sub), c(which(!is_sub), i_nr), c(i_sub, i_nr, i_tot))
+  s <- if (SHAREABLE) suppress_lines(x_all, lines) else rep(FALSE, length(x_all))
+  sc <- s[seq_len(m)]
+
+  body <- tibble(
+    category = counts$category,
+    N = if_else(sc, SUPPR, fmt_n(n)),
+    `%` = if_else(sc | s[i_tot], SUPPR, fmt_pct(n / x_all[i_tot], digits)),
+    `% (excluding N/As)` = case_when(
+      !is_sub         ~ "N/A",
+      sc | s[i_sub]   ~ SUPPR,
+      TRUE            ~ fmt_pct(n / x_all[i_sub], digits)
+    )
+  )
+  subtotal <- tibble(
+    category = "Subtotal: substantive responses",
+    N = if_else(s[i_sub], SUPPR, fmt_n(x_all[i_sub])),
+    `%` = if_else(s[i_sub] | s[i_tot], SUPPR, fmt_pct(x_all[i_sub] / x_all[i_tot], digits)),
+    `% (excluding N/As)` = if_else(s[i_sub], SUPPR, "100.0%")
+  )
+  total <- tibble(category = "Total", N = if_else(s[i_tot], SUPPR, fmt_n(x_all[i_tot])),
+                  `%` = if_else(s[i_tot], SUPPR, "100.0%"), `% (excluding N/As)` = "")
+
+  out <- if (show_valid) {
+    bind_rows(body[is_sub, ], subtotal, body[!is_sub, ], total)
+  } else {
+    bind_rows(body, total) |> select(-`% (excluding N/As)`)
+  }
+  out <- rename(out, !!label := category)
+  attr(out, "hidden") <- counts$category[sc]
+  attr(out, "shown")  <- counts$category[!sc]
+  out
+}
+
+# Two-way table with row percentages and counts, e.g. "45% (1,234)", plus a Total row and an N column.
+# Every row and column (including the Total row and N column) is a suppression line. Extra
+# suppressions go to inner cells first and to a row total only as a last resort. A row whose total is
+# hidden shows counts without percentages, because its percentages would reveal that total.
+# `like`: an earlier table of the same column variable (one-way or two-way). Its hidden categories
+# start hidden in this table's Total row, and categories it shows are never hidden here, so the two
+# tables cannot be combined to recover a suppressed count. When `like` is given, the grand total is
+# also treated as shown elsewhere and is never used as a complementary suppression.
+tab_two_way <- function(rows, cols, row_label = "Group", col_order = character(), digits = 0,
+                        like = NULL) {
+  if (length(rows) == 0L) return(tibble(!!row_label := "No records"))
+  row_lv <- as.character(sort(unique(rows[!is.na(rows)])))
+  rows <- if_else(is.na(rows), NOT_REPORTED, as.character(rows))
+  cols <- if_else(is.na(cols), NOT_REPORTED, as.character(cols))
+  if (any(rows == NOT_REPORTED)) row_lv <- c(row_lv, NOT_REPORTED)
+  present <- unique(cols)
+  col_lv <- c(intersect(setdiff(col_order, NOT_REPORTED), present),
+              sort(setdiff(present, c(col_order, NOT_REPORTED))),
+              intersect(NOT_REPORTED, present))
+
+  m <- unclass(table(factor(rows, row_lv), factor(cols, col_lv)))
+  R <- nrow(m); C <- ncol(m)
+  ext <- rbind(cbind(m, rowSums(m)), c(colSums(m), sum(m)))
+  idx <- matrix(seq_along(ext), nrow(ext))
+  lines <- c(lapply(seq_len(nrow(ext)), function(i) idx[i, ]),
+             lapply(seq_len(ncol(ext)), function(j) idx[, j]))
+  x <- as.vector(ext)
+
+  s <- rep(FALSE, length(x))
+  if (SHAREABLE) {
+    weight <- x
+    weight[idx[seq_len(R), C + 1]] <- x[idx[seq_len(R), C + 1]] + 1e9   # row totals: last resort
+    total_row <- idx[R + 1, seq_len(C)]
+    if (!is.null(like)) {
+      s[total_row[col_lv %in% attr(like, "hidden")]] <- TRUE
+      weight[total_row[col_lv %in% attr(like, "shown")]] <- Inf
+      weight[idx[R + 1, C + 1]] <- Inf
+    }
+    s <- suppress_lines(x, lines, init = s, weight = weight)
+  }
+  s_mat <- matrix(s, nrow(ext))
+  shown_s <- s_mat
+  if (SHAREABLE) {
+    # In a row or column whose total is below k, zeros are hidden too: otherwise they would show
+    # which categories the small group falls into (e.g., a row that is zero everywhere but one cell).
+    small_row <- ext[, C + 1] > 0 & ext[, C + 1] < SUPPRESS_N
+    small_col <- ext[R + 1, ] > 0 & ext[R + 1, ] < SUPPRESS_N
+    shown_s <- s_mat | (ext == 0 & (outer(small_row, rep(TRUE, C + 1)) | outer(rep(TRUE, R + 1), small_col)))
+  }
+
+  pct <- ext / ext[, C + 1]
+  cell <- matrix(paste0(fmt_pct(pct, digits), " (", fmt_n(ext), ")"), nrow(ext))
+  no_pct <- s_mat[, C + 1]                      # rows (including Total) whose total is hidden
+  cell[no_pct, ] <- matrix(fmt_n(ext[no_pct, , drop = FALSE]), sum(no_pct))
+  cell[shown_s] <- SUPPR
+  cell[, C + 1] <- ifelse(s_mat[, C + 1], SUPPR, fmt_n(ext[, C + 1]))
+  colnames(cell) <- c(col_lv, "N")
+  out <- as_tibble(cell) |> mutate(!!row_label := c(row_lv, "Total"), .before = 1)
+  attr(out, "hidden") <- union(attr(like, "hidden"), col_lv[s_mat[R + 1, seq_len(C)]])
+  attr(out, "shown")  <- col_lv[!s_mat[R + 1, seq_len(C)]]
+  out
+}
+
+# Show a table and keep a copy for the CSV export at the end.
+EXPORT <- list()
+show_table <- function(tbl, id, caption = NULL) {
+  EXPORT[[id]] <<- tbl
+  kable(tbl, caption = caption, align = c("l", rep("r", ncol(tbl) - 1)))
+}
+```
+
+```{r}
+#| label: load_data
+sat_combined <- read_csv(file.path(cfg$assess_dir, cfg$file_satisfaction),
+                         show_col_types = FALSE, progress = FALSE)
+qa_flow <- tibble(step = "Satisfaction file: rows read", n = nrow(sat_combined))
+
+sat_combined <- sat_combined |>
+  filter(
+    !is.na(date_clean)
+  ) |>
+  mutate(quarter_label = factor(quarter_label, levels = unique(quarter_label)))
+
+qa_flow <- bind_rows(qa_flow, tibble(step = "Rows with a cleaned survey date", n = nrow(sat_combined)))
+```
+
+## 4.01 What percentage of clients reported receiving services in their preferred language?
+
+**Definition:** Clients from the primary evaluation who indicate services received in their preferred language on the satisfaction survey divided by the total number of clients served by the grantees who completed a satisfaction survey after an intervention during the designated time frame.
+
+**Calculation:** This KPI represents the percent of clients that report services received in their preferred language on the satisfaction survey out of the total that completed the satisfaction survey by period(s).
+
+**Assumptions:** I cleaned dates with "002X" and "292X" and replaced them with "202X." I also filtered dates in the future (e.g, <= SysDate()). I filtered out NAs for both the quarter label and the question first before calculating %.
+
+The following table shows the percent of clients who received services in their preferred language on the satisfaction survey by quarter:
+
+```{r}
+#| label: prep_lang
+client_lang_all <- sat_combined |>
+  rename(lang_pref = all_of(LANG_COL)) |>
+  filter(
+    !is.na(quarter_label),
+    !is.na(lang_pref)
+  ) |>
+  mutate(lang_pref = as.character(lang_pref))
+
+respondent_id <- if (ID_COL %in% names(client_lang_all)) {
+  as.character(client_lang_all[[ID_COL]])
+} else {
+  as.character(seq_len(nrow(client_lang_all)))
+}
+client_lang_all$lang_pref <- mask_rare_values(client_lang_all$lang_pref, respondent_id, KNOWN_LANG_RESPONSES)
+
+qa_flow <- bind_rows(
+  qa_flow,
+  tibble(step = "Rows with a quarter and a preferred-language response (analysis rows)",
+         n = nrow(client_lang_all))
+)
+
+# Overall is built first so the quarter and year tables can match what it shows (see `like`).
+t_overall <- tab_one_way(client_lang_all$lang_pref, "Response", KNOWN_LANG_RESPONSES, show_valid = FALSE)
+t_quarter <- tab_two_way(client_lang_all$quarter_label, client_lang_all$lang_pref, "Quarter",
+                         KNOWN_LANG_RESPONSES, like = t_overall)
+t_year    <- tab_two_way(client_lang_all$year, client_lang_all$lang_pref, "Year",
+                         KNOWN_LANG_RESPONSES, like = t_quarter)
+```
+
+### By quarter
+
+```{r}
+#| label: by_quarter
+show_table(t_quarter, "by_quarter")
+```
+
+### By year
+
+```{r}
+#| label: by_year
+show_table(t_year, "by_year")
+```
+
+### Overall
+
+```{r}
+#| label: overall
+show_table(t_overall, "overall")
+```
+
+# Data quality checks
+
+These counts are for review, not reporting.
+
+```{r}
+#| label: qa
+qa_flow |>
+  mutate(n = fmt_n_qa(n)) |>
+  rename(Step = step, N = n) |>
+  show_table("qa_sample_flow", caption = "Sample flow")
+
+tibble(value = client_lang_all$lang_pref, id = respondent_id) |>
+  summarise(respondents = n_distinct(id), rows = n(), .by = value) |>
+  mutate(expected = if_else(value %in% KNOWN_LANG_RESPONSES, "Yes", "No")) |>
+  arrange(expected, desc(rows)) |>
+  mutate(respondents = fmt_n_qa(respondents), rows = fmt_n_qa(rows)) |>
+  select(`Response value` = value, `In expected list` = expected, Respondents = respondents, Rows = rows) |>
+  show_table("qa_response_values", caption = "Preferred-language response values")
+```
+
+```{r}
+#| label: export
+export_long <- imap_dfr(EXPORT, function(tbl, id) {
+  first <- names(tbl)[1]
+  tbl |>
+    mutate(across(everything(), as.character), row_order = row_number()) |>
+    rename(row = all_of(first)) |>
+    pivot_longer(-c(row, row_order), names_to = "column", values_to = "value") |>
+    mutate(table = id, row_header = first, .before = 1)
+}) |>
+  mutate(render_mode = RUN_MODE, suppress_n = SUPPRESS_N, .before = 1)
+
+write_csv(export_long, file.path(cfg$output_dir, paste0("sq401_tables_", RUN_MODE, ".csv")), na = "")
+```

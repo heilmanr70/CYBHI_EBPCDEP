@@ -1,0 +1,462 @@
+---
+title: "Final Report Data Analysis: Study Question 4.03"
+author: "Tristan Burgess and Cristin Young"
+date: today
+format:
+  html:
+    embed-resources: true
+    toc: true
+    code-tools: false
+execute:
+  echo: false
+  warning: false   # warning text can quote raw data values, so it stays off in every render
+  message: false
+params:
+  shareable: false
+  suppress_n: 60
+editor_options:
+  chunk_output_type: inline
+  markdown:
+    wrap: 72
+---
+
+```{r}
+#| label: shareable-banner
+#| echo: false
+#| results: asis
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+if (exists("params") && isTRUE(as.logical(params$shareable))) {
+  k0 <- if (!is.null(params$suppress_n)) as.integer(params$suppress_n) else 60L
+  cat(sprintf(paste0(
+    "\n\n::: {.callout-note}\n## Shareable render\n\n",
+    "Counts from 1 to %1$s are shown as \"Suppr.\", along with any other cell, total, or percentage ",
+    "that would let a suppressed count be recovered by subtraction. Zeros are also hidden in any row ",
+    "or column with fewer than %2$s surveys, and a row whose total is suppressed shows counts without ",
+    "percentages. Funding round values recorded for fewer than %2$s respondents are masked, and ",
+    "data-quality counts below %2$s are shown as \"<%2$s\". ",
+    "Render with `shareable: false` to see exact counts locally.\n:::\n\n"),
+    k0 - 1L, k0))
+}
+```
+
+# 4. What percentage of clients reported high satisfaction with services?
+
+```{r}
+#| label: setup
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(knitr)
+})
+options(dplyr.summarise.inform = FALSE, knitr.kable.NA = "", scipen = 999)
+```
+
+```{r}
+#| label: config
+# Defaults are used when running chunks interactively; YAML params take precedence when rendering.
+defaults <- list(
+  assess_dir        = "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data",
+  file_satisfaction = "combined_satisfaction_clean.csv",   # produced by data cleaning/satisfaction_data_cleaning.qmd
+  file_all_data     = "demographic_discharge_clean.csv",   # demographics + discharge, as in 1.01
+  output_dir        = "output/sq403",
+  suppress_n        = 60,
+  shareable         = FALSE
+)
+cfg <- modifyList(defaults, if (exists("params")) as.list(params) else list())
+
+# Shareable render: counts of 1 to SUPPRESS_N - 1 are suppressed in every results table (with
+# complementary suppression), funding round values seen for fewer than SUPPRESS_N respondents are
+# masked, and QA counts of 1 to SUPPRESS_N - 1 display as "<SUPPRESS_N".
+# The default (internal) render shows exact counts and raw values and must not be shared.
+SUPPRESS_N   <- as.integer(cfg$suppress_n)
+SHAREABLE    <- isTRUE(as.logical(cfg$shareable))
+RUN_MODE     <- if (SHAREABLE) "SHAREABLE" else "INTERNAL"
+SUPPR        <- "Suppr."
+MASKED       <- "Unrecognized value (masked)"
+NOT_REPORTED <- "Not reported / missing"
+
+HIGH_Q1  <- "High (4 or 5)"
+OTHER_Q1 <- "Other score"
+HIGH_80  <- "80%+ agree or strongly agree"
+OTHER_80 <- "Below 80% or no items answered"
+
+dir.create(cfg$output_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+```{r}
+#| label: helpers
+fmt_n <- function(n) formatC(as.numeric(n), format = "f", digits = 0, big.mark = ",")
+fmt_n_qa <- function(n) {
+  ifelse(SHAREABLE & !is.na(n) & n > 0 & n < SUPPRESS_N, paste0("<", SUPPRESS_N), fmt_n(n))
+}
+fmt_pct <- function(p, digits = 1) {
+  ifelse(is.na(p) | is.nan(p), "", sprintf(paste0("%.", digits, "f%%"), 100 * p))
+}
+
+# Squish, send non-substantive responses and blanks to NA, and optionally collapse everything
+# outside `keep` into `other`. Missing values stay missing (they are not collapsed into `other`).
+clean_category <- function(x, non_response = NR_BASE, keep = NULL, other = NULL) {
+  x <- str_squish(as.character(x))
+  x <- if_else(x %in% non_response | x == "", NA_character_, x)
+  if (!is.null(keep)) x <- if_else(is.na(x) | x %in% keep, x, other)
+  x
+}
+
+code_to_label <- function(code, labels) {
+  code_chr <- str_squish(as.character(code))
+  case_when(
+    is.na(code_chr) | code_chr == "" ~ NA_character_,
+    code_chr == "0"                  ~ CODE_0_LABEL,
+    code_chr %in% names(labels)      ~ unname(labels[code_chr]),
+    TRUE                             ~ paste0("Code ", code_chr, " (not in codebook)")
+  )
+}
+
+# Shareable render only: a value outside `known` that fewer than SUPPRESS_N distinct clients carry is
+# the most likely to be free text, so it is replaced with MASKED. Counting clients (not rows) keeps a
+# single client's repeated rows from pushing a free-text value over the threshold.
+mask_rare_values <- function(x, id, known = character()) {
+  if (!SHAREABLE) return(x)
+  unknown <- !is.na(x) & !(x %in% known)
+  if (!any(unknown)) return(x)
+  n_clients <- tapply(id[unknown], x[unknown], n_distinct)
+  rare <- names(n_clients)[n_clients < SUPPRESS_N]
+  if_else(x %in% rare, MASKED, x)
+}
+
+# ---- Primary and complementary suppression ----
+# `x` holds every published or derivable number in a table (cells and totals). Each element of `lines`
+# indexes entries tied by one additive constraint, with the total LAST (a row's cells, then its total).
+# Counts of 1 to k - 1 are suppressed, then more entries are suppressed until:
+#   (a) no line has exactly one suppressed entry, which subtraction would recover;
+#   (b) in a line whose total is shown, the suppressed cells add up to at least k, so their combined
+#       count (total minus the shown cells) is not itself a small count; and
+#   (c) no suppressed count below k, and no sum of two suppressed counts that is below k, can be
+#       solved for exactly from all of the table's constraints taken together (checked by matrix rank).
+# Extra suppressions go to the entry with the lowest `weight` (by default, the smallest count).
+# An entry with weight Inf is never chosen, e.g. because another table already shows it.
+pick_entry <- function(cand, weight) {
+  cand <- cand[is.finite(weight[cand])]
+  if (length(cand) == 0L) NA_integer_ else cand[which.min(weight[cand])]
+}
+
+recoverable_entries <- function(x, lines, s, k) {
+  sup <- which(s)
+  if (length(sup) == 0L) return(integer())
+  A <- do.call(rbind, lapply(lines, function(ln) {
+    row <- numeric(length(x))
+    row[ln] <- c(rep(1, length(ln) - 1L), -1)
+    row[sup]
+  }))
+  A <- A[rowSums(A != 0) > 0, , drop = FALSE]
+  if (nrow(A) == 0L) return(integer())
+  r <- qr(A)$rank
+  solvable <- function(v) qr(rbind(A, v))$rank == r
+  unit <- function(j) as.numeric(seq_along(sup) == j)
+  small <- which(x[sup] < k)
+  hits <- sup[small[vapply(small, function(j) solvable(unit(j)), logical(1))]]
+  if (length(hits) == 0L && length(small) > 1L) {
+    for (pr in combn(small, 2, simplify = FALSE)) {
+      if (sum(x[sup[pr]]) < k && solvable(unit(pr[1]) + unit(pr[2]))) {
+        hits <- sup[pr]
+        break
+      }
+    }
+  }
+  hits
+}
+
+suppress_lines <- function(x, lines, k = SUPPRESS_N, init = NULL, weight = x) {
+  s <- !is.na(x) & x > 0 & x < k
+  if (!is.null(init)) s <- s | init
+  open_entries <- function(idx) idx[!s[idx] & x[idx] > 0]
+  repeat {
+    j <- NA_integer_
+    for (ln in lines) {
+      tot <- ln[length(ln)]
+      cells <- ln[-length(ln)]
+      small_sum <- !s[tot] && any(s[cells]) && sum(x[cells][s[cells]]) < k
+      if (sum(s[ln]) == 1L || small_sum) {
+        j <- pick_entry(open_entries(ln), weight)
+        if (is.na(j)) j <- pick_entry(open_entries(seq_along(x)), weight)
+        if (!is.na(j)) break
+      }
+    }
+    if (is.na(j)) {
+      rec <- recoverable_entries(x, lines, s, k)
+      if (length(rec) > 0L) {
+        near <- unique(unlist(lines[vapply(lines, function(ln) any(rec %in% ln), logical(1))]))
+        j <- pick_entry(open_entries(near), weight)
+        if (is.na(j)) j <- pick_entry(open_entries(seq_along(x)), weight)
+      }
+    }
+    if (is.na(j)) break
+    s[j] <- TRUE
+  }
+  s
+}
+
+# One-way frequency table in the interim report's layout: N, % of all, and % excluding N/As.
+# `not_reported` lists labels (besides NA) that count as non-substantive. The result carries the
+# categories it shows and hides, so a cross-tab of the same variable can match them (see `like`).
+tab_one_way <- function(x, label = "Category", order = character(), not_reported = character(),
+                        show_valid = TRUE, digits = 1) {
+  if (length(x) == 0L) return(tibble(!!label := "No records"))
+  x <- if_else(is.na(x), NOT_REPORTED, as.character(x))
+  nr_labels <- c(not_reported, NOT_REPORTED)
+  counts <- count(tibble(category = x), category)
+  present <- counts$category
+  lv <- c(intersect(setdiff(order, nr_labels), present),
+          sort(setdiff(present, c(order, nr_labels))),
+          intersect(nr_labels, present))
+  counts <- counts[match(lv, counts$category), ]
+
+  n <- counts$n
+  is_sub <- !(counts$category %in% nr_labels)
+  m <- length(n)
+  i_sub <- m + 1L; i_nr <- m + 2L; i_tot <- m + 3L
+  x_all <- c(n, sum(n[is_sub]), sum(n[!is_sub]), sum(n))
+  lines <- list(c(which(is_sub), i_sub), c(which(!is_sub), i_nr), c(i_sub, i_nr, i_tot))
+  s <- if (SHAREABLE) suppress_lines(x_all, lines) else rep(FALSE, length(x_all))
+  sc <- s[seq_len(m)]
+
+  body <- tibble(
+    category = counts$category,
+    N = if_else(sc, SUPPR, fmt_n(n)),
+    `%` = if_else(sc | s[i_tot], SUPPR, fmt_pct(n / x_all[i_tot], digits)),
+    `% (excluding N/As)` = case_when(
+      !is_sub         ~ "N/A",
+      sc | s[i_sub]   ~ SUPPR,
+      TRUE            ~ fmt_pct(n / x_all[i_sub], digits)
+    )
+  )
+  subtotal <- tibble(
+    category = "Subtotal: substantive responses",
+    N = if_else(s[i_sub], SUPPR, fmt_n(x_all[i_sub])),
+    `%` = if_else(s[i_sub] | s[i_tot], SUPPR, fmt_pct(x_all[i_sub] / x_all[i_tot], digits)),
+    `% (excluding N/As)` = if_else(s[i_sub], SUPPR, "100.0%")
+  )
+  total <- tibble(category = "Total", N = if_else(s[i_tot], SUPPR, fmt_n(x_all[i_tot])),
+                  `%` = if_else(s[i_tot], SUPPR, "100.0%"), `% (excluding N/As)` = "")
+
+  out <- if (show_valid) {
+    bind_rows(body[is_sub, ], subtotal, body[!is_sub, ], total)
+  } else {
+    bind_rows(body, total) |> select(-`% (excluding N/As)`)
+  }
+  out <- rename(out, !!label := category)
+  attr(out, "hidden") <- counts$category[sc]
+  attr(out, "shown")  <- counts$category[!sc]
+  out
+}
+
+# Two-way table with row percentages and counts, e.g. "45% (1,234)", plus a Total row and an N column.
+# Every row and column (including the Total row and N column) is a suppression line. Extra
+# suppressions go to inner cells first and to a row total only as a last resort. A row whose total is
+# hidden shows counts without percentages, because its percentages would reveal that total.
+# `like`: an earlier table of the same column variable (one-way or two-way). Its hidden categories
+# start hidden in this table's Total row, and categories it shows are never hidden here, so the two
+# tables cannot be combined to recover a suppressed count. When `like` is given, the grand total is
+# also treated as shown elsewhere and is never used as a complementary suppression.
+tab_two_way <- function(rows, cols, row_label = "Group", col_order = character(), digits = 0,
+                        like = NULL) {
+  if (length(rows) == 0L) return(tibble(!!row_label := "No records"))
+  row_lv <- as.character(sort(unique(rows[!is.na(rows)])))
+  rows <- if_else(is.na(rows), NOT_REPORTED, as.character(rows))
+  cols <- if_else(is.na(cols), NOT_REPORTED, as.character(cols))
+  if (any(rows == NOT_REPORTED)) row_lv <- c(row_lv, NOT_REPORTED)
+  present <- unique(cols)
+  col_lv <- c(intersect(setdiff(col_order, NOT_REPORTED), present),
+              sort(setdiff(present, c(col_order, NOT_REPORTED))),
+              intersect(NOT_REPORTED, present))
+
+  m <- unclass(table(factor(rows, row_lv), factor(cols, col_lv)))
+  R <- nrow(m); C <- ncol(m)
+  ext <- rbind(cbind(m, rowSums(m)), c(colSums(m), sum(m)))
+  idx <- matrix(seq_along(ext), nrow(ext))
+  lines <- c(lapply(seq_len(nrow(ext)), function(i) idx[i, ]),
+             lapply(seq_len(ncol(ext)), function(j) idx[, j]))
+  x <- as.vector(ext)
+
+  s <- rep(FALSE, length(x))
+  if (SHAREABLE) {
+    weight <- x
+    weight[idx[seq_len(R), C + 1]] <- x[idx[seq_len(R), C + 1]] + 1e9   # row totals: last resort
+    total_row <- idx[R + 1, seq_len(C)]
+    if (!is.null(like)) {
+      s[total_row[col_lv %in% attr(like, "hidden")]] <- TRUE
+      weight[total_row[col_lv %in% attr(like, "shown")]] <- Inf
+      weight[idx[R + 1, C + 1]] <- Inf
+    }
+    s <- suppress_lines(x, lines, init = s, weight = weight)
+  }
+  s_mat <- matrix(s, nrow(ext))
+  shown_s <- s_mat
+  if (SHAREABLE) {
+    # In a row or column whose total is below k, zeros are hidden too: otherwise they would show
+    # which categories the small group falls into (e.g., a row that is zero everywhere but one cell).
+    small_row <- ext[, C + 1] > 0 & ext[, C + 1] < SUPPRESS_N
+    small_col <- ext[R + 1, ] > 0 & ext[R + 1, ] < SUPPRESS_N
+    shown_s <- s_mat | (ext == 0 & (outer(small_row, rep(TRUE, C + 1)) | outer(rep(TRUE, R + 1), small_col)))
+  }
+
+  pct <- ext / ext[, C + 1]
+  cell <- matrix(paste0(fmt_pct(pct, digits), " (", fmt_n(ext), ")"), nrow(ext))
+  no_pct <- s_mat[, C + 1]                      # rows (including Total) whose total is hidden
+  cell[no_pct, ] <- matrix(fmt_n(ext[no_pct, , drop = FALSE]), sum(no_pct))
+  cell[shown_s] <- SUPPR
+  cell[, C + 1] <- ifelse(s_mat[, C + 1], SUPPR, fmt_n(ext[, C + 1]))
+  colnames(cell) <- c(col_lv, "N")
+  out <- as_tibble(cell) |> mutate(!!row_label := c(row_lv, "Total"), .before = 1)
+  attr(out, "hidden") <- union(attr(like, "hidden"), col_lv[s_mat[R + 1, seq_len(C)]])
+  attr(out, "shown")  <- col_lv[!s_mat[R + 1, seq_len(C)]]
+  out
+}
+
+# Show a table and keep a copy for the CSV export at the end.
+EXPORT <- list()
+show_table <- function(tbl, id, caption = NULL) {
+  EXPORT[[id]] <<- tbl
+  kable(tbl, caption = caption, align = c("l", rep("r", ncol(tbl) - 1)))
+}
+```
+
+## 4.03 Within the grantees doing CDEPs, were there higher client satisfaction rates among specific target populations?
+
+**Definition:** 
+
+**Calculation:** 
+
+**Assumptions:** 
+
+**Final analysis:** Regression - outcomes = high satisfaction (4/5 vs other). Same predictors as for 3.01; subset for CDEPs from SPSS file
+
+## Satisfaction Surveys
+
+Satisfaction is defined two ways below. The first is the percent of individuals who answered question 1 as "Agree" or "Strongly Agree." The second is the percent of individuals who selected "Agree" or "Strongly Agree" on 80% or more of the questions completed. High satisfaction on question 1 is defined as a score of 4 or 5.
+
+**Assumptions:** Distinct by client system ID and joined to satisfaction survey data; must have an intervention named; data used: satisfaction survey and all data (demo+discharge joined)
+
+```{r}
+#| label: setup-satisfaction
+sat_all  <- read_csv(file.path(cfg$assess_dir, cfg$file_satisfaction), show_col_types = FALSE, progress = FALSE)
+all_data <- read_csv(file.path(cfg$assess_dir, cfg$file_all_data), show_col_types = FALSE, progress = FALSE)
+qa_flow <- tibble(step = "Satisfaction file: rows read", n = nrow(sat_all))
+
+# Survey item scores come from the satisfaction file only (taken before q1_score is added and before
+# the join), so client-record columns ending in "_score" and the combined q1_score are not counted.
+score_cols <- names(sat_all)[str_detect(names(sat_all), "_score$")]
+
+# Unified Q1 score — coalesce across three survey-specific Q1 columns
+sat_all <- sat_all |>
+  mutate(
+    q1_score = coalesce(
+      x1_overall_i_am_satisfied_with_the_services_my_child_received_score,
+      x1_overall_i_am_satisfied_with_the_services_i_received_score,
+      x1_i_like_the_services_that_i_received_here_score
+    )
+  )
+
+all_data_distinct <- all_data |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  mutate(
+    provider_system_id = as.character(provider_system_id),
+    client_system_id   = as.character(client_system_id)
+  )
+
+sat_all_data <- sat_all |>
+  mutate(
+    provider_system_id = as.character(provider_system_id),
+    client_system_id   = as.character(client_system_id)
+  ) |>
+  left_join(all_data_distinct,
+            by = c("provider", "provider_id", "provider_system_id", "client_system_id")) |>
+  filter(!is.na(intervention_name))
+qa_flow <- bind_rows(qa_flow, tibble(step = "Surveys linked to a client record with an intervention", n = nrow(sat_all_data)))
+
+# Per-survey combined satisfaction (share of answered items at 4 or 5; 0 is treated as not answered)
+item_scores <- sat_all_data |>
+  select(all_of(score_cols)) |>
+  mutate(across(everything(), as.numeric)) |>
+  mutate(across(everything(), ~ na_if(., 0)))
+n_answered <- rowSums(!is.na(item_scores))
+n_agree    <- rowSums(item_scores == 4 | item_scores == 5, na.rm = TRUE)
+sat_all_data <- sat_all_data |>
+  mutate(high_80 = !is.na(n_agree / n_answered) & n_agree / n_answered >= 0.8)
+
+# Overall Q1 high satisfaction rate
+pct_4_5 <- sat_all_data |>
+  summarise(
+    pct_4_5 = round(100 * sum(q1_score %in% c(4, 5), na.rm = TRUE) / sum(!is.na(q1_score)), 1)
+  ) |>
+  pull(pct_4_5)
+
+# Overall combined survey high satisfaction rate (>= 80% of questions at 4 or 5)
+df2 <- sat_all_data |>
+  summarise(
+    n_total           = n(),
+    n_meeting_80pct   = sum(high_80),
+    pct_meeting_80pct = round(100 * n_meeting_80pct / n_total, 1)
+  )
+
+# Funding round is the row label in both tables; rare values are masked in a shareable render.
+respondent_id <- as.character(sat_all_data$client_system_id)
+sat_all_data$funding_round <- mask_rare_values(as.character(sat_all_data$funding_round), respondent_id)
+analytic <- sat_all_data |> filter(!is.na(funding_round))
+qa_flow <- bind_rows(qa_flow, tibble(step = "Linked surveys with a funding round", n = nrow(analytic)))
+```
+
+### Question 1 Satisfaction
+
+Overall, [`r pct_4_5`%]{custom-style="DHCS Stat"} of survey respondents were highly satisfied based on question 1. The following table shows high satisfaction by round (N is surveys with a question 1 score):
+
+```{r}
+#| label: tbl-q1-satisfaction-round
+q1 <- analytic |>
+  filter(!is.na(q1_score)) |>
+  mutate(q1_group = if_else(q1_score %in% c(4, 5), HIGH_Q1, OTHER_Q1))
+
+tab_two_way(q1$funding_round, q1$q1_group, "Funding round", c(HIGH_Q1, OTHER_Q1), digits = 1) |>
+  show_table("q1_by_round", caption = "Question 1 high satisfaction, by funding round")
+```
+
+### Combined Survey Satisfaction
+
+Overall, [`r df2$pct_meeting_80pct`%]{custom-style="DHCS Stat"} of survey respondents were highly satisfied, defined as selecting "Agree" or "Strongly Agree" on 80% or more of the questions completed. The following table shows high combined satisfaction by round, for clients where both a client ID and intervention name were available:
+
+**Assumptions:** Must have an intervention name; data used: satisfaction survey and all data (demo+discharge joined)
+
+```{r}
+#| label: tbl-combined-satisfaction-round
+combined <- analytic |> mutate(group_80 = if_else(high_80, HIGH_80, OTHER_80))
+
+tab_two_way(combined$funding_round, combined$group_80, "Funding round", c(HIGH_80, OTHER_80), digits = 1) |>
+  show_table("combined_by_round",
+             caption = "Combined survey high satisfaction (>=80% agree/strongly agree), by funding round")
+```
+
+# Data quality checks
+
+These counts are for review, not reporting.
+
+```{r}
+#| label: qa
+qa_flow |>
+  mutate(n = fmt_n_qa(n)) |>
+  rename(Step = step, N = n) |>
+  show_table("qa_sample_flow", caption = "Sample flow")
+```
+
+```{r}
+#| label: export
+export_long <- imap_dfr(EXPORT, function(tbl, id) {
+  first <- names(tbl)[1]
+  tbl |>
+    mutate(across(everything(), as.character), row_order = row_number()) |>
+    rename(row = all_of(first)) |>
+    pivot_longer(-c(row, row_order), names_to = "column", values_to = "value") |>
+    mutate(table = id, row_header = first, .before = 1)
+}) |>
+  mutate(render_mode = RUN_MODE, suppress_n = SUPPRESS_N, .before = 1)
+
+write_csv(export_long, file.path(cfg$output_dir, paste0("sq403_tables_", RUN_MODE, ".csv")), na = "")
+```

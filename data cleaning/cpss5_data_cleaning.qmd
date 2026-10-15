@@ -18,11 +18,11 @@ This notebook prepares **CYBHI EBP/CDEP** Child PTSD Symptom Scale, 5th Edition 
 
 **Scoring:**
 
--   Sum of items Q1–Q20 only (the first 20 score columns).
--   Total score range: 0–80. Higher scores indicate greater PTSD symptom severity.
--   A clinical cutoff score of ≥31 can be used to identify a probable PTSD diagnosis.
--   **A lower follow-up score indicates a positive outcome.**
--   No missing-item threshold is applied (total computed with `na.rm = TRUE`).
+- Sum of items Q1–Q20 only (the first 20 score columns).
+- Total score range: 0–80. Higher scores indicate greater PTSD symptom severity.
+- A clinical cutoff score of ≥31 can be used to identify a probable PTSD diagnosis.
+- **A lower follow-up score indicates a positive outcome.**
+- No missing-item threshold is applied (total computed with `na.rm = TRUE`).
 
 | Symptom Severity | Score Range |
 |------------------|-------------|
@@ -37,7 +37,7 @@ This notebook prepares **CYBHI EBP/CDEP** Child PTSD Symptom Scale, 5th Edition 
 **Outputs:**
 
 | File | Contents |
-|----|----|
+|------------------------------------|------------------------------------|
 | `cpss_i_paired_clean.csv` | One row per client: initial/follow-up scores, `positive_outcome`, `score_change`, quarter labels — interviewer version |
 | `cpss_s_paired_clean.csv` | Same, self-report version |
 
@@ -45,7 +45,7 @@ This notebook prepares **CYBHI EBP/CDEP** Child PTSD Symptom Scale, 5th Edition 
 
 ## Open Issues / Action Items
 
--   [ ] Not sure how to handle NAs
+- [ ] Not sure how to handle NAs
 
 ------------------------------------------------------------------------
 
@@ -111,7 +111,7 @@ score_and_pair_cpss <- function(df, clinical_cutoff = 31) {
     ) |>
     ungroup() |>
     mutate(
-      date_completed = as.Date(date_completed),
+      date_completed = as.Date(date_completed, format = "%m/%d/%Y"),
       row_id         = row_number()
     ) |>
     select(client_system_id, collection, date_completed, total_score) |>
