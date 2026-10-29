@@ -4,7 +4,7 @@ author: "Cristin Young"
 date: "`r Sys.Date()`"
 output:
   html_document:
-    self-contained: true
+    self_contained: true
     df_print: paged
     toc: true
     toc_float: true
@@ -14,7 +14,7 @@ output:
 
 ## Project Overview
 
-This notebook prepares **CYBHI EBP/CDEP** program data for analysis and reporting. It ingests two raw exports from the eInsight clinical management platform, cleans and recodes each, joins them together, and writes three clean CSVs used by downstream analysis scripts.
+This notebook prepares **CYBHI EBP/CDEP** program data for analysis and reporting. It ingests two raw exports from the eInsight clinical management platform, cleans and recodes each, joins them together, and writes clean CSVs used by downstream analysis scripts.
 
 **Data sources (eInsight exports):**
 
@@ -28,14 +28,20 @@ This notebook prepares **CYBHI EBP/CDEP** program data for analysis and reportin
 | `demographic_data_clean.csv` | Deduplicated, recoded demographic data |
 | `discharge_data_clean.csv` | Cleaned discharge/assessment data |
 | `demographic_discharge_clean.csv` | Joined dataset for outcome analyses |
+| `demographic_duplicate_list.csv` | All rows for client IDs that appear more than once in demographics (for manual review) |
+
+**Demo filter:** rows whose `provider_id` or `client_system_id` contains "DEMO" are removed. Rows with a missing `client_system_id` are removed (they cannot be linked). Rows with a missing `provider_id` are **kept** and counted (previously both were dropped silently by the filter).
 
 ---
 
 ## Open Issues / Action Items
 
-- [ ] Confirm we are filtering to the **last follow-up time point** (filter `post_time_point == ??`). Which follow-up number should be treated as "final" for a given client?
-- [ ] `nrow(dup_clients_diff_time) + nrow(dup_clients_same_time)` should equal `nrow(dup_clients)` but does not — investigate why some duplicate clients fall into neither category.
+- [ ] Confirm we are filtering to the **last follow-up time point**. `post_follow_up_number` (integer) is now available for this, e.g., keep the maximum per client and intervention.
+- [x] ~~`nrow(dup_clients_diff_time) + nrow(dup_clients_same_time)` should equal `nrow(dup_clients)` but does not.~~ Explained in Section 4.4: the same-time count was counting client × date rows rather than clients, the categories overlap, and a third pattern (one initial paired with several follow-ups) fits neither. Section 4.4 classifies every client.
 - [ ] Clients with the same `client_system_id` but different `assessment_date` values need special handling (see `client_system_id == 3664` as an example). Clarify whether mismatched dates reflect linked assessment + intervention records, or data entry errors.
+- [x] Provider 573 is reassigned to Round 2 **regardless of its recorded round** (the other four providers are only reassigned when the round is "No Funding Round Selected"). Section 3.4 shows what 573's rows had before the fix. Confirm this is intended.
+- [ ] Race and ethnicity cleaning strips "Don't Know", "Prefer Not To Answer", and "Not Applicable". The interim report treats valid nonresponses as meaningful categories; confirm downstream scripts take those from the raw `race`/`ethnicity` columns.
+- [ ] Clients dropped as demographic duplicates still appear in `demographic_discharge_clean.csv` (left join from discharge) with blank demographics. Section 5 reports how many rows this affects.
 
 ---
 
@@ -44,48 +50,129 @@ This notebook prepares **CYBHI EBP/CDEP** program data for analysis and reportin
 ```{r setup, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(janitor)
-library(gt)
 library(readxl)
-library(openxlsx)
+
+# ---- Configuration: edit export date and paths here ----
+export_date <- "2026-10-08"   # date prefix of the eInsight export files
+
+export_root <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports"
+discharge_path   <- file.path(export_root, "Discharge Report Export", paste0(export_date, "-discharge_report.xlsx"))
+demographic_path <- file.path(export_root, "Admin Report Exports",    paste0(export_date, "-client_demographics.xlsx"))
+
+out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+na_vals <- c("-", "", "NA", "N/A", "<NA>", "NA ")
+id_cols <- c("client_system_id", "provider_id", "provider_system_id", "primary_client_system_id")
+```
+
+---
+
+# Helper Functions
+
+```{r helpers}
+# Converts an ID column to character without scientific notation
+# (as.character(100000) gives "1e+05", which breaks joins) and trims whitespace.
+id_to_chr <- function(x) {
+  if (is.numeric(x)) if_else(is.na(x), NA_character_, sprintf("%.0f", x)) else str_squish(as.character(x))
+}
+
+# Converts an eInsight/Excel date column to Date. Handles columns that arrive as
+# Date/POSIXct, as Excel serial numbers, or as a character mix of serials and
+# text dates (m/d/y or y-m-d). Years below 100 (e.g., 0025) are shifted by 2000.
+# Warns with a count of non-blank values that could not be parsed.
+parse_excel_date <- function(x, label) {
+  if (inherits(x, "Date"))   return(x)
+  if (inherits(x, "POSIXt")) return(as.Date(x))
+  if (is.numeric(x))         return(janitor::excel_numeric_to_date(floor(x)))
+
+  x   <- str_squish(as.character(x))
+  out <- as.Date(rep(NA_character_, length(x)))
+
+  is_serial <- !is.na(x) & str_detect(x, "^[0-9]+(\\.[0-9]+)?$")
+  if (any(is_serial)) {
+    out[is_serial] <- janitor::excel_numeric_to_date(floor(as.numeric(x[is_serial])))
+  }
+  is_text <- !is.na(x) & !is_serial
+  if (any(is_text)) {
+    out[is_text] <- as.Date(parse_date_time(x[is_text], orders = c("mdy", "Ymd"), quiet = TRUE))
+  }
+
+  # Fix 2-digit years parsed as e.g. year 25 instead of 2025
+  fix <- !is.na(out) & year(out) < 100
+  out[fix] <- out[fix] + years(2000)
+
+  n_bad <- sum(!is.na(x) & is.na(out))
+  if (n_bad > 0) {
+    warning(label, ": ", n_bad, " non-blank value(s) could not be parsed as dates and were set to NA.",
+            call. = FALSE)
+  }
+  out
+}
+
+# Removes demo/test rows (provider_id or client_system_id contains "DEMO") and
+# rows with no client_system_id (they cannot be linked or paired). Rows with a
+# missing provider_id are kept. Prints a count for each.
+remove_demo_rows <- function(df, label) {
+  missing_ids <- setdiff(c("provider_id", "client_system_id"), names(df))
+  if (length(missing_ids) > 0) {
+    stop(label, ": column(s) needed for the demo filter not found: ",
+         paste(missing_ids, collapse = ", "), call. = FALSE)
+  }
+  is_demo   <- coalesce(str_detect(df$provider_id, "DEMO"), FALSE) |
+               coalesce(str_detect(df$client_system_id, "DEMO"), FALSE)
+  no_client <- is.na(df$client_system_id) & !is_demo
+  cat(label, "- rows read:", nrow(df),
+      "| DEMO rows removed:", sum(is_demo),
+      "| rows with no client_system_id removed:", sum(no_client),
+      "| rows with missing provider_id (kept):", sum(is.na(df$provider_id) & !is_demo & !no_client), "\n")
+  df[!is_demo & !no_client, ]
+}
+
+# Splits a comma-separated multi-select field, trims each value, drops
+# non-informative responses and blanks, removes repeats, and rejoins with ", ".
+# Returns NA when nothing informative remains.
+nonresponse_pattern <- "^(don['\u2019]?t know|prefer not to answer|not applicable)$"
+
+clean_multiselect <- function(x, drop = nonresponse_pattern) {
+  map_chr(str_split(x, ","), function(values) {
+    values <- str_squish(values)
+    values <- values[!is.na(values) & values != "" & !str_detect(str_to_lower(values), drop)]
+    values <- unique(values)
+    if (length(values) == 0) NA_character_ else paste(values, collapse = ", ")
+  })
+}
+
+# Standardizes extracted time points to "Initial" / "Follow Up N".
+standardize_time_point <- function(tp) {
+  tp <- str_to_lower(str_squish(tp))
+  case_when(
+    is.na(tp)       ~ NA_character_,
+    tp == "initial" ~ "Initial",
+    TRUE            ~ paste("Follow Up", str_extract(tp, "\\d+"))
+  )
+}
 ```
 
 ---
 
 # 1. Read in Raw Data
 
-Both files are pulled from the eInsight export folder in the shared Dropbox. The `na` argument ensures that common "missing" strings are treated as `NA` from the start. Column names are cleaned to snake_case via `janitor::clean_names()`. Date columns in the discharge data are stored as numeric by Excel and need explicit conversion.
+Both files are pulled from the eInsight export folder in the shared Dropbox. The `na` argument ensures that common "missing" strings are treated as `NA` from the start. Column names are cleaned to snake_case via `janitor::clean_names()`, and ID columns are converted to text so they compare and join consistently. The pre/post completion dates can arrive as Excel serial numbers, text dates, or a mix, and are converted with the same helper.
 
 ```{r read-data}
-discharge_data <- read_xlsx(
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Discharge Report Export/2026-07-17-discharge_report.xlsx",
-  na = c("-", "", "NA", "N/A", "<NA>", "NA ")
-) |>
-  janitor::clean_names()
+discharge_data <- read_xlsx(discharge_path, na = na_vals) |>
+  janitor::clean_names() |>
+  mutate(across(any_of(id_cols), id_to_chr))
 
-# These date columns come in as Excel serial numbers and must be converted
 discharge_data <- discharge_data |>
   mutate(
-    pre_completion_date = case_when(
-      grepl("^[0-9]+\\.?[0-9]*$", pre_completion_date) ~
-        janitor::convert_to_date(as.numeric(pre_completion_date)),
-      TRUE ~ mdy(pre_completion_date)
-    ),
-    # Fix 2-digit years parsed as e.g. year 25 instead of 2025
-    pre_completion_date = if_else(
-      year(pre_completion_date) < 100,
-      pre_completion_date + years(2000),
-      pre_completion_date
-    )
+    pre_completion_date  = parse_excel_date(pre_completion_date,  "pre_completion_date"),
+    post_completion_date = parse_excel_date(post_completion_date, "post_completion_date")
   )
 
-discharge_data$pre_completion_date  <- janitor::convert_to_date(discharge_data$pre_completion_date)
-discharge_data$post_completion_date <- janitor::convert_to_date(discharge_data$post_completion_date)
-
-demographic_data <- readxl::read_xlsx(
-    "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Admin Report Exports/2026-07-17-client_demographics.xlsx",
-  na = c("-", "", "NA", "N/A", "<NA>", "NA ")
-) |>
-  janitor::clean_names()
+demographic_data <- read_xlsx(demographic_path, na = na_vals) |>
+  janitor::clean_names() |>
+  mutate(across(any_of(id_cols), id_to_chr))
 
 # Quick row/ID counts
 cat("Discharge rows:          ", nrow(discharge_data), "\n")
@@ -102,8 +189,13 @@ cat("Unique demographic IDs:  ", n_distinct(demographic_data$client_system_id), 
 eInsight includes test provider and client accounts with "DEMO" in their IDs. These are not real clients and must be excluded before any analysis.
 
 ```{r demo-filter-demographics}
-demographic_data_filtered <- demographic_data |>
-  filter(!if_any(c(provider_id, client_system_id), ~ str_detect(as.character(.x), "DEMO")))
+demographic_data_filtered <- remove_demo_rows(demographic_data, "Demographics")
+
+# Possible test accounts not caught by the "DEMO" rule (review; not removed)
+demographic_data_filtered |>
+  filter(if_any(c(provider_id, client_system_id),
+                ~ str_detect(.x, regex("demo|test", ignore_case = TRUE)))) |>
+  count(provider_id, name = "n_rows")
 ```
 
 ## 2.2 Identify and Handle Duplicate Client IDs
@@ -139,10 +231,7 @@ demographic_data_filtered |>
 duplicate_list <- demographic_data_filtered |>
   filter(client_system_id %in% duplicates$client_system_id)
 
-write_csv(
-  duplicate_list,
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_duplicate_list.csv"
-)
+write_csv(duplicate_list, file.path(out_dir, "demographic_duplicate_list.csv"))
 ```
 
 ```{r demo-drop-duplicates}
@@ -151,20 +240,22 @@ write_csv(
 demographic_data_filtered <- demographic_data_filtered |>
   filter(!(client_system_id %in% duplicates$client_system_id))
 
-# Confirm: should now be TRUE (unique IDs)
-length(unique(demographic_data_filtered$client_system_id)) == nrow(demographic_data_filtered)
+# Confirm one row per client (stops the render if not)
+stopifnot(n_distinct(demographic_data_filtered$client_system_id) == nrow(demographic_data_filtered))
 ```
 
 ## 2.3 Recode Race
 
 Race is stored as a free-text, comma-separated field. We clean it in two passes:
 
-1. Strip non-informative responses ("Don't Know", "Prefer Not To Answer", "Not Applicable").
+1. Split on commas, trim each value, and drop non-informative responses ("Don't Know", "Prefer Not To Answer", "Not Applicable"; matched case-insensitively, including curly apostrophes) and repeats. Remaining values are rejoined with ", ".
 2. Recode to a numeric summary:
    - `NA` — no valid response after stripping
    - `1` — exactly one valid race reported
    - `2` — two or more valid races reported (multiracial)
    - `code_num` assigns each single-race response a numeric code, or `88` for multiracial.
+
+Splitting value by value fixes cases where leftover separators were misread: previously "White, Don't Know" could be left as "White, " and coded multiracial, and "Don't Know, White" could be left as " White" and receive no code.
 
 ```{r recode-race}
 codebook_race <- c(
@@ -178,15 +269,7 @@ codebook_race <- c(
 )
 
 demographic_data_filtered <- demographic_data_filtered |>
-  mutate(
-    cleaned_race = str_remove_all(
-      race,
-      "\\b(Don't Know|Prefer Not To Answer|Not Applicable)\\b"
-    ) |>
-      str_replace_all(",+", ",") |>       # collapse extra commas left by removal
-      str_replace_all("^,|,$", "") |>     # trim any leading/trailing commas
-      na_if("")                            # empty string → NA
-  ) |>
+  mutate(cleaned_race = clean_multiselect(race)) |>
   mutate(
     recoded_race = case_when(
       is.na(cleaned_race)              ~ NA,   # no valid response
@@ -199,6 +282,11 @@ demographic_data_filtered <- demographic_data_filtered |>
       TRUE ~ unname(codebook_race[cleaned_race])
     )
   )
+
+# Single-race values with no codebook entry (these get code_num = NA)
+demographic_data_filtered |>
+  filter(recoded_race == 1, is.na(code_num)) |>
+  count(cleaned_race, name = "n_clients", sort = TRUE)
 ```
 
 ## 2.4 Recode Ethnicity
@@ -217,15 +305,7 @@ codebook_eth <- c(
 )
 
 demographic_data_filtered <- demographic_data_filtered |>
-  mutate(
-    cleaned_ethn = str_remove_all(
-      ethnicity,
-      "\\b(Don't Know|Prefer Not To Answer|Not Applicable)\\b"
-    ) |>
-      str_replace_all(",+", ",") |>
-      str_replace_all("^,|,$", "") |>
-      na_if("")
-  ) |>
+  mutate(cleaned_ethn = clean_multiselect(ethnicity)) |>
   mutate(
     recoded_ethn = case_when(
       is.na(cleaned_ethn)              ~ NA,
@@ -238,6 +318,11 @@ demographic_data_filtered <- demographic_data_filtered |>
       TRUE ~ unname(codebook_eth[cleaned_ethn])
     )
   )
+
+# Single-ethnicity values with no codebook entry (these get ethn_num = NA)
+demographic_data_filtered |>
+  filter(recoded_ethn == 1, is.na(ethn_num)) |>
+  count(cleaned_ethn, name = "n_clients", sort = TRUE)
 ```
 
 ---
@@ -249,12 +334,11 @@ demographic_data_filtered <- demographic_data_filtered |>
 Same as demographics — filter out any rows where the provider or client ID contains "DEMO".
 
 ```{r demo-filter-discharge}
-discharge_data_filtered <- discharge_data |>
-  filter(!if_any(c(provider_id, client_system_id), ~ str_detect(as.character(.x), "DEMO"))) |>
-  janitor::clean_names()
+discharge_data_filtered <- remove_demo_rows(discharge_data, "Discharge")
 
-# Should be FALSE — one client can have multiple assessment rows
-length(unique(discharge_data_filtered$client_system_id)) == nrow(discharge_data_filtered)
+# Expected to be FALSE — one client can have multiple assessment rows
+cat("One row per client in discharge data:",
+    n_distinct(discharge_data_filtered$client_system_id) == nrow(discharge_data_filtered), "\n")
 ```
 
 ## 3.2 Inspect Duplicate Client Records
@@ -285,6 +369,8 @@ discharge_data_filtered |>
 
 The `pre_measure_s` and `post_measure_s` fields combine the time point (e.g., "Initial", "Follow Up 1") and assessment name (e.g., "SDQ") into one string. We split these into separate columns so they can be matched and filtered independently.
 
+Time points are matched case-insensitively and allow "Follow Up 1", "Follow-Up 1", "Followup 1", etc. They are standardized to "Initial" or "Follow Up N", and `post_follow_up_number` holds N as an integer.
+
 A secondary trimmed name (first word only) is created because some providers abbreviate assessment names differently in the pre vs. post fields.
 
 ```{r parse-measure-names}
@@ -294,16 +380,16 @@ unique(discharge_data_filtered$post_measure_s)
 ```
 
 ```{r clean-measure-names}
+time_point_pattern <- regex("\\b(initial|follow[\\s-]*up\\s*\\d+)\\b", ignore_case = TRUE)
+
 discharge_data_filtered <- discharge_data_filtered |>
   mutate(
-    pre_time_point      = str_extract(pre_measure_s, "(Initial|(?i)follow up \\d+)"),
-    pre_assessment_name = str_remove(pre_measure_s, "(Initial|(?i)follow up \\d+)") |>
-      str_trim()
+    pre_time_point      = standardize_time_point(str_extract(pre_measure_s, time_point_pattern)),
+    pre_assessment_name = str_squish(str_remove(pre_measure_s, time_point_pattern))
   ) |>
   mutate(
-    post_time_point      = str_extract(post_measure_s, "(Initial|(?i)follow up \\d+)"),
-    post_assessment_name = str_remove(post_measure_s, "(Initial|(?i)follow up \\d+)") |>
-      str_trim()
+    post_time_point      = standardize_time_point(str_extract(post_measure_s, time_point_pattern)),
+    post_assessment_name = str_squish(str_remove(post_measure_s, time_point_pattern))
   ) |>
   mutate(
     # Exact match check
@@ -311,8 +397,16 @@ discharge_data_filtered <- discharge_data_filtered |>
     # First-word match — handles cases where "SDQ" appears as "SDQ Strengths & Difficulties..."
     trimmed_pre_assessment_name  = word(pre_assessment_name, 1),
     trimmed_post_assessment_name = word(post_assessment_name, 1),
-    trimmed_match = trimmed_pre_assessment_name == trimmed_post_assessment_name
+    trimmed_match = trimmed_pre_assessment_name == trimmed_post_assessment_name,
+    # Follow-up number (NA when the post measure is not a follow-up)
+    post_follow_up_number = as.integer(str_extract(post_time_point, "\\d+"))
   )
+
+# Measure strings with no recognizable time point — review these
+discharge_data_filtered |>
+  filter((!is.na(pre_measure_s)  & is.na(pre_time_point)) |
+         (!is.na(post_measure_s) & is.na(post_time_point))) |>
+  count(pre_measure_s, post_measure_s, name = "n_rows")
 
 # Rows where even the trimmed names don't match — review these manually
 discharge_data_filtered |>
@@ -328,21 +422,30 @@ Some providers did not select a funding round in eInsight ("No Funding Round Sel
 | 604         | Monterey Health Dept           | 2             |
 | 508         | Children of the Rainbow        | 2             |
 | 607         | Youth for Change               | 1             |
-| 573         | Homeless Children's Network    | 2             |
+| 573         | Homeless Children's Network    | 2 (all rows; see Open Issues) |
 | 709         | Placer County Office of Education | 1          |
 
 ```{r fix-funding-rounds}
+# Recorded rounds for these providers before the fix
+discharge_data_filtered |>
+  filter(provider_id %in% c("604", "508", "607", "573", "709")) |>
+  count(provider_id, funding_round_before_fix = funding_round)
+
 discharge_data_filtered_clean <- discharge_data_filtered |>
   mutate(
     funding_round = case_when(
       provider_id == "604" & funding_round == "No Funding Round Selected" ~ "2",
       provider_id == "508" & funding_round == "No Funding Round Selected" ~ "2",
       provider_id == "607" & funding_round == "No Funding Round Selected" ~ "1",
-      provider_id == "573"                                                 ~ "2",
+      provider_id == "573"                                                 ~ "2",  # all rows (intentional?)
       provider_id == "709" & funding_round == "No Funding Round Selected" ~ "1",
       TRUE ~ funding_round
     )
   )
+
+# Funding round values after the fix (check labels are consistent, e.g., "2" vs "Round 2")
+discharge_data_filtered_clean |>
+  count(funding_round)
 ```
 
 ---
@@ -400,7 +503,8 @@ dup_clients_same_time <- dup_clients |>
 dup_clients_same_time_data <- discharge_data_filtered |>
   filter(client_system_id %in% dup_clients_same_time$client_system_id)
 
-cat("Clients with concurrent interventions:", nrow(dup_clients_same_time), "\n")
+# One row per client x date, so count distinct clients
+cat("Clients with concurrent interventions:", n_distinct(dup_clients_same_time$client_system_id), "\n")
 ```
 
 ## 4.3 Sequential Interventions (Different Start Dates)
@@ -425,40 +529,70 @@ dup_clients_diff_time_data <- discharge_data_filtered |>
   filter(client_system_id %in% dup_clients_diff_time$client_system_id)
 
 cat("Clients with sequential interventions:", nrow(dup_clients_diff_time), "\n")
+```
 
-# Note: same-time + diff-time should sum to dup_clients; if not, some clients
-# fall into neither category — this is an open issue to resolve.
-cat("Same-time + diff-time total:", nrow(dup_clients_diff_time) + nrow(dup_clients_same_time), "\n")
-cat("Total dup_clients:          ", n_distinct(dup_clients$client_system_id), "\n")
+## 4.4 Reconcile the Categories
+
+The concurrent and sequential groups do not add up to the total for three reasons: a client can be in both, the concurrent table had one row per client × date (now counted as distinct clients above), and some clients fit neither, most often because **one initial assessment is paired with more than one follow-up** (e.g., Initial→Follow Up 1 and Initial→Follow Up 2 are two complete pairs). The table below gives every client with more than one complete pair a set of flags so the groups can be counted without gaps or double counting.
+
+```{r dup-reconcile}
+concurrent_ids <- dup_clients |>
+  group_by(client_system_id, pre_completion_date) |>
+  filter(n_distinct(pre_measure_s) > 1) |>
+  ungroup() |>
+  distinct(client_system_id) |>
+  pull(client_system_id)
+
+sequential_ids <- dup_clients_diff_time$client_system_id
+
+multi_follow_up_ids <- dup_clients |>
+  group_by(client_system_id, pre_measure_s, pre_completion_date) |>
+  filter(n_distinct(post_measure_s) > 1) |>
+  ungroup() |>
+  distinct(client_system_id) |>
+  pull(client_system_id)
+
+dup_client_types <- tibble(client_system_id = unique(dup_clients$client_system_id)) |>
+  mutate(
+    concurrent          = client_system_id %in% concurrent_ids,
+    sequential          = client_system_id %in% sequential_ids,
+    multiple_follow_ups = client_system_id %in% multi_follow_up_ids,
+    none_of_these       = !(concurrent | sequential | multiple_follow_ups)
+  )
+
+# Every combination that occurs, with the number of clients in it
+dup_client_types |>
+  count(concurrent, sequential, multiple_follow_ups, none_of_these, name = "n_clients")
 ```
 
 ---
 
 # 5. Join Demographic and Discharge Data
 
-Left join from discharge data onto demographics so we retain all assessment rows. Clients without a demographics record will have `NA` in demographic columns but remain in the dataset.
-
-ID columns need to be the same type (character) before joining; they can come in as numeric from Excel.
+Left join from discharge data onto demographics so we retain all assessment rows. Clients without a demographics record will have `NA` in demographic columns but remain in the dataset. All four ID columns were converted to text when the files were read, and the join is checked to be many-to-one (each discharge row matches at most one demographic row).
 
 ```{r join-data}
-demographic_data_filtered <- demographic_data_filtered |>
-  mutate(
-    provider_system_id = as.character(provider_system_id),
-    client_system_id   = as.character(client_system_id)
-  )
+no_demo_match <- anti_join(discharge_data_filtered_clean, demographic_data_filtered, by = id_cols)
 
-discharge_data_filtered_clean <- discharge_data_filtered_clean |>
-  mutate(
-    provider_system_id = as.character(provider_system_id),
-    client_system_id   = as.character(client_system_id)
-  )
+cat("Discharge rows with no demographic match:      ", nrow(no_demo_match), "\n")
+cat("  ...client_system_id is in demographics       \n")
+cat("     (other IDs differ, e.g., provider):       ",
+    sum(no_demo_match$client_system_id %in% demographic_data_filtered$client_system_id), "\n")
+cat("  ...client was dropped as a demographic dup:  ",
+    sum(no_demo_match$client_system_id %in% duplicates$client_system_id), "\n")
 
 all_data <- left_join(
   discharge_data_filtered_clean,
   demographic_data_filtered,
-  by = c("client_system_id", "provider_id", "provider_system_id",
-         "primary_client_system_id")
+  by = id_cols,
+  relationship = "many-to-one"
 )
+
+# Columns present in both files (other than the join keys) get .x/.y suffixes
+suffixed <- names(all_data)[str_detect(names(all_data), "\\.(x|y)$")]
+if (length(suffixed) > 0) {
+  warning("Columns duplicated by the join: ", paste(suffixed, collapse = ", "), call. = FALSE)
+}
 ```
 
 ---
@@ -468,6 +602,8 @@ all_data <- left_join(
 ```{r counts}
 cat("Unique clients in demographics (served):      ", n_distinct(demographic_data_filtered$client_system_id), "\n")
 cat("Unique clients in joined dataset (outcomes):  ", n_distinct(all_data$client_system_id), "\n")
+cat("Rows in joined dataset:                       ", nrow(all_data), "\n")
+cat("Joined rows with no demographic record:       ", nrow(no_demo_match), "\n")
 ```
 
 ---
@@ -475,20 +611,9 @@ cat("Unique clients in joined dataset (outcomes):  ", n_distinct(all_data$client
 # 7. Write Clean CSVs
 
 ```{r write-csvs}
-write_csv(
-  all_data,
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv"
-)
-
-write_csv(
-  demographic_data_filtered,
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_data_clean.csv"
-)
-
-write_csv(
-  discharge_data_filtered_clean,
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv"
-)
+write_csv(all_data,                      file.path(out_dir, "demographic_discharge_clean.csv"))
+write_csv(demographic_data_filtered,     file.path(out_dir, "demographic_data_clean.csv"))
+write_csv(discharge_data_filtered_clean, file.path(out_dir, "discharge_data_clean.csv"))
 
 cat("CSVs written successfully.\n")
 ```

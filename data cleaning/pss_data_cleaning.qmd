@@ -1,42 +1,45 @@
 ---
 title: "PSS Assessment Data Cleaning"
 author: "Cristin Young"
-date: "`r Sys.Date()`"
+date: today
 format:
   html:
-    self-contained: true
+    embed-resources: true
     df-print: paged
     toc: true
-    toc-float: true
 ---
 
 ## Project Overview
 
-This notebook prepares **CYBHI EBP/CDEP** Parenting Stress Scale (PSS) assessment data for analysis and reporting. It ingests the raw eInsight export, processes the two-row hierarchical headers, maps text responses to numeric values, applies reverse scoring, computes total scores, and pairs each client's initial assessment with their last follow-up.
+This notebook prepares **CYBHI EBP/CDEP** Parental Stress Scale (PSS) assessment data for analysis and reporting. It ingests the raw eInsight export, processes the two-row hierarchical headers, maps text responses to numeric values, applies reverse scoring, computes total scores, and pairs each client's initial assessment with their last follow-up.
 
 **Data source:** `PSS.csv` — eInsight Individual Assessments export.
 
 **Scoring:**
 
-- 18 items. Responses are stored as text and mapped to numeric values: Strongly Disagree = 1, Disagree = 2, Undecided = 3, Agree = 4, Strongly Agree = 5.
+- 18 items. Responses are stored as text and mapped to numeric values (case- and whitespace-insensitive): Strongly Disagree = 1, Disagree = 2, Undecided = 3, Agree = 4, Strongly Agree = 5. Any response that does not match is listed in Section 1.
 - Items 1, 2, 5, 6, 7, 8, 17, and 18 are **reverse scored** using the formula `6 − raw_score`.
-- Total score range: 18–90. Higher scores indicate greater perceived stress.
+- Total score range: 18–90. Higher scores indicate greater parenting stress.
 - **A lower follow-up score indicates a positive outcome.**
-- Total score is set to `NA` if 2 or more items are missing.
+- Total score is set to `NA` if 2 or more items are missing. With 1 missing item the total is the sum of the 17 answered items (not prorated).
+- **Contradictory forms:** a form is flagged when its answers disagree on average with both the 8 positive items and the 10 stress items (mean answer ≤ `pss_contradiction_cutoff`, default 2 = Disagree, on each set, before reversal). Such forms cannot be scored as answered. By default they are dropped before pairing (`pss_drop_contradictory <- TRUE`), so a client's initial or follow-up is their first or last usable form. Section 1 shows how many were flagged, by provider.
 
-**Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 assessments exist) is the follow-up. Clients with only one assessment are excluded.
+**Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 assessments exist) is the follow-up. Clients with only one assessment are excluded. No minimum gap is enforced; `days_since_initial` is included so a gap rule can be applied downstream.
 
 **Output:**
 
 | File | Contents |
-|----|----|
-| `pss_paired_clean.csv` | One row per client: initial/follow-up scores, `positive_outcome`, `score_change`, quarter labels |
+|------------------------------------|------------------------------------|
+| `pss_paired_clean.csv` | One row per client: initial/follow-up scores, `positive_outcome`, `score_change`, quarter labels, `days_since_initial`, `initial_contradictory`, `follow_up_contradictory` (always `FALSE` when contradictory forms are dropped) |
 
 ------------------------------------------------------------------------
 
 ## Open Issues / Action Items
 
 - [ ] The `missing_count` threshold of 2 for treating total score as `NA` — confirm this is the correct PSS rule.
+- [ ] **Contradictory forms (decision):** dropped by default. In October 2026, 31% of forms at one provider were contradictory versus 0.6% elsewhere. Keep `pss_drop_contradictory <- TRUE` or set it to `FALSE` to flag only.
+- [ ] **Items 17 and 18 at the same provider:** among its non-contradictory forms, "I am satisfied as a parent" (r = −0.69) and "I find my child(ren) enjoyable" (r = −0.80) run backwards, so its form or data entry likely reverses them. Not corrected in code; confirm with the provider first. Until then, report SQ 3.12 with and without this provider. The direction check below will keep flagging these two items.
+- [ ] Response matching is now case-insensitive. The previous map used lower-case "Strongly disagree"/"Strongly agree", so any export using "Strongly Disagree"/"Strongly Agree" was being scored as missing. Compare paired N against the last run.
 
 ------------------------------------------------------------------------
 
@@ -46,15 +49,33 @@ This notebook prepares **CYBHI EBP/CDEP** Parenting Stress Scale (PSS) assessmen
 library(tidyverse)
 library(janitor)
 library(zoo)
+
+# ---- Configuration: edit paths and reporting window here ----
+in_dir  <- "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments"
+out_dir <- "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+start_date <- as.Date("2024-01-01")
+end_date   <- Sys.Date()   # set to a fixed date (e.g., as.Date("2026-09-30")) to freeze the data window
+
+# Contradictory forms: mean answer at or below the cutoff (2 = Disagree) on both the
+# positive and the stress items. Set pss_drop_contradictory to FALSE to keep them
+# (they stay flagged in the output).
+pss_contradiction_cutoff <- 2
+pss_drop_contradictory   <- TRUE
 ```
 
 ------------------------------------------------------------------------
 
-# Helper Function
+# Helper Functions
 
-```{r header-helper}
+```{r helpers}
+# ---- Shared helpers (identical across the cleaning scripts) ----
+
 # Reads an eInsight assessment CSV export with two-row headers.
-# Returns a cleaned data frame with combined column names and empty columns removed.
+# Row 1 holds question text (merged cells export as blanks and are forward-
+# filled); row 2 holds sub-headers ("Response", "Score", ...). Returns a data
+# frame with combined snake_case names and fully blank columns removed.
+# "0" is deliberately NOT treated as missing: it is a valid rating on most tools.
 read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A")) {
   raw <- read_csv(path, na = na_vals, col_names = FALSE, show_col_types = FALSE,
                   col_types = cols(.default = "c"))
@@ -75,6 +96,106 @@ read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A")) {
 
   df |> select(where(~ !all(is.na(.))))
 }
+
+# Parses eInsight date strings in ISO (2024-03-15) or US (03/15/2024) format,
+# with or without a time stamp. Warns with a count of non-blank values that
+# could not be parsed (these become NA and are dropped by the date filter).
+parse_einsight_date <- function(x, label = "date_completed") {
+  x   <- na_if(str_squish(as.character(x)), "")
+  out <- as.Date(parse_date_time(
+    x,
+    orders = c("Ymd", "mdY", "mdy", "Ymd HMS", "Ymd HM", "mdY HMS", "mdY HM"),
+    quiet  = TRUE
+  ))
+  n_bad <- sum(!is.na(x) & is.na(out))
+  if (n_bad > 0) {
+    warning(label, ": ", n_bad, " non-blank value(s) could not be parsed as dates and were set to NA.",
+            call. = FALSE)
+  }
+  out
+}
+
+# Removes demo/test rows (provider_id or client_system_id contains "DEMO") and
+# rows with no client_system_id (they cannot be linked or paired). Rows with a
+# missing provider_id are kept. Prints a count for each.
+remove_demo_rows <- function(df, label) {
+  missing_ids <- setdiff(c("provider_id", "client_system_id"), names(df))
+  if (length(missing_ids) > 0) {
+    stop(label, ": column(s) needed for the demo filter not found: ",
+         paste(missing_ids, collapse = ", "), call. = FALSE)
+  }
+  is_demo   <- coalesce(str_detect(df$provider_id, "DEMO"), FALSE) |
+               coalesce(str_detect(df$client_system_id, "DEMO"), FALSE)
+  no_client <- is.na(df$client_system_id) & !is_demo
+  cat(label, "- rows read:", nrow(df),
+      "| DEMO rows removed:", sum(is_demo),
+      "| rows with no client_system_id removed:", sum(no_client),
+      "| rows with missing provider_id (kept):", sum(is.na(df$provider_id) & !is_demo & !no_client), "\n")
+  df[!is_demo & !no_client, ]
+}
+
+# Stops if the number of item columns differs from what scoring expects.
+# Scoring is positional, so a missing or extra column would silently shift
+# reverse-scored items and weights onto the wrong questions.
+check_items <- function(cols, expected, label) {
+  if (length(cols) != expected) {
+    stop(label, ": expected ", expected, " item columns but found ", length(cols), ":\n  ",
+         paste(cols, collapse = "\n  "), call. = FALSE)
+  }
+  message(label, ": found ", expected, " item columns as expected.")
+  invisible(cols)
+}
+
+# Maps text responses to numbers, ignoring case and extra whitespace
+# (e.g., "Strongly Disagree", "strongly disagree " and "Strongly disagree" all match).
+map_responses <- function(x, map) {
+  keys <- str_to_lower(str_squish(names(map)))
+  unname(map[match(str_to_lower(str_squish(x)), keys)])
+}
+
+# Lists non-blank responses that do not match the scoring map. These would
+# otherwise become NA silently and be counted as missing items.
+# Returns the unmatched values (empty table = everything matched).
+audit_unmapped <- function(df, cols, map, label) {
+  keys <- str_to_lower(str_squish(names(map)))
+  bad  <- df |>
+    select(all_of(cols)) |>
+    pivot_longer(everything(), values_to = "value") |>
+    filter(!is.na(value), !str_to_lower(str_squish(value)) %in% keys) |>
+    count(value, name = "n_values", sort = TRUE)
+  if (nrow(bad) > 0) {
+    warning(label, ": ", sum(bad$n_values), " non-blank response(s) did not match the scoring map ",
+            "and are treated as missing (see table).", call. = FALSE)
+  } else {
+    message(label, ": all non-blank responses match the scoring map.")
+  }
+  bad
+}
+
+# After reverse scoring, every item should correlate positively with the sum of
+# the anchor items (excluding itself). Pass the items the instrument never
+# reverse-scores as `anchor`: comparing against all items can hide a block of
+# reversed items that mostly agree with each other. A negative value means the
+# item's direction is wrong (reversed twice, or a positively worded item that
+# was not reversed). Returns only the items that need a look (empty = all fine).
+item_rest_check <- function(df, cols, label, anchor = cols) {
+  anchor_sum <- rowSums(df[anchor], na.rm = TRUE)
+  out <- tibble(
+    item        = cols,
+    item_rest_r = map_dbl(cols, function(col) {
+      rest <- anchor_sum - if (col %in% anchor) coalesce(df[[col]], 0) else 0
+      suppressWarnings(cor(df[[col]], rest, use = "pairwise.complete.obs"))
+    })
+  )
+  n_neg <- sum(out$item_rest_r < 0, na.rm = TRUE)
+  if (n_neg > 0) {
+    warning(label, ": ", n_neg, " item(s) correlate negatively with the rest of the scale; ",
+            "check reverse scoring (see table).", call. = FALSE)
+  } else {
+    message(label, ": all item-rest correlations are positive.")
+  }
+  out |> filter(item_rest_r < 0 | is.na(item_rest_r))
+}
 ```
 
 ------------------------------------------------------------------------
@@ -82,13 +203,13 @@ read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A")) {
 # 1. Read and Score
 
 ```{r pss-read}
-pss_raw <- read_assessment_csv(
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/PSS.csv"
-)
+pss_raw <- read_assessment_csv(file.path(in_dir, "PSS.csv")) |>
+  remove_demo_rows("PSS")
 
 # Reverse-scored item positions (1-indexed within response columns)
 rev_idx       <- c(1, 2, 5, 6, 7, 8, 17, 18)
 response_cols <- names(pss_raw)[endsWith(names(pss_raw), "_response")]
+check_items(response_cols, 18, "PSS")
 
 # Map text responses to numeric values
 response_map <- c(
@@ -99,31 +220,88 @@ response_map <- c(
   "Strongly agree"    = 5
 )
 
-pss_scores <- pss_raw |>
-  mutate(across(all_of(response_cols), ~ response_map[.])) |>
-  rowwise() |>
+pss_items <- pss_raw |>
+  mutate(across(all_of(response_cols), ~ map_responses(.x, response_map))) |>
   mutate(
-    missing_count = sum(is.na(c_across(all_of(response_cols)))),
-    total_score = {
-      vals          <- c_across(all_of(response_cols))
-      vals[rev_idx] <- 6 - vals[rev_idx]
-      sum(vals, na.rm = TRUE)
-    }
+    # Disagrees on average with both the positive and the stress items (answers before reversal)
+    contradictory = (rowMeans(across(all_of(response_cols[rev_idx])),  na.rm = TRUE) <= pss_contradiction_cutoff &
+                     rowMeans(across(all_of(response_cols[-rev_idx])), na.rm = TRUE) <= pss_contradiction_cutoff) %in% TRUE
   ) |>
-  ungroup() |>
+  mutate(across(all_of(response_cols[rev_idx]), ~ 6 - .x))
+
+pss_scores <- pss_items |>
   mutate(
+    missing_count  = rowSums(is.na(across(all_of(response_cols)))),
+    total_score    = rowSums(across(all_of(response_cols)), na.rm = TRUE),
     total_score    = if_else(missing_count >= 2, NA_real_, total_score),
-    date_completed = as.Date(date_completed),
-    row_id         = row_number()
+    date_completed = parse_einsight_date(date_completed)
   ) |>
-  select(client_system_id, collection, date_completed, total_score) |>
-  filter(
-    date_completed >= "2024-01-01",
-    date_completed <= Sys.Date()
-  )
+  select(client_system_id, provider_id, collection, date_completed, total_score, contradictory) |>
+  filter(between(date_completed, start_date, end_date))
+
+cat("Contradictory forms in window:", sum(pss_scores$contradictory), "of", nrow(pss_scores),
+    if (pss_drop_contradictory) "(dropped before pairing)" else "(kept and flagged)", "\n")
+
+pss_scores <- pss_scores |>
+  filter(!(pss_drop_contradictory & contradictory))
 
 cat("PSS rows after scoring:", nrow(pss_scores), "\n")
 cat("Unique clients:        ", n_distinct(pss_scores$client_system_id), "\n")
+cat("Missing total_score:   ", sum(is.na(pss_scores$total_score)), "\n")
+```
+
+```{r}
+min_complete_total <- length(response_cols) * min(response_map)
+
+pss_items |>
+  mutate(
+    n_items_scored      = rowSums(!is.na(across(all_of(response_cols)))),
+    blank_as_zero_total = rowSums(across(all_of(response_cols)), na.rm = TRUE)
+  ) |>
+  group_by(n_items_scored) |>
+  summarise(
+    n_forms     = n(),
+    n_clients   = n_distinct(client_system_id),
+    min_total   = min(blank_as_zero_total),
+    max_total   = max(blank_as_zero_total),
+    n_below_min = sum(blank_as_zero_total < min_complete_total),
+    .groups     = "drop"
+  )
+
+test <- pss_raw |> 
+  filter(client_system_id == 13175)
+
+test
+```
+
+Contradictory forms by provider, within the reporting window (providers with at least one):
+
+```{r pss-contradictory}
+pss_items |>
+  mutate(date_completed = suppressWarnings(parse_einsight_date(date_completed))) |>
+  filter(between(date_completed, start_date, end_date)) |>
+  group_by(provider_id) |>
+  summarise(
+    n_forms           = n(),
+    n_contradictory   = sum(contradictory),
+    pct_contradictory = round(100 * mean(contradictory), 1),
+    .groups = "drop"
+  ) |>
+  filter(n_contradictory > 0) |>
+  arrange(desc(n_contradictory))
+```
+
+Responses that did not match the scoring map (an empty table means every non-blank response was scored):
+
+```{r pss-unmapped}
+audit_unmapped(pss_raw, response_cols, response_map, "PSS")
+```
+
+Direction check after reverse scoring (an empty table means every item correlates positively with the rest of the scale):
+
+```{r pss-direction}
+item_rest_check(filter(pss_items, !(pss_drop_contradictory & contradictory)),
+                response_cols, "PSS", anchor = response_cols[-rev_idx])
 ```
 
 ------------------------------------------------------------------------
@@ -139,9 +317,11 @@ pss_paired <- pss_scores |>
     initial_date    = first(date_completed),
     initial_score   = first(total_score),
     follow_up_date  = if_else(n_assessments >= 2, last(date_completed),  as.Date(NA)),
-    follow_up_score = if_else(n_assessments >= 2, last(total_score),     NA_real_)
+    follow_up_score = if_else(n_assessments >= 2, last(total_score),     NA_real_),
+    initial_contradictory   = first(contradictory),
+    follow_up_contradictory = if_else(n_assessments >= 2, last(contradictory), NA),
+    .groups = "drop"
   ) |>
-  ungroup() |>
   filter(!is.na(follow_up_date)) |>
   mutate(
     # Lower follow-up score = positive outcome (lower stress is better)
@@ -151,10 +331,12 @@ pss_paired <- pss_scores |>
       follow_up_score == initial_score ~ 0L,
       follow_up_score >  initial_score ~ -1L
     ),
-    score_change      = follow_up_score - initial_score,
-    initial_quarter   = paste0("Q", quarter(initial_date),    " ", year(initial_date)),
-    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))
-  )
+    score_change       = follow_up_score - initial_score,
+    initial_quarter    = paste0("Q", quarter(initial_date),    " ", year(initial_date)),
+    follow_up_quarter  = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)),
+    days_since_initial = as.integer(follow_up_date - initial_date)
+  ) |>
+  relocate(initial_contradictory, follow_up_contradictory, .after = last_col())
 
 cat("PSS paired clients:", nrow(pss_paired), "\n")
 ```
@@ -166,12 +348,13 @@ cat("PSS paired clients:", nrow(pss_paired), "\n")
 ```{r pss-check}
 pss_paired |>
   summarise(
-    n_paired          = n(),
-    n_improved        = sum(positive_outcome ==  1, na.rm = TRUE),
-    n_no_change       = sum(positive_outcome ==  0, na.rm = TRUE),
-    n_worsened        = sum(positive_outcome == -1, na.rm = TRUE),
-    pct_improved      = round(100 * n_improved / n_paired, 1),
-    n_missing_outcome = sum(is.na(positive_outcome))
+    n_paired           = n(),
+    n_improved         = sum(positive_outcome ==  1, na.rm = TRUE),
+    n_no_change        = sum(positive_outcome ==  0, na.rm = TRUE),
+    n_worsened         = sum(positive_outcome == -1, na.rm = TRUE),
+    pct_improved       = round(100 * n_improved / n_paired, 1),
+    n_missing_outcome  = sum(is.na(positive_outcome)),
+    n_fu_within_3_days = sum(days_since_initial <= 3, na.rm = TRUE)
   )
 ```
 
@@ -180,8 +363,6 @@ pss_paired |>
 # 4. Write Clean CSV
 
 ```{r write-csv}
-out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
-
 write_csv(pss_paired, file.path(out_dir, "pss_paired_clean.csv"))
 
 cat("CSV written successfully.\n")

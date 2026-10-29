@@ -1,13 +1,12 @@
 ---
 title: "SDQ Assessment Data Cleaning"
 author: "Cristin Young"
-date: "`r Sys.Date()`"
+date: today
 format:
   html:
-    self-contained: true
+    embed-resources: true
     df-print: paged
     toc: true
-    toc-float: true
 ---
 
 ## Project Overview
@@ -21,13 +20,14 @@ This notebook prepares **CYBHI EBP/CDEP** Strengths and Difficulties Questionnai
 -   **SDQ P11-17.csv** — Parent/caregiver-completed SDQ for ages 11–17.
 -   **SDQ S11-17.csv** — Self-report SDQ for ages 11–17.
 
-Each file has a two-row header: row 1 contains question text, row 2 contains subheader labels (e.g., "Score", "Comments").
+Each file has a two-row header: row 1 contains question text, row 2 contains subheader labels (e.g., "Score", "Comments"). A lookup table per version (`sdq-*-scoring.csv`, columns `item` and `column_name`) maps export columns to SDQ item numbers.
 
 **Scoring:** An **increase** in score indicates a negative outcome.
 
--   Items are rated 0–2. Total difficulties score = sum of 20 items (items 1, 4, 9, 17, 20 are excluded; items 7, 11, 14, 21, 25 are reverse-coded).
+-   Items are rated 0–2 (Not True = 0, Somewhat True = 1, Certainly True = 2; matched case- and whitespace-insensitively). Total difficulties score = sum of 20 items (items 1, 4, 9, 17, 20 are excluded; items 7, 11, 14, 21, 25 are reverse-coded).
+-   **The eInsight export already reverses items 7, 11, 14, 21, 25.** Their response text arrives flipped, so the script does not reverse them again (`sdq_reverse_items_in_export <- TRUE` in Setup). Evidence from the October 2026 run: in all four versions these five items, and only these, correlated negatively with the rest of the scale after the script's reversal, and their answer patterns were implausible (e.g., "Has at least one good friend" = "Not True" for 63% of P4-10 children).
 -   Total score range: 0–40. Set to `NA` if ≥3 items are missing.
--   Externalizing score = sum of conduct (5, 7, 12, 18, 22) + hyperactivity (2, 10, 15, 21, 25) items. Range: 0–20.
+-   Externalizing score = sum of conduct (5, 7, 12, 18, 22) + hyperactivity (2, 10, 15, 21, 25) items. Range: 0–20. Set to `NA` if ≥3 of the 10 items are missing.
 -   Cut-off bands (close to average / slightly raised / high / very high) are version-specific.
 
 **Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 exist) is the follow-up. Clients with only one assessment are excluded.
@@ -36,17 +36,23 @@ Each file has a two-row header: row 1 contains question text, row 2 contains sub
 
 | File | Contents |
 |------------------------------------|------------------------------------|
-| `sdq_p24_pairs_clean.csv` | One row per client: initial/follow-up total and externalizing scores, Parent SDQ 2–4 |
+| `sdq_p24_pairs_clean.csv` | One row per client: initial/follow-up total and externalizing scores and bands, Parent SDQ 2–4 |
 | `sdq_p410_pairs_clean.csv` | Same, Parent SDQ 4–10 |
 | `sdq_p1117_pairs_clean.csv` | Same, Parent SDQ 11–17 |
 | `sdq_s1117_pairs_clean.csv` | Same, Self SDQ 11–17 |
+
+Existing columns are unchanged; `initial_ext_band` and `follow_up_ext_band` are appended at the end.
 
 ------------------------------------------------------------------------
 
 ## Open Issues / Action Items
 
--   [ ] Pairing uses the last available assessment as the follow-up (no minimum gap enforced). Confirm whether a minimum gap (e.g., \>3 days, as used in NOMS) should be applied here.
--   [ ] Impact supplement items are present in the raw files but have all-NA score columns. Confirm whether these should be retained, removed, or flagged.
+-   [ ] Pairing uses the last available assessment as the follow-up (no minimum gap enforced). Confirm whether a minimum gap (e.g., \>3 days, as used in NOMS) should be applied here. `days_since_initial` is in the output and the summary reports pairs within 3 days.
+-   [ ] Impact supplement items are present in the raw files but have all-NA score columns, so `read_assessment_csv()` drops them; they are not used in scoring.
+-   [ ] The externalizing cut-off bands are not part of the standard published SDQ banding (which bands conduct and hyperactivity separately). Confirm the source of these thresholds before reporting externalizing bands.
+-   [ ] Confirm with eInsight that the response text for items 7, 11, 14, 21, 25 is exported already reversed. Totals before this fix counted those items backwards, so earlier SDQ results (including the interim report) are provisional.
+-   [x] **Expected warning:** P2-4 item 21 ("Can stop and think things out before acting") shows a near-zero negative item-rest correlation (−0.04, October 2026). Against its own hyperactivity items (2, 10, 15) it is positive (0.13; 0.19–0.40 in the other versions), so its direction is right and the item is simply weak for ages 2–4. Investigate only if it becomes clearly negative.
+-   [ ] Missing-item rules here (≥3 missing → `NA`, no prorating) differ from the official SDQ scoring, which prorates a subscale when at least 3 of its 5 items are answered.
 
 ------------------------------------------------------------------------
 
@@ -56,17 +62,34 @@ Each file has a two-row header: row 1 contains question text, row 2 contains sub
 library(tidyverse)
 library(janitor)
 library(zoo)
+
+# ---- Configuration: edit paths and reporting window here ----
+in_dir  <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments"
+out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+start_date <- as.Date("2024-01-01")
+end_date   <- Sys.Date()   # set to a fixed date (e.g., as.Date("2026-09-30")) to freeze the data window
+
+# eInsight exports the response text for the reverse-scored items (7, 11, 14, 21, 25)
+# already flipped, so the script must not reverse them again. If a future export
+# stores answers as given, set this to FALSE; the direction check will flag it.
+sdq_reverse_items_in_export <- TRUE
 ```
 
 ------------------------------------------------------------------------
 
 # Helper Functions
 
-## Read eInsight CSV with Two-Row Header
+## Shared Helpers
 
-```{r header-helper}
+```{r helpers}
+# ---- Shared helpers (identical across the cleaning scripts) ----
+
 # Reads an eInsight assessment CSV export with two-row headers.
-# Returns a cleaned data frame with combined column names and empty columns removed.
+# Row 1 holds question text (merged cells export as blanks and are forward-
+# filled); row 2 holds sub-headers ("Response", "Score", ...). Returns a data
+# frame with combined snake_case names and fully blank columns removed.
+# "0" is deliberately NOT treated as missing: it is a valid rating on most tools.
 read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A")) {
   raw <- read_csv(path, na = na_vals, col_names = FALSE, show_col_types = FALSE,
                   col_types = cols(.default = "c"))
@@ -87,6 +110,94 @@ read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A")) {
 
   df |> select(where(~ !all(is.na(.))))
 }
+
+# Parses eInsight date strings in ISO (2024-03-15) or US (03/15/2024) format,
+# with or without a time stamp. Warns with a count of non-blank values that
+# could not be parsed (these become NA and are dropped by the date filter).
+parse_einsight_date <- function(x, label = "date_completed") {
+  x   <- na_if(str_squish(as.character(x)), "")
+  out <- as.Date(parse_date_time(
+    x,
+    orders = c("Ymd", "mdY", "mdy", "Ymd HMS", "Ymd HM", "mdY HMS", "mdY HM"),
+    quiet  = TRUE
+  ))
+  n_bad <- sum(!is.na(x) & is.na(out))
+  if (n_bad > 0) {
+    warning(label, ": ", n_bad, " non-blank value(s) could not be parsed as dates and were set to NA.",
+            call. = FALSE)
+  }
+  out
+}
+
+# Removes demo/test rows (provider_id or client_system_id contains "DEMO") and
+# rows with no client_system_id (they cannot be linked or paired). Rows with a
+# missing provider_id are kept. Prints a count for each.
+remove_demo_rows <- function(df, label) {
+  missing_ids <- setdiff(c("provider_id", "client_system_id"), names(df))
+  if (length(missing_ids) > 0) {
+    stop(label, ": column(s) needed for the demo filter not found: ",
+         paste(missing_ids, collapse = ", "), call. = FALSE)
+  }
+  is_demo   <- coalesce(str_detect(df$provider_id, "DEMO"), FALSE) |
+               coalesce(str_detect(df$client_system_id, "DEMO"), FALSE)
+  no_client <- is.na(df$client_system_id) & !is_demo
+  cat(label, "- rows read:", nrow(df),
+      "| DEMO rows removed:", sum(is_demo),
+      "| rows with no client_system_id removed:", sum(no_client),
+      "| rows with missing provider_id (kept):", sum(is.na(df$provider_id) & !is_demo & !no_client), "\n")
+  df[!is_demo & !no_client, ]
+}
+
+# Maps text responses to numbers, ignoring case and extra whitespace
+# (e.g., "Strongly Disagree", "strongly disagree " and "Strongly disagree" all match).
+map_responses <- function(x, map) {
+  keys <- str_to_lower(str_squish(names(map)))
+  unname(map[match(str_to_lower(str_squish(x)), keys)])
+}
+
+# Lists non-blank responses that do not match the scoring map. These would
+# otherwise become NA silently and be counted as missing items.
+# Returns the unmatched values (empty table = everything matched).
+audit_unmapped <- function(df, cols, map, label) {
+  keys <- str_to_lower(str_squish(names(map)))
+  bad  <- df |>
+    select(all_of(cols)) |>
+    pivot_longer(everything(), values_to = "value") |>
+    filter(!is.na(value), !str_to_lower(str_squish(value)) %in% keys) |>
+    count(value, name = "n_values", sort = TRUE)
+  if (nrow(bad) > 0) {
+    warning(label, ": ", sum(bad$n_values), " non-blank response(s) did not match the scoring map ",
+            "and are treated as missing (see table).", call. = FALSE)
+  } else {
+    message(label, ": all non-blank responses match the scoring map.")
+  }
+  bad
+}
+
+# After reverse scoring, every item should correlate positively with the sum of
+# the anchor items (excluding itself). Pass the items the instrument never
+# reverse-scores as `anchor`: comparing against all items can hide a block of
+# reversed items that mostly agree with each other. A negative value means the
+# item's direction is wrong (reversed twice, or a positively worded item that
+# was not reversed). Returns only the items that need a look (empty = all fine).
+item_rest_check <- function(df, cols, label, anchor = cols) {
+  anchor_sum <- rowSums(df[anchor], na.rm = TRUE)
+  out <- tibble(
+    item        = cols,
+    item_rest_r = map_dbl(cols, function(col) {
+      rest <- anchor_sum - if (col %in% anchor) coalesce(df[[col]], 0) else 0
+      suppressWarnings(cor(df[[col]], rest, use = "pairwise.complete.obs"))
+    })
+  )
+  n_neg <- sum(out$item_rest_r < 0, na.rm = TRUE)
+  if (n_neg > 0) {
+    warning(label, ": ", n_neg, " item(s) correlate negatively with the rest of the scale; ",
+            "check reverse scoring (see table).", call. = FALSE)
+  } else {
+    message(label, ": all item-rest correlations are positive.")
+  }
+  out |> filter(item_rest_r < 0 | is.na(item_rest_r))
+}
 ```
 
 ## Score SDQ
@@ -96,77 +207,111 @@ read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A")) {
 # Produces total_score, externalizing_score, and cut-off band columns.
 # Response columns are recoded from text to numeric:
 #   Not True = 0, Somewhat True = 1, Certainly True = 2
+sdq_response_map <- c("Not True" = 0, "Somewhat True" = 1, "Certainly True" = 2,
+                      "0" = 0, "1" = 1, "2" = 2)
+
+band_sdq <- function(score, cutoffs) {
+  case_when(
+    score >= cutoffs$close_min  & score <= cutoffs$close_max  ~ "close to average",
+    score >= cutoffs$slight_min & score <= cutoffs$slight_max ~ "slightly raised/lowered",
+    score >= cutoffs$high_min   & score <= cutoffs$high_max   ~ "high/low",
+    score >= cutoffs$very_min   & score <= cutoffs$very_max   ~ "very high/low",
+    .default = NA_character_
+  )
+}
+
 score_sdq <- function(df, lookup, cutoffs_total, cutoffs_externalizing,
-                      rev_items, exclude_items, externalizing_items) {
+                      rev_items, reverse_in_script, exclude_items, externalizing_items, label) {
 
   lookup <- lookup |>
     mutate(new_name = paste0("q", item, "_", column_name))
+
+  missing_cols <- setdiff(lookup$column_name, names(df))
+  if (length(missing_cols) > 0) {
+    stop(label, ": lookup columns not found in the export (an all-blank column is dropped on read):\n  ",
+         paste(missing_cols, collapse = "\n  "), call. = FALSE)
+  }
+
+  print(audit_unmapped(df, lookup$column_name, sdq_response_map, label))
 
   meta_cols <- setdiff(names(df), lookup$column_name)
 
   df <- df |>
     select(all_of(meta_cols), all_of(lookup$column_name)) |>
-    rename_with(~ lookup$new_name, all_of(lookup$column_name)) |>
-    mutate(across(
-      all_of(lookup$new_name),
-      ~ as.numeric(c("Not True" = 0, "Somewhat True" = 1, "Certainly True" = 2,
-                     "0" = 0, "1" = 1, "2" = 2)[.x])
-    ))
+    rename(all_of(setNames(lookup$column_name, lookup$new_name))) |>
+    mutate(across(all_of(lookup$new_name), ~ map_responses(.x, sdq_response_map)))
 
-  included  <- lookup |> filter(item %in% 1:25, !item %in% exclude_items)
-  rev_cols  <- included$new_name[included$item %in% rev_items]
+  included <- lookup |> filter(item %in% 1:25, !item %in% exclude_items)
+  rev_cols <- included$new_name[included$item %in% rev_items]
+  stopifnot(nrow(included) == 20, length(rev_cols) == length(rev_items))
+
+  # Reverse in the script only when the export has not already done it
+  cols_to_reverse <- if (reverse_in_script) rev_cols else character(0)
 
   df <- df |>
     mutate(across(
-      all_of(rev_cols),
+      all_of(cols_to_reverse),
       ~ ifelse(is.na(.x), NA, 2 - .x),
       .names = "{.col}_rev"
     ))
 
   effective_cols <- ifelse(
-    included$new_name %in% rev_cols,
+    included$new_name %in% cols_to_reverse,
     paste0(included$new_name, "_rev"),
     included$new_name
   )
+
+  print(item_rest_check(df, effective_cols, label,
+                        anchor = effective_cols[!included$new_name %in% rev_cols]))
 
   # Total score
   df <- df |>
     mutate(
       missing_count_total = rowSums(is.na(across(all_of(included$new_name)))),
-      total_score = rowSums(across(all_of(effective_cols)), na.rm = TRUE),
-      total_score = ifelse(missing_count_total >= 3, NA_real_, total_score),
-      cut_off_band = case_when(
-        total_score >= cutoffs_total$close_min  & total_score <= cutoffs_total$close_max  ~ "close to average",
-        total_score >= cutoffs_total$slight_min & total_score <= cutoffs_total$slight_max ~ "slightly raised/lowered",
-        total_score >= cutoffs_total$high_min   & total_score <= cutoffs_total$high_max   ~ "high/low",
-        total_score >= cutoffs_total$very_min   & total_score <= cutoffs_total$very_max   ~ "very high/low",
-        .default = NA_character_
-      )
+      total_score  = rowSums(across(all_of(effective_cols)), na.rm = TRUE),
+      total_score  = ifelse(missing_count_total >= 3, NA_real_, total_score),
+      cut_off_band = band_sdq(total_score, cutoffs_total)
     )
 
   # Externalizing score
-  ext_lookup        <- lookup |> filter(item %in% externalizing_items)
+  ext_lookup <- lookup |> filter(item %in% externalizing_items)
+  stopifnot(nrow(ext_lookup) == length(externalizing_items))
   ext_effective_cols <- ifelse(
-    ext_lookup$new_name %in% rev_cols,
+    ext_lookup$new_name %in% cols_to_reverse,
     paste0(ext_lookup$new_name, "_rev"),
     ext_lookup$new_name
   )
 
-  df <- df |>
+  df |>
     mutate(
       missing_count_externalizing = rowSums(is.na(across(all_of(ext_lookup$new_name)))),
       externalizing_score = rowSums(across(all_of(ext_effective_cols)), na.rm = TRUE),
       externalizing_score = ifelse(missing_count_externalizing >= 3, NA_real_, externalizing_score),
-      externalizing_band = case_when(
-        externalizing_score >= cutoffs_externalizing$close_min  & externalizing_score <= cutoffs_externalizing$close_max  ~ "close to average",
-        externalizing_score >= cutoffs_externalizing$slight_min & externalizing_score <= cutoffs_externalizing$slight_max ~ "slightly raised/lowered",
-        externalizing_score >= cutoffs_externalizing$high_min   & externalizing_score <= cutoffs_externalizing$high_max   ~ "high/low",
-        externalizing_score >= cutoffs_externalizing$very_min   & externalizing_score <= cutoffs_externalizing$very_max   ~ "very high/low",
-        .default = NA_character_
-      )
+      externalizing_band  = band_sdq(externalizing_score, cutoffs_externalizing)
+    )
+}
+
+# Reads one SDQ export, parses dates, filters to the reporting window, and scores it.
+read_score_sdq <- function(file, lookup, cutoffs_total, cutoffs_externalizing, label) {
+  scored <- read_assessment_csv(file.path(in_dir, file)) |>
+    remove_demo_rows(label) |>
+    mutate(date_completed = parse_einsight_date(date_completed)) |>
+    filter(between(date_completed, start_date, end_date)) |>
+    score_sdq(
+      lookup                = lookup,
+      cutoffs_total         = cutoffs_total,
+      cutoffs_externalizing = cutoffs_externalizing,
+      rev_items             = rev_items,
+      reverse_in_script     = !sdq_reverse_items_in_export,
+      exclude_items         = exclude_items,
+      externalizing_items   = externalizing_items,
+      label                 = label
     )
 
-  df
+  cat(label, "rows after scoring:", nrow(scored), "\n")
+  cat(label, "unique clients:    ", n_distinct(scored$client_system_id), "\n")
+  cat(label, "missing total:     ", sum(is.na(scored$total_score)), "\n")
+  scored
 }
 ```
 
@@ -177,7 +322,6 @@ score_sdq <- function(df, lookup, cutoffs_total, cutoffs_externalizing,
 # initial assessment + last follow-up (requires >= 2 assessments).
 pair_sdq <- function(df) {
   df |>
-    mutate(date_completed = as.Date(date_completed)) |>
     select(client_system_id, collection, date_completed,
            total_score, externalizing_score, cut_off_band, externalizing_band) |>
     group_by(client_system_id) |>
@@ -192,6 +336,8 @@ pair_sdq <- function(df) {
       follow_up_ext        = if_else(n_assessments >= 2, last(externalizing_score), NA_real_),
       initial_total_band   = first(cut_off_band),
       follow_up_total_band = if_else(n_assessments >= 2, last(cut_off_band),    NA_character_),
+      initial_ext_band     = first(externalizing_band),
+      follow_up_ext_band   = if_else(n_assessments >= 2, last(externalizing_band), NA_character_),
       .groups = "drop"
     ) |>
     filter(!is.na(follow_up_date)) |>
@@ -213,6 +359,26 @@ pair_sdq <- function(df) {
       score_change_ext   = follow_up_ext   - initial_ext,
       initial_quarter    = paste0("Q", lubridate::quarter(initial_date), " ", lubridate::year(initial_date)),
       follow_up_quarter  = paste0("Q", lubridate::quarter(follow_up_date), " ", lubridate::year(follow_up_date))
+    ) |>
+    # keep the earlier column order; new band columns go last
+    relocate(initial_ext_band, follow_up_ext_band, .after = last_col())
+}
+
+summarise_sdq <- function(pairs) {
+  pairs |>
+    summarise(
+      n_paired                  = n(),
+      n_improved_total          = sum(positive_outcome_total ==  1, na.rm = TRUE),
+      n_no_change_total         = sum(positive_outcome_total ==  0, na.rm = TRUE),
+      n_worsened_total          = sum(positive_outcome_total == -1, na.rm = TRUE),
+      pct_improved_total        = round(100 * n_improved_total / n_paired, 1),
+      n_missing_outcome_total   = sum(is.na(positive_outcome_total)),
+      n_improved_ext            = sum(positive_outcome_ext ==  1, na.rm = TRUE),
+      n_no_change_ext           = sum(positive_outcome_ext ==  0, na.rm = TRUE),
+      n_worsened_ext            = sum(positive_outcome_ext == -1, na.rm = TRUE),
+      pct_improved_ext          = round(100 * n_improved_ext / n_paired, 1),
+      n_missing_outcome_ext     = sum(is.na(positive_outcome_ext)),
+      n_fu_within_3_days        = sum(days_since_initial <= 3, na.rm = TRUE)
     )
 }
 ```
@@ -223,24 +389,12 @@ pair_sdq <- function(df) {
 
 ```{r scoring-params}
 # Lookup tables
-sdq_24_questions   <- read_csv(
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/sdq-24-scoring.csv",
-  show_col_types = FALSE
-)
-sdq_410_questions  <- read_csv(
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/sdq-410-scoring.csv",
-  show_col_types = FALSE
-)
-sdq_1117_questions <- read_csv(
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/sdq-1117-scoring.csv",
-  show_col_types = FALSE
-)
-sdq_1117_self_questions <- read_csv(
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/sdq-1117-self-scoring.csv",
-  show_col_types = FALSE
-)
+sdq_24_questions        <- read_csv(file.path(in_dir, "sdq-24-scoring.csv"),        show_col_types = FALSE)
+sdq_410_questions       <- read_csv(file.path(in_dir, "sdq-410-scoring.csv"),       show_col_types = FALSE)
+sdq_1117_questions      <- read_csv(file.path(in_dir, "sdq-1117-scoring.csv"),      show_col_types = FALSE)
+sdq_1117_self_questions <- read_csv(file.path(in_dir, "sdq-1117-self-scoring.csv"), show_col_types = FALSE)
 
-# Reverse-coded items (same across all versions)
+# Reverse-coded items (same across all versions); see sdq_reverse_items_in_export in Setup
 rev_items          <- c(7, 11, 14, 21, 25)
 # Items excluded from total score (prosocial scale)
 exclude_items      <- c(1, 4, 9, 17, 20)
@@ -308,200 +462,56 @@ cutoffs_ext_S1117 <- list(
 
 # 1. SDQ Parent 2–4
 
-## 1.1 Read and Score
+```{r sdq-p24}
+sdq_P24 <- read_score_sdq("SDQ P2-4.csv", sdq_24_questions,
+                          cutoffs_total_P24, cutoffs_ext_P24, label = "SDQ P2-4")
 
-```{r sdq-p24-read}
-sdq_P24 <- read_assessment_csv(
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ P2-4.csv"
-) |>
-  filter(date_completed >= "2024-01-01", 
-         date_completed <= Sys.Date()) |>
-  score_sdq(
-    lookup                = sdq_24_questions,
-    cutoffs_total         = cutoffs_total_P24,
-    cutoffs_externalizing = cutoffs_ext_P24,
-    rev_items             = rev_items,
-    exclude_items         = exclude_items,
-    externalizing_items   = externalizing_items
-  )
-
-cat("SDQ P2-4 rows after scoring:  ", nrow(sdq_P24), "\n")
-cat("Unique clients:               ", n_distinct(sdq_P24$client_system_id), "\n")
-cat("Missing total_score:          ", sum(is.na(sdq_P24$total_score)), "\n")
-```
-
-## 1.2 Pair Initial and Follow-up
-
-```{r sdq-p24-pair}
 sdq_P24_pairs <- pair_sdq(sdq_P24)
+cat("SDQ P2-4 paired clients:", nrow(sdq_P24_pairs), "\n")
 
-cat("SDQ P2-4 paired rows:         ", nrow(sdq_P24_pairs), "\n")
-cat("Unique clients paired:        ", n_distinct(sdq_P24_pairs$client_system_id), "\n")
-
-sdq_P24_pairs |>
-  summarise(
-    n_paired                  = n(),
-    n_improved_total          = sum(positive_outcome_total ==  1, na.rm = TRUE),
-    n_no_change_total         = sum(positive_outcome_total ==  0, na.rm = TRUE),
-    n_worsened_total          = sum(positive_outcome_total == -1, na.rm = TRUE),
-    pct_improved_total        = round(100 * n_improved_total / n_paired, 1),
-    n_missing_outcome_total   = sum(is.na(positive_outcome_total)),
-    n_improved_ext            = sum(positive_outcome_ext ==  1, na.rm = TRUE),
-    n_no_change_ext           = sum(positive_outcome_ext ==  0, na.rm = TRUE),
-    n_worsened_ext            = sum(positive_outcome_ext == -1, na.rm = TRUE),
-    pct_improved_ext          = round(100 * n_improved_ext / n_paired, 1),
-    n_missing_outcome_ext     = sum(is.na(positive_outcome_ext))
-  )
+summarise_sdq(sdq_P24_pairs)
 ```
 
 ------------------------------------------------------------------------
 
 # 2. SDQ Parent 4–10
 
-## 2.1 Read and Score
+```{r sdq-p410}
+sdq_P410 <- read_score_sdq("SDQ P4-10.csv", sdq_410_questions,
+                           cutoffs_total_P410, cutoffs_ext_P410, label = "SDQ P4-10")
 
-```{r sdq-p410-read}
-sdq_P410 <- read_assessment_csv(
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ P4-10.csv"
-) |>
-  filter(date_completed >= "2024-01-01", 
-         date_completed <= Sys.Date()) |>
-  score_sdq(
-    lookup                = sdq_410_questions,
-    cutoffs_total         = cutoffs_total_P410,
-    cutoffs_externalizing = cutoffs_ext_P410,
-    rev_items             = rev_items,
-    exclude_items         = exclude_items,
-    externalizing_items   = externalizing_items
-  )
-
-cat("SDQ P4-10 rows after scoring: ", nrow(sdq_P410), "\n")
-cat("Unique clients:               ", n_distinct(sdq_P410$client_system_id), "\n")
-cat("Missing total_score:          ", sum(is.na(sdq_P410$total_score)), "\n")
-```
-
-## 2.2 Pair Initial and Follow-up
-
-```{r sdq-p410-pair}
 sdq_P410_pairs <- pair_sdq(sdq_P410)
+cat("SDQ P4-10 paired clients:", nrow(sdq_P410_pairs), "\n")
 
-cat("SDQ P4-10 paired rows:        ", nrow(sdq_P410_pairs), "\n")
-cat("Unique clients paired:        ", n_distinct(sdq_P410_pairs$client_system_id), "\n")
-
-sdq_P410_pairs |>
-  summarise(
-    n_paired                  = n(),
-    n_improved_total          = sum(positive_outcome_total ==  1, na.rm = TRUE),
-    n_no_change_total         = sum(positive_outcome_total ==  0, na.rm = TRUE),
-    n_worsened_total          = sum(positive_outcome_total == -1, na.rm = TRUE),
-    pct_improved_total        = round(100 * n_improved_total / n_paired, 1),
-    n_missing_outcome_total   = sum(is.na(positive_outcome_total)),
-    n_improved_ext            = sum(positive_outcome_ext ==  1, na.rm = TRUE),
-    n_no_change_ext           = sum(positive_outcome_ext ==  0, na.rm = TRUE),
-    n_worsened_ext            = sum(positive_outcome_ext == -1, na.rm = TRUE),
-    pct_improved_ext          = round(100 * n_improved_ext / n_paired, 1),
-    n_missing_outcome_ext     = sum(is.na(positive_outcome_ext))
-  )
+summarise_sdq(sdq_P410_pairs)
 ```
 
 ------------------------------------------------------------------------
 
 # 3. SDQ Parent 11–17
 
-## 3.1 Read and Score
+```{r sdq-p1117}
+sdq_P1117 <- read_score_sdq("SDQ P11-17.csv", sdq_1117_questions,
+                            cutoffs_total_P1117, cutoffs_ext_P1117, label = "SDQ P11-17")
 
-```{r sdq-p1117-read}
-sdq_P1117 <- read_assessment_csv(
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ P11-17.csv"
-) |>
-  filter(date_completed >= "2024-01-01", 
-         date_completed <= Sys.Date()) |>
-  score_sdq(
-    lookup                = sdq_1117_questions,
-    cutoffs_total         = cutoffs_total_P1117,
-    cutoffs_externalizing = cutoffs_ext_P1117,
-    rev_items             = rev_items,
-    exclude_items         = exclude_items,
-    externalizing_items   = externalizing_items
-  )
-
-cat("SDQ P11-17 rows after scoring:", nrow(sdq_P1117), "\n")
-cat("Unique clients:               ", n_distinct(sdq_P1117$client_system_id), "\n")
-cat("Missing total_score:          ", sum(is.na(sdq_P1117$total_score)), "\n")
-```
-
-## 3.2 Pair Initial and Follow-up
-
-```{r sdq-p1117-pair}
 sdq_P1117_pairs <- pair_sdq(sdq_P1117)
+cat("SDQ P11-17 paired clients:", nrow(sdq_P1117_pairs), "\n")
 
-cat("SDQ P11-17 paired rows:       ", nrow(sdq_P1117_pairs), "\n")
-cat("Unique clients paired:        ", n_distinct(sdq_P1117_pairs$client_system_id), "\n")
-
-sdq_P1117_pairs |>
-  summarise(
-    n_paired                  = n(),
-    n_improved_total          = sum(positive_outcome_total ==  1, na.rm = TRUE),
-    n_no_change_total         = sum(positive_outcome_total ==  0, na.rm = TRUE),
-    n_worsened_total          = sum(positive_outcome_total == -1, na.rm = TRUE),
-    pct_improved_total        = round(100 * n_improved_total / n_paired, 1),
-    n_missing_outcome_total   = sum(is.na(positive_outcome_total)),
-    n_improved_ext            = sum(positive_outcome_ext ==  1, na.rm = TRUE),
-    n_no_change_ext           = sum(positive_outcome_ext ==  0, na.rm = TRUE),
-    n_worsened_ext            = sum(positive_outcome_ext == -1, na.rm = TRUE),
-    pct_improved_ext          = round(100 * n_improved_ext / n_paired, 1),
-    n_missing_outcome_ext     = sum(is.na(positive_outcome_ext))
-  )
+summarise_sdq(sdq_P1117_pairs)
 ```
 
 ------------------------------------------------------------------------
 
 # 4. SDQ Self 11–17
 
-## 4.1 Read and Score
+```{r sdq-s1117}
+sdq_S1117 <- read_score_sdq("SDQ S11-17.csv", sdq_1117_self_questions,
+                            cutoffs_total_S1117, cutoffs_ext_S1117, label = "SDQ S11-17")
 
-```{r sdq-s1117-read}
-sdq_S1117 <- read_assessment_csv(
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/SDQ S11-17.csv"
-) |>
-  filter(date_completed >= "2024-01-01", 
-         date_completed <= Sys.Date()) |>
-  score_sdq(
-    lookup                = sdq_1117_self_questions,
-    cutoffs_total         = cutoffs_total_S1117,
-    cutoffs_externalizing = cutoffs_ext_S1117,
-    rev_items             = rev_items,
-    exclude_items         = exclude_items,
-    externalizing_items   = externalizing_items
-  )
-
-cat("SDQ S11-17 rows after scoring:", nrow(sdq_S1117), "\n")
-cat("Unique clients:               ", n_distinct(sdq_S1117$client_system_id), "\n")
-cat("Missing total_score:          ", sum(is.na(sdq_S1117$total_score)), "\n")
-```
-
-## 4.2 Pair Initial and Follow-up
-
-```{r sdq-s1117-pair}
 sdq_S1117_pairs <- pair_sdq(sdq_S1117)
+cat("SDQ S11-17 paired clients:", nrow(sdq_S1117_pairs), "\n")
 
-cat("SDQ S11-17 paired rows:       ", nrow(sdq_S1117_pairs), "\n")
-cat("Unique clients paired:        ", n_distinct(sdq_S1117_pairs$client_system_id), "\n")
-
-sdq_S1117_pairs |>
-  summarise(
-    n_paired                  = n(),
-    n_improved_total          = sum(positive_outcome_total ==  1, na.rm = TRUE),
-    n_no_change_total         = sum(positive_outcome_total ==  0, na.rm = TRUE),
-    n_worsened_total          = sum(positive_outcome_total == -1, na.rm = TRUE),
-    pct_improved_total        = round(100 * n_improved_total / n_paired, 1),
-    n_missing_outcome_total   = sum(is.na(positive_outcome_total)),
-    n_improved_ext            = sum(positive_outcome_ext ==  1, na.rm = TRUE),
-    n_no_change_ext           = sum(positive_outcome_ext ==  0, na.rm = TRUE),
-    n_worsened_ext            = sum(positive_outcome_ext == -1, na.rm = TRUE),
-    pct_improved_ext          = round(100 * n_improved_ext / n_paired, 1),
-    n_missing_outcome_ext     = sum(is.na(positive_outcome_ext))
-  )
+summarise_sdq(sdq_S1117_pairs)
 ```
 
 ------------------------------------------------------------------------
@@ -509,8 +519,6 @@ sdq_S1117_pairs |>
 # 5. Write Clean CSVs
 
 ```{r write-csvs}
-out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
-
 write_csv(sdq_P24_pairs,   file.path(out_dir, "sdq_p24_pairs_clean.csv"))
 write_csv(sdq_P410_pairs,  file.path(out_dir, "sdq_p410_pairs_clean.csv"))
 write_csv(sdq_P1117_pairs, file.path(out_dir, "sdq_p1117_pairs_clean.csv"))

@@ -1,13 +1,12 @@
 ---
 title: "YOQ Assessment Data Cleaning"
 author: "Cristin Young"
-date: "`r Sys.Date()`"
+date: today
 format:
   html:
-    self-contained: true
+    embed-resources: true
     df-print: paged
     toc: true
-    toc-float: true
 ---
 
 ## Project Overview
@@ -18,25 +17,28 @@ This notebook prepares **CYBHI EBP/CDEP** Youth Outcome Questionnaire (YOQ) asse
 
 **Scoring:**
 
-- 30 items, each rated 0–4.
+- 30 items (columns starting with `x` after `clean_names()`), each rated 0–4. Values that are non-numeric or outside 0–4 are set to `NA` (and counted).
 - Total score range: 0–120. Higher scores indicate greater distress.
 - Total score is set to `NA` if 3 or more items are missing.
 - **RCI = initial score − follow-up score.** RCI ≥ 10 = "reliably better"; RCI ≤ −10 = "reliably worse"; `meaningful_change` = reliably better OR reliably worse.
 
-**Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 exist) is the follow-up. Clients with only one assessment are excluded.
+**Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 exist) is the follow-up. Clients with only one assessment are excluded. No minimum gap is enforced; `days_since_initial` is included so a gap rule can be applied downstream.
 
 **Outputs:**
 
 | File | Contents |
 |------|----------|
-| `yoq_caregiver_paired_clean.csv` | One row per client: initial/follow-up scores, `rci`, `reliably_better`, `reliably_worse`, `meaningful_change`, quarter labels |
+| `yoq_caregiver_paired_clean.csv` | One row per client: initial/follow-up scores, `rci`, `reliably_better`, `reliably_worse`, `meaningful_change`, quarter labels, `days_since_initial` |
 | `yoq_self_paired_clean.csv` | Same, self-report version |
+
+Column order is unchanged from earlier versions (`rci` is still column 7); `days_since_initial` is appended at the end.
 
 ---
 
 ## Open Issues / Action Items
 
-- [ ] The `rci_col` variable in the main analysis uses `yoq_caregiver_paired[,7]` (column 7 by position) to identify reliable changers. This is fragile — consider whether to add an explicit named column here for robustness.
+- [ ] The downstream analysis references the RCI as `yoq_caregiver_paired[,7]` (by position). Column 7 is `rci`; switch the downstream code to `rci` / `reliably_better` / `reliably_worse` by name. Column order here is kept stable in the meantime.
+- [ ] Confirm whether any YOQ items are positively worded and need reverse scoring, or whether eInsight exports them pre-scored. The item-rest check in Sections 1–2 will flag items with the wrong direction.
 
 ---
 
@@ -45,40 +47,144 @@ This notebook prepares **CYBHI EBP/CDEP** Youth Outcome Questionnaire (YOQ) asse
 ```{r setup, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(janitor)
+
+# ---- Configuration: edit paths and reporting window here ----
+in_dir  <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments"
+out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+start_date <- as.Date("2024-01-01")
+end_date   <- Sys.Date()   # set to a fixed date (e.g., as.Date("2026-09-30")) to freeze the data window
 ```
 
 ---
 
-# Helper Function
+# Helper Functions
+
+```{r helpers}
+# ---- Shared helpers (identical across the cleaning scripts) ----
+
+# Parses eInsight date strings in ISO (2024-03-15) or US (03/15/2024) format,
+# with or without a time stamp. Warns with a count of non-blank values that
+# could not be parsed (these become NA and are dropped by the date filter).
+parse_einsight_date <- function(x, label = "date_completed") {
+  x   <- na_if(str_squish(as.character(x)), "")
+  out <- as.Date(parse_date_time(
+    x,
+    orders = c("Ymd", "mdY", "mdy", "Ymd HMS", "Ymd HM", "mdY HMS", "mdY HM"),
+    quiet  = TRUE
+  ))
+  n_bad <- sum(!is.na(x) & is.na(out))
+  if (n_bad > 0) {
+    warning(label, ": ", n_bad, " non-blank value(s) could not be parsed as dates and were set to NA.",
+            call. = FALSE)
+  }
+  out
+}
+
+# Removes demo/test rows (provider_id or client_system_id contains "DEMO") and
+# rows with no client_system_id (they cannot be linked or paired). Rows with a
+# missing provider_id are kept. Prints a count for each.
+remove_demo_rows <- function(df, label) {
+  missing_ids <- setdiff(c("provider_id", "client_system_id"), names(df))
+  if (length(missing_ids) > 0) {
+    stop(label, ": column(s) needed for the demo filter not found: ",
+         paste(missing_ids, collapse = ", "), call. = FALSE)
+  }
+  is_demo   <- coalesce(str_detect(df$provider_id, "DEMO"), FALSE) |
+               coalesce(str_detect(df$client_system_id, "DEMO"), FALSE)
+  no_client <- is.na(df$client_system_id) & !is_demo
+  cat(label, "- rows read:", nrow(df),
+      "| DEMO rows removed:", sum(is_demo),
+      "| rows with no client_system_id removed:", sum(no_client),
+      "| rows with missing provider_id (kept):", sum(is.na(df$provider_id) & !is_demo & !no_client), "\n")
+  df[!is_demo & !no_client, ]
+}
+
+# Stops if the number of item columns differs from what scoring expects.
+# Scoring is positional, so a missing or extra column would silently shift
+# reverse-scored items and weights onto the wrong questions.
+check_items <- function(cols, expected, label) {
+  if (length(cols) != expected) {
+    stop(label, ": expected ", expected, " item columns but found ", length(cols), ":\n  ",
+         paste(cols, collapse = "\n  "), call. = FALSE)
+  }
+  message(label, ": found ", expected, " item columns as expected.")
+  invisible(cols)
+}
+
+# Converts item columns to numeric. Values that are non-numeric or outside
+# [min, max] are set to NA and counted (e.g., a stray "9" or text in a score column).
+clean_item_scores <- function(df, cols, min, max, label) {
+  num   <- df[cols] |> mutate(across(everything(), ~ suppressWarnings(as.numeric(.x))))
+  raw_m <- as.matrix(df[cols])
+  num_m <- as.matrix(num)
+  n_non_numeric  <- sum(!is.na(raw_m) & is.na(num_m))
+  n_out_of_range <- sum(num_m < min | num_m > max, na.rm = TRUE)
+  if (n_non_numeric + n_out_of_range > 0) {
+    warning(label, ": ", n_non_numeric, " non-numeric and ", n_out_of_range,
+            " out-of-range (", min, "-", max, ") item value(s) set to NA.", call. = FALSE)
+  } else {
+    message(label, ": all item values are numeric and within ", min, "-", max, ".")
+  }
+  df[cols] <- num |> mutate(across(everything(), ~ if_else(.x < min | .x > max, NA_real_, .x)))
+  df
+}
+
+# After reverse scoring, every item should correlate positively with the sum of
+# the anchor items (excluding itself). Pass the items the instrument never
+# reverse-scores as `anchor`: comparing against all items can hide a block of
+# reversed items that mostly agree with each other. A negative value means the
+# item's direction is wrong (reversed twice, or a positively worded item that
+# was not reversed). Returns only the items that need a look (empty = all fine).
+item_rest_check <- function(df, cols, label, anchor = cols) {
+  anchor_sum <- rowSums(df[anchor], na.rm = TRUE)
+  out <- tibble(
+    item        = cols,
+    item_rest_r = map_dbl(cols, function(col) {
+      rest <- anchor_sum - if (col %in% anchor) coalesce(df[[col]], 0) else 0
+      suppressWarnings(cor(df[[col]], rest, use = "pairwise.complete.obs"))
+    })
+  )
+  n_neg <- sum(out$item_rest_r < 0, na.rm = TRUE)
+  if (n_neg > 0) {
+    warning(label, ": ", n_neg, " item(s) correlate negatively with the rest of the scale; ",
+            "check reverse scoring (see table).", call. = FALSE)
+  } else {
+    message(label, ": all item-rest correlations are positive.")
+  }
+  out |> filter(item_rest_r < 0 | is.na(item_rest_r))
+}
+```
 
 Both YOQ files share identical scoring and pairing logic. We define a single helper to avoid duplication.
 
 ```{r yoq-helper}
 # Reads a YOQ CSV, scores items, filters to the reporting period,
 # and returns a wide paired data frame.
-clean_yoq <- function(path) {
+clean_yoq <- function(path, label) {
   raw <- read_csv(path, na = c("-", "", "NA", "N/A"), show_col_types = FALSE,
                   col_types = cols(.default = "c")) |>
-    janitor::clean_names()
+    janitor::clean_names() |>
+    remove_demo_rows(label)
 
-  scored <- raw |>
-    mutate(across(matches("^x"), as.numeric)) |>
-    rowwise() |>
+  item_cols <- names(raw)[startsWith(names(raw), "x")]
+  check_items(item_cols, 30, label)
+
+  items <- raw |> clean_item_scores(item_cols, min = 0, max = 4, label = label)
+  print(item_rest_check(items, item_cols, label))
+
+  scored <- items |>
     mutate(
-      missing_count = sum(is.na(c_across(starts_with("x")))),
-      total_score   = if_else(
-        missing_count >= 3,
-        NA_real_,
-        sum(c_across(starts_with("x")), na.rm = TRUE)
-      )
+      missing_count  = rowSums(is.na(across(all_of(item_cols)))),
+      total_score    = rowSums(across(all_of(item_cols)), na.rm = TRUE),
+      total_score    = if_else(missing_count >= 3, NA_real_, total_score),
+      date_completed = parse_einsight_date(date_completed)
     ) |>
-    ungroup() |>
-    mutate(date_completed = as.Date(date_completed)) |>
-    filter(
-      date_completed >= "2024-01-01",
-      date_completed <= Sys.Date()
-    ) |>
+    filter(between(date_completed, start_date, end_date)) |>
     select(client_system_id, collection, date_completed, total_score)
+
+  cat(label, "rows after scoring:  ", nrow(scored), "\n")
+  cat(label, "missing total_score: ", sum(is.na(scored$total_score)), "\n")
 
   scored |>
     group_by(client_system_id) |>
@@ -88,18 +194,39 @@ clean_yoq <- function(path) {
       initial_date     = first(date_completed),
       initial_score    = first(total_score),
       follow_up_date   = if_else(n_assessments >= 2, last(date_completed),  as.Date(NA)),
-      follow_up_score  = if_else(n_assessments >= 2, last(total_score),     NA_real_)
+      follow_up_score  = if_else(n_assessments >= 2, last(total_score),     NA_real_),
+      .groups = "drop"
     ) |>
-    ungroup() |>
     filter(!is.na(follow_up_date)) |>
     mutate(
       # RCI = baseline − follow-up; positive = doing better (lower distress)
-      rci               = initial_score - follow_up_score,
-      reliably_better   = rci >= 10,
-      reliably_worse    = rci <= -10,
-      meaningful_change = reliably_better | reliably_worse,
-      initial_quarter   = paste0("Q", quarter(initial_date),    " ", year(initial_date)),
-      follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))
+      rci                = initial_score - follow_up_score,
+      reliably_better    = rci >= 10,
+      reliably_worse     = rci <= -10,
+      meaningful_change  = reliably_better | reliably_worse,
+      initial_quarter    = paste0("Q", quarter(initial_date),    " ", year(initial_date)),
+      follow_up_quarter  = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)),
+      days_since_initial = as.integer(follow_up_date - initial_date)
+    )
+}
+
+# Percentages use all pairs with a valid RCI as the denominator.
+# pct_better_among_changers is the share of reliable changers who improved.
+summarise_yoq <- function(paired) {
+  paired |>
+    summarise(
+      n_pairs                   = n(),
+      n_missing_rci             = sum(is.na(rci)),
+      n_valid                   = sum(!is.na(rci)),
+      n_reliably_better         = sum(reliably_better, na.rm = TRUE),
+      n_reliably_worse          = sum(reliably_worse,  na.rm = TRUE),
+      n_no_reliable_change      = sum(!meaningful_change, na.rm = TRUE),
+      pct_reliably_better       = round(100 * n_reliably_better / n_valid, 1),
+      pct_reliably_worse        = round(100 * n_reliably_worse  / n_valid, 1),
+      pct_no_reliable_change    = round(100 * n_no_reliable_change / n_valid, 1),
+      pct_better_among_changers = round(100 * n_reliably_better /
+                                          (n_reliably_better + n_reliably_worse), 1),
+      n_fu_within_3_days        = sum(days_since_initial <= 3, na.rm = TRUE)
     )
 }
 ```
@@ -109,23 +236,11 @@ clean_yoq <- function(path) {
 # 1. YOQ Caregiver
 
 ```{r yoq-caregiver}
-yoq_caregiver_paired <- clean_yoq(
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/YOQ-caregiver.csv"
-)
+yoq_caregiver_paired <- clean_yoq(file.path(in_dir, "YOQ-caregiver.csv"), label = "YOQ Caregiver")
 
 cat("YOQ Caregiver paired clients:", nrow(yoq_caregiver_paired), "\n")
 
-yoq_caregiver_paired |>
-  filter(!is.na(reliably_better), rci != 0) |>
-  summarise(
-    n                  = n(),
-    n_better           = sum(reliably_better),
-    n_worse            = sum(reliably_worse),
-    n_meaningful       = sum(meaningful_change),
-    pct_better         = round(100 * n_better / n_meaningful, 1),
-    pct_worse          = round(100 * n_worse / n_meaningful, 1),
-    pct_meaningful     = round(100 * n_meaningful / n, 1)
-  )
+summarise_yoq(yoq_caregiver_paired)
 ```
 
 ---
@@ -133,23 +248,11 @@ yoq_caregiver_paired |>
 # 2. YOQ Self-Report
 
 ```{r yoq-self}
-yoq_self_paired <- clean_yoq(
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/YOQ-self_report.csv"
-)
+yoq_self_paired <- clean_yoq(file.path(in_dir, "YOQ-self_report.csv"), label = "YOQ Self")
 
 cat("YOQ Self paired clients:", nrow(yoq_self_paired), "\n")
 
-yoq_self_paired |>
-  filter(!is.na(reliably_better), rci != 0) |>
-  summarise(
-    n                  = n(),
-    n_better           = sum(reliably_better),
-    n_worse            = sum(reliably_worse),
-    n_meaningful       = sum(meaningful_change),
-    pct_better         = round(100 * n_better / n_meaningful, 1),
-    pct_worse          = round(100 * n_worse / n_meaningful, 1),
-    pct_meaningful     = round(100 * n_meaningful / n, 1)
-  )
+summarise_yoq(yoq_self_paired)
 ```
 
 ---
@@ -157,11 +260,8 @@ yoq_self_paired |>
 # 3. Write Clean CSVs
 
 ```{r write-csvs}
-out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
-
 write_csv(yoq_caregiver_paired, file.path(out_dir, "yoq_caregiver_paired_clean.csv"))
 write_csv(yoq_self_paired,      file.path(out_dir, "yoq_self_paired_clean.csv"))
 
 cat("CSVs written successfully.\n")
 ```
-
