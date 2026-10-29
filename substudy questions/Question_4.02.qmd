@@ -65,7 +65,7 @@ The script makes a few assumptions about the source data that could not be confi
 #| label: shareable-banner
 #| echo: false
 #| results: asis
-if (exists("params") && isTRUE(as.logical(params$shareable))) {
+if (isTRUE(getOption("knitr.in.progress")) && isTRUE(as.logical(params$shareable))) {
   n0 <- if (!is.null(params$suppress_n)) params$suppress_n else 60
   cat(sprintf(paste0(
     "\n\n::: {.callout-note}\n## Shareable render\n\n",
@@ -114,7 +114,7 @@ defaults <- list(
   large_program_pattern = "give ?thx",
   shareable = FALSE
 )
-cfg <- modifyList(defaults, if (exists("params")) as.list(params) else list())
+cfg <- modifyList(defaults, if (isTRUE(getOption("knitr.in.progress"))) as.list(params) else list())
 
 SUPPRESS_N  <- as.integer(cfg$suppress_n)
 SUPPR       <- "Suppr."
@@ -469,9 +469,8 @@ read_any <- function(path) {
     stop("Unsupported file type: ", path, call. = FALSE))
 }
 
-# Objects already in the environment (interactive use) are used as-is.
-if (!exists("combined_all")) combined_all <- read_any(cfg$path_combined_all)
-if (!exists("all_data"))     all_data     <- read_any(cfg$path_all_data)
+combined_all   <- read_any(cfg$path_combined_all)
+all_data       <- read_any(cfg$path_all_data)
 grantee_lookup <- read_any(cfg$path_grantee_lookup)
 
 check_cols <- function(df, cols, name) {
