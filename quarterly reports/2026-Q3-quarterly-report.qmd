@@ -1,0 +1,2201 @@
+---
+title: "CYBHI Scaling EBPs/CDEPs Workstream - Data Report"
+subtitle: "`r paste0(params$quarter_label, ' (', format(as.Date(params$period_start), '%B %Y'), ' Thru ', format(as.Date(params$period_end), '%B %Y'), ')')`"
+params:
+  quarter_label: "Quarter 3, 2026"
+  period_start: "2024-01-01"
+  period_end: "2026-09-30"
+  date_downloaded: "2026-10-08"
+  suppression_threshold: 11
+  complementary_suppression: false
+  # ---- counting rules (see READ ME item 7) ----
+  exclude_after_period_end: true  # true = leave out interventions that start/end after period_end
+  dedupe_episodes: false           # true = identical client + provider + intervention + start rows count once
+  show_notes: true
+  chart_font: "Segoe UI"
+  # ---- grantee-level inputs (not in eInsight; update by hand each quarter) ----
+  grants_by_round: [47, 157, 48, 55, 80]
+  entering_data_by_round: [45, 150, 45, 52, 78]
+  onboarding_month_by_round: ["June '24", "July '24", "March '25", "August '24", "August '24, September '24"]
+  grantees_not_yet_serving: 9
+  # ---- data files ----
+  discharge_data_path: "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv"
+  demo_data_path: "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv"
+  satisfaction_data_path: "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/combined_satisfaction_clean.csv"
+  assess_dir: "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+format:
+  docx:
+    reference-doc: dhcs-q3-reference-doc.docx
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+<!--
+  READ ME (Quarto ignores HTML comments)
+
+  1. Each quarter, update only the `params:` block above: quarter label, dates,
+     download date, file paths, and the grantee-level inputs for Table 1
+     (grants per round, grantees entering data, onboarding months, grantees not
+     yet serving). Narrative numbers, table titles, chart subtitles, footnotes
+     and data-source lines are all generated from these params and the data.
+  2. dhcs-q3-reference-doc.docx must sit in the same folder as this .qmd. It
+     supplies the DHCS cover, logo, landscape layout, fonts, heading styles and
+     the custom paragraph styles used below (DHCS Table Title, DHCS Table Caption Below, DHCS Data Note,
+     DHCS Why, DHCS Caution, DHCS Internal Note, ...).
+  3. Two versions from one file:
+       external (default): quarto render 2026-Q3-quarterly-report.qmd
+       internal:           quarto render 2026-Q3-quarterly-report.qmd -P show_notes:true
+     The internal version adds the "Why these charts" boxes, the analyst notes
+     (data used / assumptions), a raw-value -> report-label crosswalk check
+     (UNSUPPRESSED counts: internal only) and an analyst appendix with the
+     detail tables from the Q2 report (SDQ, per-question NOMS stats, etc.).
+  4. Small-cell suppression: counts from 1 to (threshold - 1) show as "*".
+     A category whose All Rounds count is that small is suppressed across the
+     whole row. With complementary_suppression: true, if a column has exactly
+     one hidden cell, the next-smallest cell in that column is hidden too so
+     the hidden value can't be recovered from the TOTAL. Charts treat
+     suppressed cells as zero. Spot-check the first real render.
+  5. Category labels (gender, orientation, insurance, housing, participant
+     type, education, discharge reason) are mapped from raw eInsight values by
+     pattern. Render the internal version once and check the crosswalk table
+     in the appendix; adjust the *_rules vectors in the setup chunk if needed.
+  6. Word asks to update fields when the file opens: say Yes to build the
+     table of contents.
+  7. Inclusion criteria (agreed Oct 2026):
+       Enrollments   = records with an assigned intervention (no start-date
+                       requirement, because of the upload feature). Counted
+                       per service episode, NOT unduplicated.
+       Discharges    = records with an intervention end date. Not unduplicated.
+       Demographics  = clients with an assigned intervention, unduplicated
+                       (one row per client_system_id).
+     exclude_after_period_end: true also leaves out interventions that start
+     (or, for discharges, end) after period_end, so a late download can't pull
+     in next quarter's records. Records with no start date are always kept.
+     dedupe_episodes: false counts every row, as the Q2 report did. The
+     internal version prints a check table showing the counts under each rule.
+-->
+
+```{r}
+#| label: setup
+library(readr)
+library(tidyverse)
+library(haven)
+library(janitor)
+library(flextable)
+library(officer)
+library(scales)
+
+knitr::opts_chunk$set(
+  rownames.print = FALSE,
+  dev = if (requireNamespace("ragg", quietly = TRUE)) "ragg_png" else "png",
+  dpi = 220
+)
+
+# ---- report constants -----------------------------------------------------------
+threshold    <- params$suppression_threshold
+show_notes   <- isTRUE(params$show_notes)
+round_levels <- paste("Round", 1:5)
+grp_levels   <- c("All Rounds", round_levels)
+grp_key      <- setNames(c("all", paste0("r", 1:5)), grp_levels)
+
+grants        <- setNames(as.integer(unlist(params$grants_by_round)), round_levels)
+grants_total  <- sum(grants)
+entering_data <- setNames(as.integer(unlist(params$entering_data_by_round)), round_levels)
+onboarding    <- setNames(as.character(unlist(params$onboarding_month_by_round)), round_levels)
+
+period_start  <- as.Date(params$period_start)
+period_end    <- as.Date(params$period_end)
+long_date     <- function(d) paste0(format(d, "%B "), as.integer(format(d, "%d")), format(d, ", %Y"))
+dates_represented <- paste(long_date(period_start), "–", long_date(period_end))
+through_month <- format(period_end, "%B %Y")
+through_date  <- long_date(period_end)
+date_downloaded <- format(as.Date(params$date_downloaded), "%m/%d/%Y")
+
+# Table titles: used above each table (with its footnote) and again below it
+# as a centered caption, so the two always match.
+table_titles <- list(
+  t1   = paste0("Table 1. Data Compliance Overview – Through ", through_month),
+  t2   = paste0("Table 2. Enrollments and Discharges – Through ", through_month),
+  t3   = paste0("Table 3. Gender Identity – Overall and by Funding Round – Through ", through_month),
+  t4   = paste0("Table 4. Sexual Orientation – Overall and by Funding Round – Through ", through_month),
+  t5   = paste0("Table 5. Race – Overall and by Funding Round – Through ", through_month),
+  t6   = paste0("Table 6. Ethnicity – Overall and by Funding Round – Through ", through_month),
+  t7   = paste0("Table 7. Primary Spoken Language – Overall and by Funding Round – Through ", through_month),
+  t8   = paste0("Table 8. Insurance Status – Overall and by Funding Round – Through ", through_month),
+  t9   = paste0("Table 9. Housing Status – Overall and by Funding Round – Through ", through_month),
+  t10  = paste0("Table 10. Participant Type – Overall and by Funding Round – Through ", through_month),
+  t11  = paste0("Table 11. Average Age by Participant Type – Overall and by Funding Round – Through ", through_month),
+  t12  = paste0("Table 12. Caregiver Highest Level of Education – Overall and by Funding Round – Through ", through_month),
+  t13a = paste0("Table 13a. Reasons for Discharge – Overall – Through ", through_month),
+  t13b = paste0("Table 13b. Reasons for Discharge – by Funding Round – Through ", through_month),
+  t14  = paste0("Table 14. NOMS Subscales Outcomes Results – Through ", through_month),
+  t15  = "Table 15. Assessing decrease in PTSD-related symptoms among children and youth",
+  t16  = "Table 16. Assessing decrease in parental stress and improved functioning in adult participants",
+  t17  = paste0("Table 17. Results-Based Accountability Metrics – at-a-glance – Through ", through_month),
+  t18  = paste0("Table 18. Satisfaction Survey Results – by Funding Round – Through ", through_month)
+)
+
+# DHCS Data Publishing Style Guide colors
+dhcs_blue   <- "#17315A"
+dhcs_teal   <- "#2D6E8D"
+dhcs_yellow <- "#F9A71C"
+dhcs_orange <- "#E47225"
+dhcs_gray   <- "#AAAAAA"
+pal4        <- c(dhcs_blue, dhcs_yellow, dhcs_teal, dhcs_orange)
+chart_digits <- 1   # decimals on every chart data label (percentages and average ages)
+
+# ---- text helpers -----------------------------------------------------------------
+fmt_n   <- function(x) ifelse(is.na(x), "", formatC(round(x), format = "d", big.mark = ","))
+fmt_pct <- function(x, digits = 1) ifelse(is.na(x) | !is.finite(x), "",
+                                          paste0(formatC(100 * x, format = "f", digits = digits), "%"))
+fmt_num <- function(x, digits = 1) ifelse(is.na(x), "", formatC(x, format = "f", digits = digits))
+# counts quoted in prose/footnotes: small counts are never printed exactly
+n_phrase <- function(n, cap = FALSE) {
+  out <- if (n > 0 && n < threshold) paste("fewer than", threshold) else fmt_n(n)
+  if (cap) paste0(toupper(substr(out, 1, 1)), substr(out, 2, nchar(out))) else out
+}
+and_list <- function(x, conj = "and") {
+  if (length(x) <= 1) return(x)
+  if (length(x) == 2) return(paste(x, collapse = paste0(" ", conj, " ")))
+  paste0(paste(x[-length(x)], collapse = ", "), ", ", conj, " ", x[length(x)])
+}
+
+einsight_url <- "https://cybhi.einsight.net/nova-login"
+ds_demo <- "Client Demographics Deidentified"
+ds_clin <- "Clinical Summary Deidentified"
+ds_both <- "Client Demographics Deidentified & Client Clinical Summary Deidentified"
+ds_sat  <- "Client Clinical Summary Deidentified & Satisfaction Survey"
+source_note <- function(dataset) {
+  paste0("Data Source: Scaling EBPs/CDEPs eInsight Data Platform ([", einsight_url, "](", einsight_url, ")) | ",
+         "Dataset Used: ", dataset, " | Dates Represented: ", dates_represented,
+         " | Date Downloaded: ", date_downloaded,
+         " | Prepared by Behavioral Health Evaluation Strategies, LLC.")
+}
+
+# Internal-only boxes. Call inside a chunk with `#| output: asis`; they print
+# nothing in the external version.
+why_box <- function(...) {
+  if (show_notes) cat("\n\n::: {custom-style=\"DHCS Why\"}\n**Why these charts:** ", ..., "\n:::\n\n", sep = "")
+}
+analyst_note <- function(...) {
+  if (show_notes) cat("\n\n::: {custom-style=\"DHCS Internal Note\"}\n**Analyst note (internal):** ", ...,
+                      "\n:::\n\n", sep = "")
+}
+
+# ---- recoding helpers ---------------------------------------------------------------
+as_round <- function(x) {
+  num <- str_extract(as.character(x), "\\d+")
+  factor(ifelse(is.na(num), NA_character_, paste("Round", as.integer(num))), levels = round_levels)
+}
+
+# "Don't Know", "Prefer Not to Answer", "Not Applicable", "No ... Selected", blank, NA
+nonresponse_regex <- regex(paste0(
+  "^\\s*(don.?t know|unknown|not applicable|n/?a|prefer not to (answer|respond|say)|",
+  "declined?( to (answer|respond))?|no .*selected|none selected)\\s*$"), ignore_case = TRUE)
+is_nonresponse <- function(x) {
+  x <- as.character(x)
+  is.na(x) | str_trim(x) == "" | str_detect(x, nonresponse_regex)
+}
+
+# Map raw values to report labels: first matching pattern wins. Unmatched
+# values keep their raw text (or `other`, if given) so nothing is silently lost.
+recode_by_pattern <- function(x, rules, other = NULL) {
+  x <- str_squish(as.character(x))
+  out <- rep(NA_character_, length(x))
+  for (i in seq_along(rules)) {
+    hit <- is.na(out) & !is.na(x) & str_detect(x, regex(rules[[i]], ignore_case = TRUE))
+    out[hit] <- names(rules)[i]
+  }
+  miss <- is.na(out) & !is.na(x)
+  out[miss] <- if (is.null(other)) x[miss] else other
+  out
+}
+
+gender_rules <- c(
+  "Transgender woman/girl" = "trans\\w*[\\s-]*(woman|girl|female)",
+  "Transgender man/boy"    = "trans\\w*[\\s-]*(man|boy|male)\\b",
+  "Non-binary"             = "non.?binary",
+  "Genderqueer"            = "gender.?queer",
+  "Two-spirit"             = "two.?spirit",
+  "Woman/girl"             = "\\b(woman|girl|female)\\b",
+  "Man/boy"                = "\\b(man|boy|male)\\b"
+)
+orientation_rules <- c(
+  "Straight"           = "straight|heterosexual",
+  "Bisexual"           = "bisexual",
+  "Lesbian/Gay"        = "lesbian|\\bgay\\b",
+  "Pansexual"          = "pansexual",
+  "Asexual"            = "asexual",
+  "Same Gender Loving" = "same.?gender",
+  "Other"              = "^other|another"
+)
+race_codes <- c(`1` = "Asian", `2` = "Black or African American", `3` = "Hispanic or Latino",
+                `4` = "Middle Eastern or North African",
+                `5` = "Native American/American Indian or Alaska Native",
+                `6` = "Native Hawaiian or Pacific Islander", `7` = "White", `88` = "2 or more races selected")
+ethn_codes <- c(`1` = "Chinese", `2` = "Asian Indian", `3` = "Filipino", `4` = "Vietnamese", `5` = "Korean",
+                `6` = "Japanese", `7` = "African American", `8` = "Jamaican", `9` = "Haitian", `10` = "Nigerian",
+                `11` = "Somali", `12` = "Mexican", `13` = "Puerto Rican", `14` = "Salvadoran", `15` = "Cuban",
+                `16` = "Dominican", `17` = "Guatemalan", `18` = "Native Hawaiian", `19` = "Samoan",
+                `20` = "Chamorro", `21` = "English", `22` = "German", `23` = "Irish", `24` = "Italian",
+                `25` = "Polish", `26` = "Scottish", `88` = "2+ ethnicities selected")
+code_label <- function(code, codes) {
+  lab <- unname(codes[as.character(code)])
+  ifelse(is.na(lab), paste("Code", code), lab)
+}
+language_rules <- c("Other" = "^other")
+insurance_rules <- c(
+  "Medi-Cal/Medicare"     = "medi.?cal|medicaid|medicare",
+  "No insurance/Indigent" = "no insurance|uninsured|indigent|self.?pay",
+  "Private insurance"     = "private|commercial|employer",
+  "Veteran's benefits"    = "veteran|tricare"
+)
+housing_rules <- c(
+  "Unhoused" = "unhoused|homeless|unsheltered",
+  "Housed"   = "\\bhoused\\b|stabl"
+)
+client_type_rules <- c(
+  "Parent/Caregiver" = "parent|caregiver|guardian",
+  "Youth (16–25)"    = "youth|young adult",
+  "Child (0–15)"     = "child|infant|toddler"
+)
+education_rules <- c(
+  "Less than high school" = "<\\s*high school|less than|no high school|some high school|no formal|elementary|middle school|\\d+(th|st|nd|rd) grade",
+  "More than college"     = ">\\s*college|more than college|master|doctor|ph\\.?d|graduate (degree|school)|post.?grad|professional degree",
+  "College"               = "college|associate|bachelor|university|vocational|technical|trade",
+  "High school"           = "high school|\\bged\\b|equivalen"
+)
+discharge_rules <- c(
+  "Successful Completion"                       = "mutual|successful",
+  "Withdrew from/refused treatment"             = "withdr|refus",
+  "No contact within 90 days of last encounter" = "no contact|90 days",
+  "Clinically referred out"                     = "referr",
+  "Death"                                       = "death|deceased|died",
+  "No Reason Selected"                          = "no reason"
+)
+
+# ---- counting + suppression engine ------------------------------------------------
+# Order categories by All Rounds frequency (or a fixed order); `last` goes at the end.
+order_levels <- function(cats, n, order = c("freq", "fixed"), levels = NULL, last = NULL) {
+  order <- match.arg(order)
+  by_freq <- cats[order(-n, cats)]
+  by_freq <- by_freq[n[match(by_freq, cats)] > 0]
+  main <- if (order == "fixed") c(levels, setdiff(by_freq, c(levels, last))) else setdiff(by_freq, last)
+  unique(c(main, last[last %in% c(levels, by_freq)]))
+}
+
+# d: one row per unit, with `category` and `round` columns.
+count_long <- function(d, lv) {
+  all_n <- d |> count(category, name = "n") |> mutate(group = "All Rounds")
+  rnd_n <- d |> filter(!is.na(round)) |> mutate(group = as.character(round)) |> count(group, category, name = "n")
+  bind_rows(all_n, rnd_n) |>
+    mutate(category = as.character(category), n = as.integer(n)) |>
+    filter(category %in% lv) |>
+    complete(group = grp_levels, category = lv, fill = list(n = 0L)) |>
+    mutate(group = factor(group, levels = grp_levels), category = factor(category, levels = lv)) |>
+    arrange(group, category) |>
+    group_by(group) |> mutate(total = sum(n)) |> ungroup()
+}
+
+complement_one <- function(g) {
+  hidden <- g$sup & g$n > 0
+  if (sum(hidden) == 1) {
+    cand <- which(!g$sup & g$n > 0)
+    if (length(cand) > 0) g$sup[cand[which.min(g$n[cand])]] <- TRUE
+  }
+  g
+}
+
+# Adds row_sup (whole row hidden: All Rounds count is small), sup (cell hidden)
+# and n_shown (0 where hidden; used by charts).
+suppress_long <- function(long) {
+  row_flag <- long |> filter(group == "All Rounds") |> transmute(category, row_sup = n > 0 & n < threshold)
+  long <- long |>
+    left_join(row_flag, by = "category") |>
+    mutate(row_sup = coalesce(row_sup, FALSE),
+           sup = row_sup | (n > 0 & n < threshold) | (total > 0 & total < threshold))
+  if (isTRUE(params$complementary_suppression)) {
+    long <- long |> group_by(group) |> group_modify(function(g, ...) complement_one(g)) |> ungroup()
+  }
+  long |> mutate(n_shown = if_else(sup, 0L, n))
+}
+
+# rows: all_data rows with a valid response and a `category` column.
+make_demo <- function(rows, order = "freq", levels = NULL, last = NULL, small_rows = c("dash", "drop"),
+                      denom = n_participants) {
+  small_rows <- match.arg(small_rows)
+  d <- rows |>
+    distinct(client_system_id, .keep_all = TRUE) |>
+    mutate(round = as_round(funding_round))
+  all_counts <- d |> count(category, name = "n")
+  lv <- order_levels(all_counts$category, all_counts$n, order, levels, last)
+  long <- count_long(d, lv) |> suppress_long()
+  dropped <- long |> filter(group == "All Rounds", row_sup) |> pull(category) |> as.character()
+  list(long = long, levels = lv, small_rows = small_rows, n_valid = nrow(d),
+       n_missing = denom - nrow(d), pct_missing = 1 - nrow(d) / denom,
+       dropped = if (small_rows == "drop") dropped else character(0))
+}
+
+# Wide display table: category | all_a | all_b | r1_a | r1_b | ... (a = %, b = N)
+demo_wide <- function(res, groups = grp_levels) {
+  dash <- "—"
+  cells <- res$long |>
+    filter(group %in% groups) |>
+    mutate(a = case_when(row_sup | total == 0 ~ dash, sup ~ "*", TRUE ~ fmt_pct(n / total)),
+           b = case_when(row_sup ~ dash, sup ~ "*", TRUE ~ fmt_n(n)))
+  if (res$small_rows == "drop") cells <- cells |> filter(!row_sup)
+  totals <- cells |>
+    distinct(group, total) |>
+    mutate(category = "TOTAL",
+           a = case_when(total == 0 ~ dash, total < threshold ~ "*", TRUE ~ "100%"),
+           b = case_when(total > 0 & total < threshold ~ "*", TRUE ~ fmt_n(total)))
+  bind_rows(cells |> mutate(category = as.character(category)), totals) |>
+    mutate(key = grp_key[as.character(group)]) |>
+    select(category, key, a, b) |>
+    pivot_wider(names_from = key, values_from = c(a, b), names_glue = "{key}_{.value}") |>
+    mutate(.ord = match(category, c(res$levels, "TOTAL"))) |>
+    arrange(.ord) |> select(-.ord)
+}
+
+# Prose helpers (All Rounds values; hidden cells never quoted)
+# Returns NA when the requested cells would reveal a hidden value. A sum that
+# contains every hidden cell equals TOTAL minus shown cells, so it is safe.
+share_of <- function(res, cats) {
+  x <- res$long |> filter(group == "All Rounds")
+  hidden <- x$sup & x$n > 0
+  inside <- x$category %in% cats
+  if (any(hidden & inside) && any(hidden & !inside)) return(NA_real_)
+  sum(x$n[inside]) / x$total[1]
+}
+pct_of <- function(res, cats) {
+  s <- share_of(res, cats)
+  if (is.na(s)) "a suppressed share" else fmt_pct(s)
+}
+top_phrase <- function(res, k, exclude = NULL, lower = FALSE, conj = "and", skip = 0) {
+  x <- res$long |>
+    filter(group == "All Rounds", !sup, n > 0, !category %in% exclude) |>
+    arrange(desc(n)) |> slice(seq_len(skip + k)) |> slice_tail(n = k)
+  lab <- as.character(x$category)
+  if (lower) lab <- str_to_lower(lab)
+  and_list(paste0(lab, " (", fmt_pct(x$n / x$total), ")"), conj)
+}
+missing_note <- function(res, what) {
+  paste0("Note: ", fmt_pct(res$pct_missing), " of participants responded Don't Know, Prefer Not to Answer, ",
+         "Not Applicable, or No ", what, " Selected, or had no response recorded. ",
+         "These responses are excluded from the data above.")
+}
+
+# Chart data: optionally collapse categories into chart groups; hidden cells = 0
+chart_counts <- function(res, keep = NULL, other_label = NULL, groups = grp_levels) {
+  x <- res$long |> filter(group %in% groups) |> mutate(category = as.character(category))
+  if (!is.null(keep)) {
+    x <- x |> mutate(category = if_else(category %in% keep, category, other_label))
+    lv <- c(keep, other_label)
+  } else {
+    lv <- res$levels
+  }
+  # A chart group that holds every hidden cell in its column equals TOTAL minus
+  # shown cells, so its true count is safe; otherwise hidden cells count as 0.
+  x |>
+    group_by(group) |> mutate(hid = sup & n > 0, n_hid = sum(hid)) |>
+    group_by(group, category) |>
+    summarise(n = if (any(hid) && sum(hid) < first(n_hid)) sum(n_shown) else sum(n), .groups = "drop") |>
+    mutate(category = factor(category, levels = lv)) |>
+    arrange(group, category)
+}
+
+# ---- DHCS table styling (matches the Q3 Word template) --------------------------------
+dhcs_theme <- function(ft, font_size = 10) {
+  b  <- fp_border(color = "black", width = 0.5)
+  bw <- fp_border(color = "white", width = 0.5)
+  ft |>
+    font(fontname = "Segoe UI", part = "all") |>
+    fontsize(size = font_size, part = "all") |>
+    bg(bg = dhcs_blue, part = "header") |>
+    color(color = "white", part = "header") |>
+    bold(part = "header") |>
+    border_remove() |>
+    border_outer(border = b, part = "body") |>
+    border_inner_h(border = b, part = "body") |>
+    border_inner_v(border = b, part = "body") |>
+    border_inner_v(border = bw, part = "header") |>
+    border_inner_h(border = bw, part = "header") |>
+    hline_top(border = b, part = "header") |>
+    vline_left(border = b, part = "header") |>
+    vline_right(border = b, part = "header") |>
+    align(align = "center", part = "header") |>
+    valign(valign = "center", part = "all") |>
+    padding(padding.top = 2, padding.bottom = 2, padding.left = 4, padding.right = 4, part = "all") |>
+    set_table_properties(layout = "fixed") |>
+    keep_together()
+}
+# Keep a table on one page when it fits (Word "keep with next"); no-op on old flextable
+keep_together <- function(ft) {
+  if (flextable::nrow_part(ft, "body") > 25) return(ft)   # long tables may break across pages
+  if (exists("paginate", where = asNamespace("flextable"), mode = "function")) {
+    flextable::paginate(ft, init = TRUE, hdr_ftr = TRUE)
+  } else ft
+}
+
+# Overall + by-round table with a two-row header (group over %/N)
+dhcs_round_table <- function(wide, first_label, groups = grp_levels, sub = c("%", "N"),
+                             show_grants = TRUE, first_width = NULL) {
+  keys <- grp_key[groups]
+  col_keys <- c("category", as.vector(rbind(paste0(keys, "_a"), paste0(keys, "_b"))))
+  grant_n <- c(`All Rounds` = grants_total, grants)[groups]
+  top <- if (show_grants) paste0(groups, "\n(", grant_n, " grants)") else groups
+  ft <- flextable(wide, col_keys = col_keys) |>
+    set_header_labels(values = setNames(as.list(c(first_label, rep(sub, length(groups)))), col_keys)) |>
+    add_header_row(values = c(first_label, top), colwidths = c(1, rep(2, length(groups))), top = TRUE) |>
+    merge_v(j = 1, part = "header") |>
+    dhcs_theme() |>
+    align(j = -1, align = "right", part = "body") |>
+    bold(i = nrow(wide), part = "body")
+  avail <- 9
+  fw <- if (is.null(first_width)) if (length(groups) == 6) 1.6 else 2.0 else first_width
+  each <- (avail - fw) / length(groups)
+  ft |> width(j = 1, width = fw) |>
+    width(j = seq(2, length(col_keys), 2), width = each * 0.46) |>
+    width(j = seq(3, length(col_keys), 2), width = each * 0.54)
+}
+
+# Simple one-header table
+dhcs_simple_table <- function(df, labels, widths, bold_last = TRUE, align_right = NULL) {
+  ft <- flextable(df) |>
+    set_header_labels(values = setNames(as.list(labels), names(df))) |>
+    dhcs_theme()
+  if (bold_last) ft <- bold(ft, i = nrow(df), part = "body")
+  if (!is.null(align_right)) ft <- align(ft, j = align_right, align = "right", part = "body")
+  for (j in seq_along(widths)) ft <- width(ft, j = j, width = widths[j])
+  ft
+}
+
+# ---- internal tables (title above, caption below) ----------------------------------
+appx_table <- function(df, caption) {
+  df <- as.data.frame(df) |> mutate(across(everything(), as.character))
+  ft <- flextable(df) |> dhcs_theme(font_size = 9) |> size_to_content()
+  show_table(ft, caption)
+}
+# Title above, table, same title as a centered caption below. Use in chunks
+# with `#| output: asis`; the paragraphs also keep consecutive tables apart
+# (Word merges tables that touch).
+show_table <- function(ft, caption) {
+  cat("\n\n::: {custom-style=\"DHCS Table Title\"}\n", caption, "\n:::\n\n", sep = "")
+  cat(knitr::knit_print(ft))
+  cat("\n\n::: {custom-style=\"DHCS Table Caption Below\"}\n", caption, "\n:::\n\n", sep = "")
+  invisible(NULL)
+}
+# Column widths from the body text (min 0.9"), capped at the 9" text width.
+# Avoids flextable's "autofit" layout, which some versions write without a
+# column grid (columns then collapse in Word/LibreOffice).
+size_to_content <- function(ft) {
+  ft <- autofit(ft, part = "body")
+  w <- pmax(dim(ft)$widths, 0.9)
+  ft <- width(ft, j = seq_along(w), width = w)
+  if (sum(w) > 9) ft <- fit_to_width(ft, max_width = 9)
+  ft
+}
+
+# ---- DHCS chart styling ---------------------------------------------------------------
+chart_font <- local({
+  f <- params$chart_font
+  ok <- tryCatch(requireNamespace("systemfonts", quietly = TRUE) &&
+                   f %in% systemfonts::system_fonts()$family, error = function(e) FALSE)
+  if (isTRUE(ok)) f else "sans"
+})
+chart_subtitle <- paste("Participants enrolled through", through_date)
+text_on <- function(fill) ifelse(toupper(fill) %in% c(dhcs_blue, dhcs_teal), "white", "black")
+
+theme_dhcs <- function(base_size = 9) {
+  theme_minimal(base_size = base_size, base_family = chart_font) +
+    theme(
+      plot.title = element_text(face = "bold", colour = dhcs_blue, hjust = 0.5, size = base_size + 3,
+                                margin = margin(b = 2)),
+      plot.subtitle = element_text(face = "bold", colour = dhcs_blue, hjust = 0.5, size = base_size + 1,
+                                   margin = margin(b = 8)),
+      plot.title.position = "plot",
+      axis.text = element_text(colour = dhcs_blue, face = "bold"),
+      axis.title = element_text(colour = dhcs_teal, face = "bold"),
+      panel.grid = element_blank(),
+      legend.position = "bottom",
+      legend.title = element_blank(),
+      legend.key.size = unit(8, "pt"),
+      legend.text = element_text(size = base_size - 1, colour = "black"),
+      plot.margin = margin(4, 14, 4, 4)
+    )
+}
+grid_x <- theme(panel.grid.major.x = element_line(colour = "#D9D9D9", linewidth = 0.3))
+
+# Two charts side by side in one full-width figure (base grid; no extra packages).
+# Quarto's layout-ncol assumes a portrait page in .docx and shrinks the charts.
+side_by_side <- function(left, right, widths = c(1, 1)) {
+  grid::grid.newpage()
+  grid::pushViewport(grid::viewport(layout = grid::grid.layout(1, 2, widths = grid::unit(widths, "null"))))
+  print(left,  vp = grid::viewport(layout.pos.row = 1, layout.pos.col = 1))
+  print(right, vp = grid::viewport(layout.pos.row = 1, layout.pos.col = 2))
+  invisible(NULL)
+}
+
+# Donut of All Rounds shares
+chart_donut <- function(cc, title, colours = pal4) {
+  cols <- setNames(colours[seq_along(levels(cc$category))], levels(cc$category))
+  df <- cc |> filter(group == "All Rounds") |>
+    mutate(share = n / sum(n), fill = cols[as.character(category)],
+           lab = if_else(share >= 0.05, fmt_pct(share, chart_digits), ""), txt = text_on(fill))
+  ggplot(df, aes(x = 2, y = share, fill = category)) +
+    geom_col(width = 1, colour = "white", linewidth = 0.4, position = position_stack(reverse = TRUE)) +
+    geom_text(aes(label = lab, colour = txt, group = category), position = position_stack(vjust = 0.5, reverse = TRUE),
+              size = 2.8, fontface = "bold", family = chart_font) +
+    scale_colour_identity() +
+    scale_fill_manual(values = cols) +
+    scale_x_continuous(limits = c(0.6, 2.5)) +
+    coord_polar(theta = "y") +
+    labs(title = title, subtitle = chart_subtitle) +
+    theme_dhcs() +
+    theme(axis.text = element_blank(), axis.title = element_blank()) +
+    guides(fill = guide_legend(ncol = 2))
+}
+
+# 100% stacked horizontal bars: All Rounds + Rounds 1-5
+chart_stacked <- function(cc, title, colours = pal4, xlab = "Percent of participants") {
+  cols <- setNames(colours[seq_along(levels(cc$category))], levels(cc$category))
+  df <- cc |>
+    group_by(group) |> mutate(share = if (sum(n) > 0) n / sum(n) else 0) |> ungroup() |>
+    mutate(group = factor(group, levels = rev(grp_levels)), fill = cols[as.character(category)],
+           lab = if_else(share >= 0.10, fmt_pct(share, chart_digits), ""), txt = text_on(fill))
+  ggplot(df, aes(x = share, y = group, fill = category)) +
+    geom_col(width = 0.7, position = position_stack(reverse = TRUE)) +
+    geom_text(aes(label = lab, colour = txt, group = category), position = position_stack(vjust = 0.5, reverse = TRUE),
+              size = 2.5, fontface = "bold", family = chart_font) +
+    scale_colour_identity() +
+    scale_fill_manual(values = cols) +
+    scale_x_continuous(labels = percent, breaks = seq(0, 1, 0.25), expand = expansion(mult = c(0, 0.02))) +
+    labs(title = paste(title, "by Funding Round"), subtitle = chart_subtitle, x = xlab, y = NULL) +
+    theme_dhcs() + grid_x +
+    guides(fill = guide_legend(ncol = 2))
+}
+
+# Horizontal bars of All Rounds shares, sorted
+chart_hbar <- function(df, title, fill = dhcs_blue, subtitle = chart_subtitle, wrap = 26) {
+  df <- df |> arrange(desc(share)) |> mutate(label = factor(label, levels = rev(label)))
+  ggplot(df, aes(x = share, y = label)) +
+    geom_col(fill = fill, width = 0.65) +
+    geom_text(aes(label = fmt_pct(share, chart_digits)), hjust = -0.15, size = 2.6, fontface = "bold",
+              colour = dhcs_blue, family = chart_font) +
+    scale_x_continuous(labels = percent, limits = c(0, NA), expand = expansion(mult = c(0, 0.22))) +
+    scale_y_discrete(labels = label_wrap(wrap)) +
+    coord_cartesian(clip = "off") +
+    labs(title = title, subtitle = subtitle, x = "Percent of participants", y = NULL) +
+    theme_dhcs() + grid_x
+}
+
+# One measure by group (All Rounds highlighted in DHCS Blue)
+chart_by_group <- function(df, title, ylab = "Percent of participants") {
+  df <- df |>
+    mutate(group = factor(group, levels = grp_levels),
+           fill = if_else(group == "All Rounds", dhcs_blue, dhcs_teal),
+           lab = if_else(is.na(share), "*", fmt_pct(share, chart_digits)))
+  ggplot(df, aes(x = group, y = coalesce(share, 0), fill = fill)) +
+    geom_col(width = 0.65) +
+    geom_text(aes(label = lab), vjust = -0.5, size = 2.6, fontface = "bold", colour = dhcs_blue,
+              family = chart_font) +
+    scale_fill_identity() +
+    scale_x_discrete(labels = label_wrap(8)) +
+    scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, NA),
+                       expand = expansion(mult = c(0, 0.15))) +
+    labs(title = title, subtitle = chart_subtitle, x = NULL, y = ylab) +
+    coord_cartesian(clip = "off") +
+    theme_dhcs() + theme(axis.line.x = element_line(colour = "#7F7F7F", linewidth = 0.3))
+}
+
+# Simple columns (category on x)
+chart_cols <- function(df, title, fill = dhcs_blue, ylab = "Percent of participants", pct = TRUE) {
+  df <- df |> mutate(lab = if (pct) fmt_pct(value, chart_digits) else fmt_num(value, chart_digits))
+  ggplot(df, aes(x = label, y = value)) +
+    geom_col(fill = fill, width = 0.6) +
+    geom_text(aes(label = lab), vjust = -0.5, size = 2.6, fontface = "bold", colour = dhcs_blue,
+              family = chart_font) +
+    scale_x_discrete(labels = label_wrap(12)) +
+    scale_y_continuous(labels = if (pct) percent_format(accuracy = 1) else waiver(), limits = c(0, NA),
+                       expand = expansion(mult = c(0, 0.15))) +
+    labs(title = title, subtitle = chart_subtitle, x = NULL, y = ylab) +
+    coord_cartesian(clip = "off") +
+    theme_dhcs() + theme(axis.line.x = element_line(colour = "#7F7F7F", linewidth = 0.3))
+}
+```
+
+```{r}
+#| label: load-data
+# ---- load data --------------------------------------------------------------------------
+# Inclusion rule for every section: an assigned intervention. There is no
+# start-date requirement (records added with the upload feature may not have
+# one). The Q2 code instead kept rows with intervention_start inside
+# period_start-period_end, which dropped rows with no start date.
+has_intervention <- function(x) !is.na(x) & str_trim(as.character(x)) != ""
+after_period_end <- function(x) isTRUE(params$exclude_after_period_end) & !is.na(x) & x > period_end
+
+discharge_raw <- read_csv(params$discharge_data_path, show_col_types = FALSE)
+all_raw       <- read_csv(params$demo_data_path, show_col_types = FALSE)
+
+discharge_data <- discharge_raw %>%
+  filter(has_intervention(intervention_name), !after_period_end(intervention_start))
+
+all_data <- all_raw %>%
+  filter(has_intervention(intervention_name), !after_period_end(intervention_start))
+
+discharge_data_distinct <- discharge_data %>%
+  distinct(client_system_id, .keep_all = TRUE)
+
+all_data_distinct <- all_data %>%
+  distinct(client_system_id, .keep_all = TRUE)
+
+n_participants       <- n_distinct(all_data$client_system_id)
+n_providers          <- discharge_data |> distinct(provider_id) |> nrow()
+n_discharge_distinct <- nrow(discharge_data_distinct)
+n_discharge_rows     <- nrow(discharge_data)
+
+adir <- params$assess_dir
+pairs_primary_long_child <- read_csv(file.path(adir, "noms_child_pairs_clean.csv"),   show_col_types = FALSE)
+pairs_primary_long_self  <- read_csv(file.path(adir, "noms_self_pairs_clean.csv"),    show_col_types = FALSE)
+sdq_P24_pairs            <- read_csv(file.path(adir, "sdq_p24_pairs_clean.csv"),      show_col_types = FALSE)
+sdq_P410_pairs           <- read_csv(file.path(adir, "sdq_p410_pairs_clean.csv"),     show_col_types = FALSE)
+sdq_P1117_pairs          <- read_csv(file.path(adir, "sdq_p1117_pairs_clean.csv"),    show_col_types = FALSE)
+sdq_S1117_pairs          <- read_csv(file.path(adir, "sdq_s1117_pairs_clean.csv"),    show_col_types = FALSE)
+pss_paired               <- read_csv(file.path(adir, "pss_paired_clean.csv"),         show_col_types = FALSE)
+cpss_i_paired            <- read_csv(file.path(adir, "cpss_i_paired_clean.csv"),      show_col_types = FALSE)
+cpss_s_paired            <- read_csv(file.path(adir, "cpss_s_paired_clean.csv"),      show_col_types = FALSE)
+```
+
+```{r}
+#| output: asis
+analyst_note("Unique providers (discharge data): ", fmt_n(n_providers),
+             ". Discharge data rows: ", fmt_n(n_discharge_rows),
+             "; distinct clients in discharge data: ", fmt_n(n_discharge_distinct),
+             ". Distinct participants with an assigned intervention in demographic + discharge data (denominator for the % missing footnotes): ",
+             fmt_n(n_participants), ".")
+```
+
+{{< pagebreak >}}
+
+This report provides an overview of participants served, outcomes and satisfaction results. Most grantees (N=`r grants_total`) are participating in the Primary Evaluation, which includes organizations delivering direct services to participants. These grantees are required to collect and submit individual-level participant data, including pre- and post-outcome measures, as part of the grant initiative's primary evaluation framework (Primary Evaluation Grants).^[In addition to grantees included in the Primary Evaluation, a subset of grantees is implementing Training and Technical Assistance (TTA), Short Duration Activities (SDA), or Mobile Crisis Services. Data from these grantees are not included in this report.] Together, these data provide an early look at grantee compliance with reporting requirements and offer preliminary insights into participant engagement, service impact, and satisfaction across the funded EBPs and CDEPs.
+
+The focus of this report is on grantees participating in the Primary Evaluation. Specifically, it summarizes:
+
+- Demographics and characteristics for participants enrolled through `r through_month`, overall and by funding round
+- Reasons for discharge as reported by grantees
+- Outcome measures results, including pre/post comparisons
+- Satisfaction survey ratings, reflecting participant-reported experience of services
+
+{{< pagebreak >}}
+
+```{=openxml}
+<w:p><w:pPr><w:pStyle w:val="TOCHeading"/></w:pPr><w:r><w:t>Table of Contents</w:t></w:r></w:p>
+<w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents"/><w:docPartUnique/></w:docPartObj></w:sdtPr><w:sdtContent><w:p><w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \o "1-3" \h \z \u </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Right-click here and choose Update Field to build the table of contents.</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:sdtContent></w:sdt>
+```
+
+{{< pagebreak >}}
+
+## Data Entry Overview
+
+```{r}
+#| label: compliance
+n_entering     <- sum(entering_data)
+n_not_entering <- grants_total - n_entering
+n_not_serving  <- params$grantees_not_yet_serving
+n_out          <- n_not_entering - n_not_serving
+```
+
+Table 1 summarizes data collection compliance among the `r grants_total` grantees participating in the primary evaluation. All grantees have now been onboarded to the eInsight data platform. Among the `r grants_total` grantees, `r n_entering` are currently entering participant records in eInsight, representing a compliance rate of `r fmt_pct(n_entering / grants_total, 0)`. Of the remaining `r n_not_entering` grantees, `r n_not_serving` (`r fmt_pct(n_not_serving / n_not_entering, 0)`) have not yet begun providing services, which accounts for their missing data. The remaining `r n_out` grantees are out of compliance and the data team, in collaboration with project partners, is working closely with these grantees to identify barriers and support their progress toward full compliance.
+
+::: {custom-style="DHCS Table Caption"}
+`r table_titles$t1`
+:::
+
+```{r}
+#| label: t-compliance
+t1 <- tibble(c1 = c("Entering data", "Entering data", "Month of Onboarding"),
+             c2 = c("Yes", "No", "Month of Onboarding"))
+for (k in seq_along(round_levels)) {
+  yes <- entering_data[k]; no <- grants[k] - yes
+  t1[[paste0("r", k, "_n")]] <- c(fmt_n(yes), fmt_n(no), onboarding[k])
+  t1[[paste0("r", k, "_p")]] <- c(fmt_pct(yes / grants[k], 0), fmt_pct(no / grants[k], 0), onboarding[k])
+}
+hdr2 <- setNames(as.list(c("Primary Evaluation Grants", "Primary Evaluation Grants", rep(c("N", "%"), 5))), names(t1))
+ft1 <- flextable(t1) |>
+  set_header_labels(values = hdr2) |>
+  add_header_row(values = c("Primary Evaluation Grants", paste0(round_levels, "\n(N=", grants, ")")),
+                 colwidths = c(2, rep(2, 5)), top = TRUE) |>
+  merge_at(i = 1:2, j = 1:2, part = "header") |>
+  merge_at(i = 1:2, j = 1, part = "body") |>
+  merge_at(i = 3, j = 1:2, part = "body")
+for (k in seq_along(round_levels)) ft1 <- merge_at(ft1, i = 3, j = c(2 * k + 1, 2 * k + 2), part = "body")
+ft1 |>
+  dhcs_theme() |>
+  bold(j = 2, part = "body") |>
+  align(j = 3:12, align = "center", part = "body") |>
+  width(j = 1, width = 1.2) |> width(j = 2, width = 0.55) |> width(j = 3:12, width = 0.7) |>
+  set_table_properties(layout = "fixed", align = "center")
+```
+
+::: {custom-style="DHCS Table Caption Below"}
+`r table_titles$t1`
+:::
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_demo)`
+:::
+
+## Enrollments and Discharges
+
+```{r}
+#| label: episodes
+# Enrollments = every record with an assigned intervention (already applied at
+# load), counted per service episode, not unduplicated by client. With
+# dedupe_episodes: true, rows with the same client, provider, intervention and
+# start date count once (off by default; the Q2 report counted every row).
+episode_keys <- c("client_system_id", "provider_id", "intervention_name", "intervention_start")
+dedupe_rows  <- function(d) distinct(d, across(any_of(episode_keys)), .keep_all = TRUE)
+episodes <- (if (isTRUE(params$dedupe_episodes)) dedupe_rows(discharge_data) else discharge_data) |>
+  mutate(round = as_round(funding_round))
+enrolled   <- episodes
+# Discharges = records with an intervention end date (on or before period_end
+# when exclude_after_period_end is true)
+discharged <- episodes |> filter(!is.na(intervention_end), !after_period_end(intervention_end))
+n_enrolled   <- nrow(enrolled)
+n_discharged <- nrow(discharged)
+unassigned_enrolled   <- sum(is.na(enrolled$round))
+unassigned_discharged <- sum(is.na(discharged$round))
+fmt_count <- function(n) if_else(n > 0 & n < threshold, "*", fmt_n(n))
+```
+
+```{r}
+#| output: asis
+analyst_note("Data used: discharge_data_clean.csv (DEMO records are removed when that file is built). ",
+             "Enrollments = records with an assigned intervention; no start-date requirement. ",
+             "Discharges = records with an intervention end date. Both count service episodes, so a client can be counted more than once. ",
+             if (isTRUE(params$exclude_after_period_end)) paste0("Records that start (or, for discharges, end) after ", through_date, " are left out; records with no start date are kept. ") else "No date limits are applied. ",
+             if (isTRUE(params$dedupe_episodes)) paste0("Rows with the same ", paste(intersect(episode_keys, names(discharge_data)), collapse = " + "), " are counted once (", fmt_n(nrow(discharge_data) - nrow(episodes)), " rows). ") else "Every row is counted (no de-duplication), as in the Q2 report. ",
+             "The check table below shows the counts under the Q2 method, the Oct 8 draft method, and the current rule.")
+```
+
+Table 2 shows participants enrolled^[Enrollment is defined as a participant having an assigned intervention (e.g., EBP/CDEP)`r if (isTRUE(params$exclude_after_period_end)) paste0("; interventions with a start date after ", through_date, " are not included") else ""`.] in and discharged^[Discharge is defined as a participant having an end date for an assigned intervention (e.g., EBP/CDEP)`r if (isTRUE(params$exclude_after_period_end)) paste0(" on or before ", through_date) else ""`.] from an EBP/CDEP through `r through_month`. Enrollment and discharge counts represent intervention episodes rather than unique individuals. Participants who receive multiple interventions or return for additional episodes of care may appear more than once.
+
+::: {custom-style="DHCS Table Caption"}
+`r table_titles$t2`
+:::
+
+```{r}
+#| label: t-enrollments
+t2 <- tibble(
+  label = c(paste0(round_levels, " (N=", grants, ")"), paste0("Across all Rounds (N=", grants_total, ")")),
+  start = fmt_count(c(table(enrolled$round)[round_levels], n_enrolled)),
+  end   = fmt_count(c(table(discharged$round)[round_levels], n_discharged))
+)
+dhcs_simple_table(t2, c("Grants providing direct services to participants",
+                        "Participants with an assigned intervention", "Participants with an intervention end date"),
+                  widths = c(3, 2.6, 2.6)) |>
+  align(j = 2:3, align = "center", part = "body") |>
+  set_table_properties(layout = "fixed", align = "center")
+```
+
+::: {custom-style="DHCS Table Caption Below"}
+`r table_titles$t2`
+:::
+
+::: {custom-style="DHCS Table Note"}
+Note: The across-all-rounds totals include `r n_phrase(unassigned_enrolled)` enrollment records and `r n_phrase(unassigned_discharged)` discharge records that are not assigned to a funding round.
+:::
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_both)`
+:::
+
+```{r}
+#| label: enrollment-check
+#| eval: !expr show_notes
+#| output: asis
+# Internal check: enrollment/discharge/participant counts under each counting rule
+by_round <- function(d) {
+  r <- as_round(d$funding_round)
+  c(setNames(as.integer(table(factor(r, levels = round_levels))), round_levels),
+    `Not assigned` = sum(is.na(r)), Total = nrow(d))
+}
+in_q2_window <- function(x) !is.na(x) & x >= period_start & x <= period_end
+dedupe_any   <- function(d) distinct(d, across(any_of(episode_keys)), .keep_all = TRUE)
+with_iv      <- discharge_raw |> filter(has_intervention(intervention_name))
+q2_rows      <- discharge_raw |> filter(in_q2_window(intervention_start))
+cap          <- function(x) !is.na(x) & x > period_end
+
+enroll_rules <- list(
+  "Enrollments: all rows in discharge_data_clean.csv" = discharge_raw,
+  "Enrollments: Q2 method (start date Jan 1, 2024 to period end; every row)" = q2_rows,
+  "Enrollments: Oct 8 draft (Q2 method + duplicate rows counted once)" = dedupe_any(q2_rows),
+  "Enrollments: assigned intervention (every row)" = with_iv,
+  "  … of which no start date" = with_iv |> filter(is.na(intervention_start)),
+  "  … of which start before period start" = with_iv |> filter(!is.na(intervention_start), intervention_start < period_start),
+  "  … of which start after period end" = with_iv |> filter(cap(intervention_start)),
+  "  … of which duplicate client + provider + intervention + start rows" = with_iv[duplicated(with_iv[intersect(episode_keys, names(with_iv))]), ],
+  "Enrollments: CURRENT SETTINGS (Table 2)" = enrolled,
+  "Discharges: Q2 method (start in window, has end date; every row)" = q2_rows |> filter(!is.na(intervention_end)),
+  "Discharges: Oct 8 draft (+ duplicate rows counted once)" = dedupe_any(q2_rows) |> filter(!is.na(intervention_end)),
+  "Discharges: assigned intervention, has end date (every row)" = with_iv |> filter(!is.na(intervention_end)),
+  "  … of which end date after period end" = with_iv |> filter(cap(intervention_end)),
+  "Discharges: CURRENT SETTINGS (Table 2)" = discharged,
+  "Participants (unduplicated): Q2 / Oct 8 method (start date in window)" =
+    all_raw |> filter(in_q2_window(intervention_start)) |> distinct(client_system_id, .keep_all = TRUE),
+  "Participants (unduplicated): CURRENT SETTINGS (demographics)" =
+    all_data |> distinct(client_system_id, .keep_all = TRUE)
+)
+check_tbl <- bind_rows(lapply(names(enroll_rules), function(nm)
+  as_tibble(as.list(by_round(enroll_rules[[nm]]))) |> mutate(Rule = nm, .before = 1))) |>
+  mutate(across(-Rule, fmt_n))
+ft_check <- flextable(check_tbl) |>
+  dhcs_theme(font_size = 8) |>
+  bold(i = ~ str_detect(Rule, "CURRENT"), part = "body") |>
+  align(j = -1, align = "right", part = "body") |>
+  width(j = 1, width = 3.6) |> width(j = 2:8, width = 0.77)
+show_table(ft_check, "Internal check: counts under each counting rule (unsuppressed; internal only)")
+```
+
+{{< pagebreak >}}
+
+## Participant Demographics and Characteristics
+
+This section presents an overview of the demographics and characteristics of participants who have been enrolled in an intervention through `r through_month`. Each variable includes a chart of the overall results, a chart comparing funding rounds, and a supporting data table showing results across all funding rounds (All Rounds) and for each funding round.
+
+Percentages in each table are calculated only among participants with valid responses for that variable after excluding "Don't Know," "Prefer Not to Answer," "Not Applicable," and missing responses. Therefore, denominators differ across tables and across funding rounds. Participants are included if they have an assigned intervention, and each participant is counted once. The All Rounds column also includes participants whose records are not yet assigned to a funding round, so round-level counts will not add up exactly to the All Rounds total. Counts from 1 to `r threshold - 1` are suppressed and shown as an asterisk (\*); a category with fewer than `r threshold` participants overall is suppressed across the whole row.`r if (isTRUE(params$complementary_suppression)) " Where only one value in a column would be suppressed, the next-smallest value in that column is suppressed as well so the hidden value cannot be calculated from the total." else ""`
+
+```{r}
+#| output: asis
+analyst_note("Data used: all_data (demo + discharge joined), clients with an assigned intervention", if (isTRUE(params$exclude_after_period_end)) paste0(" (interventions starting after ", through_date, " left out; no start date kept)") else "", ". Unduplicated: each table keeps one row per client_system_id (the first record with a valid response for that variable). Don't know / no selection / not applicable / prefer not to answer / blank are excluded and reported as % missing in each table's footnote (denominator = ",
+             fmt_n(n_participants), " distinct participants).")
+```
+
+```{r}
+#| label: demo-gender
+gender <- all_data |>
+  filter(!is_nonresponse(gender_identity)) |>
+  mutate(category = recode_by_pattern(gender_identity, gender_rules)) |>
+  make_demo(order = "freq", last = "Other")
+gender_cc <- chart_counts(gender, keep = c("Woman/girl", "Man/boy"), other_label = "Another gender identity")
+gender_other <- setdiff(gender$levels, c("Woman/girl", "Man/boy"))
+```
+
+{{< pagebreak >}}
+
+#### Gender Identity
+
+Among the `r fmt_n(gender$n_valid)` participants with a valid response, most identified as a woman/girl (`r pct_of(gender, "Woman/girl")`) or a man/boy (`r pct_of(gender, "Man/boy")`). About `r pct_of(gender, gender_other)` identified with another gender identity, including non-binary, transgender, genderqueer, and two-spirit.
+
+```{r}
+#| label: f-gender
+#| fig-width: 9
+#| fig-height: 3.9
+side_by_side(
+  chart_donut(gender_cc, "Gender Identity"),
+  chart_stacked(gender_cc, "Gender Identity")
+)
+```
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_demo)`
+:::
+
+{{< pagebreak >}}
+
+```{r}
+#| output: asis
+n_small <- sum(sapply(gender_other, function(cc) { s <- share_of(gender, cc); is.na(s) || s < 0.01 }))
+why_box(n_small, " of the ", length(gender$levels), " gender categories are under 1%, so they are combined into \"Another gender identity\" to keep the donut readable. The stacked bar replaces six separate pie charts, as the style guide recommends. Table 3 keeps the full detail.")
+```
+
+::: {custom-style="DHCS Table Title"}
+`r table_titles$t3`^[`r missing_note(gender, "Gender Identity")`]
+:::
+
+```{r}
+#| label: t-gender
+dhcs_round_table(demo_wide(gender), "Gender Identity")
+```
+
+::: {custom-style="DHCS Table Caption Below"}
+`r table_titles$t3`
+:::
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_demo)`
+:::
+
+```{r}
+#| label: demo-orientation
+orient <- all_data |>
+  filter(!is_nonresponse(sexual_orientation)) |>
+  mutate(category = recode_by_pattern(sexual_orientation, orientation_rules)) |>
+  make_demo(order = "freq", last = "Other")
+orient_overall <- orient$long |>
+  filter(group == "All Rounds", !sup, n > 0) |>
+  transmute(label = as.character(category), share = n / total)
+orient_other <- orient$long |>
+  filter(category == "Straight") |>
+  transmute(group, share = if_else(sup | total == 0, NA_real_, 1 - n / total))
+```
+
+{{< pagebreak >}}
+
+#### Sexual Orientation
+
+Among the `r fmt_n(orient$n_valid)` participants with a valid response, `r pct_of(orient, "Straight")` identified as straight and `r pct_of(orient, setdiff(orient$levels, "Straight"))` identified with another sexual orientation, most often `r top_phrase(orient, 2, exclude = c("Straight", "Other"), lower = TRUE, conj = "or")`.
+
+```{r}
+#| label: f-orientation
+#| fig-width: 9
+#| fig-height: 3.9
+side_by_side(
+  chart_hbar(orient_overall, "Sexual Orientation"),
+  chart_by_group(orient_other, "Other Than Straight, by Round")
+)
+```
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_demo)`
+:::
+
+{{< pagebreak >}}
+
+```{r}
+#| output: asis
+why_box("One category accounts for ", pct_of(orient, "Straight"), " of responses, so a pie chart would hide the smaller groups. The by-round column chart focuses on a single measure so differences between rounds are easy to see.")
+```
+
+::: {custom-style="DHCS Table Title"}
+`r table_titles$t4`^[`r missing_note(orient, "Sexual Orientation")`]
+:::
+
+```{r}
+#| label: t-orientation
+dhcs_round_table(demo_wide(orient), "Sexual Orientation")
+```
+
+::: {custom-style="DHCS Table Caption Below"}
+`r table_titles$t4`
+:::
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_demo)`
+:::
+
+```{r}
+#| label: demo-race
+race_res <- all_data |>
+  filter(!is_nonresponse(race), !is.na(code_num)) |>
+  mutate(category = code_label(code_num, race_codes)) |>
+  make_demo(order = "freq", last = "2 or more races selected")
+race_short <- c("Black or African American" = "Black/African American",
+                "Native American/American Indian or Alaska Native" = "Am. Indian/Alaska Native",
+                "Middle Eastern or North African" = "Middle Eastern/N. African",
+                "Native Hawaiian or Pacific Islander" = "Native Hawaiian/Pac. Isl.",
+                "2 or more races selected" = "2 or more races")
+race_overall <- race_res$long |>
+  filter(group == "All Rounds", !sup, n > 0) |>
+  transmute(label = coalesce(race_short[as.character(category)], as.character(category)), share = n / total)
+race_cc <- chart_counts(race_res, keep = c("Hispanic or Latino", "White", "Black or African American", "Asian"),
+                        other_label = "All other races")
+```
+
+{{< pagebreak >}}
+
+#### Race
+
+Among the `r fmt_n(race_res$n_valid)` participants with a valid response, the largest groups were `r top_phrase(race_res, 4, exclude = "2 or more races selected")`. About `r pct_of(race_res, "2 or more races selected")` selected two or more races.
+
+```{r}
+#| label: f-race
+#| fig-width: 9
+#| fig-height: 3.9
+side_by_side(
+  chart_hbar(race_overall, "Race"),
+  chart_stacked(race_cc, "Race", colours = c(dhcs_blue, dhcs_yellow, dhcs_teal, dhcs_orange, dhcs_gray))
+)
+```
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_demo)`
+:::
+
+{{< pagebreak >}}
+
+```{r}
+#| output: asis
+why_box("Race labels are long, which the style guide identifies as a reason to use a bar chart. The by-round chart groups the smallest categories into \"All other races\" to keep the comparison to five colors; Medium Gray keeps that group distinct from DHCS Blue.")
+```
+
+::: {custom-style="DHCS Table Title"}
+`r table_titles$t5`^[`r missing_note(race_res, "Race")`]
+:::
+
+```{r}
+#| label: t-race
+dhcs_round_table(demo_wide(race_res), "Race")
+```
+
+::: {custom-style="DHCS Table Caption Below"}
+`r table_titles$t5`
+:::
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_demo)`
+:::
+
+```{r}
+#| label: demo-ethnicity
+eth <- all_data |>
+  filter(!is_nonresponse(ethnicity), !is.na(ethn_num)) |>
+  mutate(category = code_label(ethn_num, ethn_codes)) |>
+  make_demo(order = "freq", last = "2+ ethnicities selected", small_rows = "drop")
+eth_top10 <- eth$long |>
+  filter(group == "All Rounds", !sup, n > 0) |>
+  arrange(desc(n)) |> slice_head(n = 10) |>
+  transmute(label = recode(as.character(category), "2+ ethnicities selected" = "2+ ethnicities"),
+            share = n / total)
+```
+
+{{< pagebreak >}}
+
+#### Ethnicity
+
+Among the `r fmt_n(eth$n_valid)` participants with a valid response, the most frequently reported ethnicities were `r top_phrase(eth, 2, exclude = "2+ ethnicities selected")`, followed by `r top_phrase(eth, 1, skip = 2, exclude = "2+ ethnicities selected")`. Ethnicity has a high rate of missing responses (`r fmt_pct(eth$pct_missing)`), so these results should be interpreted with caution.
+
+```{r}
+#| label: f-ethnicity
+#| fig-width: 7
+#| fig-height: 3.9
+#| fig-align: center
+chart_hbar(eth_top10, "Top 10 Reported Ethnicities", fill = dhcs_teal,
+           subtitle = paste0(chart_subtitle, " | ", fmt_pct(eth$pct_missing), " of responses missing"))
+```
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_demo)`
+:::
+
+{{< pagebreak >}}
+
+```{r}
+#| output: asis
+why_box("With ", length(eth$levels), " categories, small round-level counts, and ", fmt_pct(eth$pct_missing),
+        " missing responses, a by-round chart would be cluttered and heavily suppressed. The chart shows the top 10 ethnicities, and Table 6 carries the round-level detail.")
+```
+
+::: {custom-style="DHCS Table Title"}
+`r table_titles$t6`^[`r missing_note(eth, "Ethnicity")`]
+:::
+
+```{r}
+#| label: t-ethnicity
+dhcs_round_table(demo_wide(eth), "Ethnicity")
+```
+
+::: {custom-style="DHCS Table Caption Below"}
+`r table_titles$t6`
+:::
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_demo)`
+:::
+
+::: {custom-style="DHCS Table Note"}
+Note: `r if (length(eth$dropped) > 0) paste0("Ethnicities suppressed due to reporting rules: ", and_list(sort(eth$dropped)), ". ") else ""`Rows are sorted from highest to lowest overall percentage.
+:::
+
+```{r}
+#| label: demo-language
+lang <- all_data |>
+  filter(!is_nonresponse(primary_language)) |>
+  mutate(category = recode_by_pattern(primary_language, language_rules)) |>
+  make_demo(order = "freq", last = "Other", small_rows = "dash")
+lang_cc <- chart_counts(lang, keep = c("English", "Spanish"), other_label = "All other languages")
+```
+
+{{< pagebreak >}}
+
+#### Primary Language
+
+Most participants with a valid response reported English (`r pct_of(lang, "English")`) or Spanish (`r pct_of(lang, "Spanish")`) as their primary spoken language. About `r pct_of(lang, setdiff(lang$levels, c("English", "Spanish")))` reported another language; the most common specific languages were `r top_phrase(lang, 2, exclude = c("English", "Spanish", "Other"))`.
+
+```{r}
+#| label: f-language
+#| fig-width: 9
+#| fig-height: 3.9
+side_by_side(
+  chart_donut(lang_cc, "Primary Spoken Language"),
+  chart_stacked(lang_cc, "Primary Language")
+)
+```
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_demo)`
+:::
+
+{{< pagebreak >}}
+
+```{r}
+#| output: asis
+why_box("Two languages account for ", pct_of(lang, c("English", "Spanish")), " of responses. Grouping the rest keeps both charts to three segments and highlights rounds serving more non-English speakers, which supports language access planning.")
+```
+
+::: {custom-style="DHCS Table Title"}
+`r table_titles$t7`^[`r missing_note(lang, "Primary Language")`]
+:::
+
+```{r}
+#| label: t-language
+dhcs_round_table(demo_wide(lang), "Primary Language")
+```
+
+::: {custom-style="DHCS Table Caption Below"}
+`r table_titles$t7`
+:::
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_demo)`
+:::
+
+::: {custom-style="DHCS Table Note"}
+Note: "—" indicates a value suppressed due to reporting rules. Rows are sorted from highest to lowest overall percentage, with "Other" last.
+:::
+
+```{r}
+#| label: demo-insurance
+ins_levels <- c("Medi-Cal/Medicare", "Private insurance", "No insurance/Indigent", "Veteran's benefits", "Other")
+ins <- all_data |>
+  filter(!is_nonresponse(insurance_status)) |>
+  mutate(category = recode_by_pattern(insurance_status, insurance_rules, other = "Other")) |>
+  make_demo(order = "fixed", levels = ins_levels)
+ins_cc <- chart_counts(ins, keep = ins_levels[1:3], other_label = "Other (incl. veterans)")
+```
+
+{{< pagebreak >}}
+
+#### Insurance Status
+
+Most participants with a valid response were covered by Medi-Cal/Medicare (`r pct_of(ins, "Medi-Cal/Medicare")`). About `r pct_of(ins, "Private insurance")` had private insurance and `r pct_of(ins, "No insurance/Indigent")` had no insurance.
+
+```{r}
+#| label: f-insurance
+#| fig-width: 9
+#| fig-height: 3.9
+side_by_side(
+  chart_donut(ins_cc, "Insurance Status"),
+  chart_stacked(ins_cc, "Insurance Status")
+)
+```
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_demo)`
+:::
+
+{{< pagebreak >}}
+
+```{r}
+#| output: asis
+why_box("Insurance status is a part-to-whole measure with a small number of groups, which fits the style guide's criteria for a donut chart. Veteran's benefits (", pct_of(ins, "Veteran's benefits"), ") is combined with Other to avoid a sliver.")
+```
+
+::: {custom-style="DHCS Table Title"}
+`r table_titles$t8`^[`r missing_note(ins, "Insurance Status")`]
+:::
+
+```{r}
+#| label: t-insurance
+dhcs_round_table(demo_wide(ins), "Insurance")
+```
+
+::: {custom-style="DHCS Table Caption Below"}
+`r table_titles$t8`
+:::
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_demo)`
+:::
+
+```{r}
+#| label: demo-housing
+house_levels <- c("Housed", "Unhoused", "Other (such as a treatment facility)")
+house <- all_data |>
+  filter(!is_nonresponse(housing_status)) |>
+  mutate(category = recode_by_pattern(housing_status, housing_rules, other = house_levels[3])) |>
+  make_demo(order = "fixed", levels = house_levels)
+house_cc <- chart_counts(house)
+house_unhoused <- house$long |>
+  filter(category == "Unhoused") |>
+  transmute(group, share = if_else(sup | total == 0, NA_real_, n / total))
+```
+
+{{< pagebreak >}}
+
+#### Housing Status
+
+Most participants with a valid response were housed (`r pct_of(house, "Housed")`). About `r pct_of(house, "Unhoused")` were unhoused and `r pct_of(house, house_levels[3])` lived in another setting, such as a treatment facility.
+
+```{r}
+#| label: f-housing
+#| fig-width: 9
+#| fig-height: 3.9
+side_by_side(
+  chart_donut(house_cc, "Housing Status"),
+  chart_by_group(house_unhoused, "Participants Unhoused, by Round")
+)
+```
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_demo)`
+:::
+
+{{< pagebreak >}}
+
+```{r}
+#| output: asis
+why_box("Because ", pct_of(house, "Housed"), " of participants are housed, a stacked bar would make differences in the unhoused share hard to see. A single-measure column chart, with a neutral title, makes that comparison clear.")
+```
+
+::: {custom-style="DHCS Table Title"}
+`r table_titles$t9`^[`r missing_note(house, "Housing Status")`]
+:::
+
+```{r}
+#| label: t-housing
+dhcs_round_table(demo_wide(house), "Housing Status")
+```
+
+::: {custom-style="DHCS Table Caption Below"}
+`r table_titles$t9`
+:::
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_demo)`
+:::
+
+```{r}
+#| label: demo-ptype
+ptype_levels <- c("Child (0–15)", "Youth (16–25)", "Parent/Caregiver")
+ptype_rows <- all_data |>
+  filter(!is_nonresponse(client_type)) |>
+  mutate(category = recode_by_pattern(client_type, client_type_rules))
+ptype <- make_demo(ptype_rows, order = "fixed", levels = ptype_levels)
+ptype_cc <- chart_counts(ptype)
+```
+
+{{< pagebreak >}}
+
+#### Participant Type
+
+Children ages 0 to 15 made up most participants (`r pct_of(ptype, "Child (0–15)")`), followed by youth ages 16 to 25 (`r pct_of(ptype, "Youth (16–25)")`) and parents/caregivers (`r pct_of(ptype, "Parent/Caregiver")`).
+
+```{r}
+#| label: f-ptype
+#| fig-width: 9
+#| fig-height: 3.9
+side_by_side(
+  chart_donut(ptype_cc, "Participant Type"),
+  chart_stacked(ptype_cc, "Participant Type")
+)
+```
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_demo)`
+:::
+
+{{< pagebreak >}}
+
+```{r}
+#| output: asis
+why_box("This is the recommended lead visual for the section: differences in who each round serves help explain differences in the other demographic tables and in outcomes.")
+```
+
+::: {custom-style="DHCS Table Title"}
+`r table_titles$t10`^[Note: `r n_phrase(ptype$n_missing, cap = TRUE)` participant records had no participant type indicated. These records are excluded from the data above.]
+:::
+
+```{r}
+#| label: t-ptype
+dhcs_round_table(demo_wide(ptype), "Participant Type")
+```
+
+::: {custom-style="DHCS Table Caption Below"}
+`r table_titles$t10`
+:::
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_demo)`
+:::
+
+```{r}
+#| label: demo-age
+age_rows <- ptype_rows |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  mutate(round = as_round(funding_round),
+         age = case_when(
+           age_at_start_of_treatment_in_years %in% c("No Age Provided", "", " ") ~ NA_character_,
+           TRUE ~ as.character(age_at_start_of_treatment_in_years)
+         ) |> as.numeric() |> suppressWarnings()) |>
+  filter(!is.na(age), category %in% ptype_levels)
+
+age_long <- bind_rows(
+  age_rows |> group_by(category) |> summarise(n = n(), mean_age = mean(age), .groups = "drop") |>
+    mutate(group = "All Rounds"),
+  age_rows |> filter(!is.na(round)) |> mutate(group = as.character(round)) |>
+    group_by(group, category) |> summarise(n = n(), mean_age = mean(age), .groups = "drop")
+) |>
+  complete(group = grp_levels, category = ptype_levels, fill = list(n = 0L)) |>
+  mutate(group = factor(group, levels = grp_levels), category = factor(category, levels = ptype_levels)) |>
+  arrange(group, category) |>
+  group_by(group) |> mutate(total = sum(n)) |> ungroup() |>
+  suppress_long() |>
+  mutate(mean_shown = if_else(sup, NA_real_, mean_age))
+
+age_mean <- function(type) {
+  x <- age_long |> filter(group == "All Rounds", category == type)
+  if (nrow(x) == 0 || is.na(x$mean_shown)) "—" else fmt_num(x$mean_shown)
+}
+
+age_wide <- bind_rows(
+  age_long |> mutate(category = as.character(category),
+                     a = case_when(row_sup | n == 0 ~ "—", sup ~ "*", TRUE ~ fmt_num(mean_age)),
+                     b = case_when(row_sup ~ "—", sup ~ "*", TRUE ~ fmt_n(n))),
+  age_long |> distinct(group, total) |>
+    mutate(category = "TOTAL", a = "N/A", b = if_else(total > 0 & total < threshold, "*", fmt_n(total)))
+) |>
+  mutate(key = grp_key[as.character(group)]) |>
+  select(category, key, a, b) |>
+  pivot_wider(names_from = key, values_from = c(a, b), names_glue = "{key}_{.value}") |>
+  mutate(.ord = match(category, c(ptype_levels, "TOTAL"))) |> arrange(.ord) |> select(-.ord)
+```
+
+{{< pagebreak >}}
+
+#### Average Age
+
+The average age was `r age_mean("Child (0–15)")` years for children, `r age_mean("Youth (16–25)")` years for youth, and `r age_mean("Parent/Caregiver")` years for parents/caregivers.
+
+```{r}
+#| label: f-age
+#| fig-width: 9
+#| fig-height: 3.9
+age_overall <- chart_cols(age_long |> filter(group == "All Rounds") |> transmute(label = category, value = mean_shown),
+           "Average Age by Participant Type", ylab = "Average age (years)", pct = FALSE)
+
+age_cols <- setNames(c(dhcs_blue, dhcs_yellow, dhcs_teal), ptype_levels)
+age_rounds <- age_long |>
+  filter(group != "All Rounds") |>
+  mutate(lab = if_else(is.na(mean_shown), "*", fmt_num(mean_shown, chart_digits))) |>
+  ggplot(aes(x = group, y = coalesce(mean_shown, 0), fill = category)) +
+  geom_col(position = position_dodge(0.8), width = 0.75) +
+  geom_text(aes(label = lab), position = position_dodge(0.8), vjust = -0.4, size = 2.3,
+            fontface = "bold", colour = dhcs_blue, family = chart_font) +
+  scale_fill_manual(values = age_cols) +
+  scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.12))) +
+  labs(title = "Average Age by Type and Round", subtitle = chart_subtitle, x = NULL, y = "Average age (years)") +
+  theme_dhcs() + theme(axis.line.x = element_line(colour = "#7F7F7F", linewidth = 0.3))
+side_by_side(age_overall, age_rounds)
+```
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_demo)`
+:::
+
+{{< pagebreak >}}
+
+```{r}
+#| output: asis
+why_box("Average age compares values rather than parts of a whole, so column charts are used and pie charts are not. The vertical axis starts at zero to avoid exaggerating differences.")
+```
+
+::: {custom-style="DHCS Table Title"}
+`r table_titles$t11`^[Exact age is not a required field in eInsight, which accounts for the large discrepancy in the total count between this and the 'Participant Type' variable.]
+:::
+
+```{r}
+#| label: t-age
+dhcs_round_table(age_wide, "Participant Type", sub = c("Age", "N"))
+```
+
+::: {custom-style="DHCS Table Caption Below"}
+`r table_titles$t11`
+:::
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_demo)`
+:::
+
+::: {custom-style="DHCS Table Note"}
+Note: "Age" is the average age in years for participants with a recorded exact age.
+:::
+
+```{r}
+#| label: demo-education
+edu_levels <- c("Less than high school", "High school", "College", "More than college")
+edu <- all_data |>
+  filter(!is_nonresponse(highest_caregiver_education_level)) |>
+  mutate(category = recode_by_pattern(highest_caregiver_education_level, education_rules)) |>
+  make_demo(order = "fixed", levels = edu_levels)
+edu_cc <- chart_counts(edu)
+```
+
+{{< pagebreak >}}
+
+#### Caregiver Highest Level of Education
+
+Among the `r fmt_n(edu$n_valid)` parents/caregivers with a valid response, `r pct_of(edu, "High school")` reported high school as their highest level of education. About `r pct_of(edu, "Less than high school")` had less than a high school education, and `r pct_of(edu, c("College", "More than college"))` had a college education or higher.
+
+```{r}
+#| label: f-education
+#| fig-width: 9
+#| fig-height: 3.9
+side_by_side(
+  chart_cols(edu$long |> filter(group == "All Rounds") |> transmute(label = category, value = n_shown / total),
+             "Caregiver Highest Level of Education", fill = dhcs_teal, ylab = "Percent of caregivers"),
+  chart_stacked(edu_cc, "Caregiver Education", colours = c(dhcs_blue, dhcs_teal, dhcs_yellow, dhcs_orange),
+                xlab = "Percent of caregivers")
+)
+```
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_demo)`
+:::
+
+{{< pagebreak >}}
+
+```{r}
+#| output: asis
+why_box("Education levels have a natural order, so categories stay in order rather than being sorted by value, and the by-round chart uses the style guide's four-color sequential palette.")
+```
+
+::: {custom-style="DHCS Table Title"}
+`r table_titles$t12`^[Caregiver Highest Level of Education is only collected for participant type 'parent/caregiver' and is not a required metric, which accounts for the low count when 'Not Applicable' values are excluded.]
+:::
+
+```{r}
+#| label: t-education
+dhcs_round_table(demo_wide(edu), "Highest Level of Education")
+```
+
+::: {custom-style="DHCS Table Caption Below"}
+`r table_titles$t12`
+:::
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_demo)`
+:::
+
+```{r}
+#| label: discharge-reasons
+disc <- discharged |>
+  mutate(reason = recode_by_pattern(reason_for_discharge, discharge_rules, other = "Other"))
+lv13 <- c("Successful Completion", "Withdrew from/refused treatment",
+          "No contact within 90 days of last encounter", "Clinically referred out")
+
+# 13a: all discharges with a reason; "No Reason Selected" excluded; Other + Death combined
+d13a <- disc |>
+  filter(!is.na(reason), reason != "No Reason Selected") |>
+  mutate(category = if_else(reason %in% c("Other", "Death"), "Other/Death", reason))
+long13a <- count_long(d13a, c(lv13, "Other/Death")) |> suppress_long() |> filter(group == "All Rounds")
+t13a <- bind_rows(
+  long13a |> transmute(category = as.character(category),
+                       pct = if_else(sup, "*", fmt_pct(n / total)), n = if_else(sup, "*", fmt_n(n))),
+  tibble(category = "TOTAL", pct = "100.0%", n = fmt_n(long13a$total[1]))
+)
+
+# 13b: every discharge, by round; Other = Other + Death + No Reason Selected + blank
+d13b <- disc |>
+  mutate(category = if_else(is.na(reason) | reason %in% c("Other", "Death", "No Reason Selected"), "Other", reason))
+res13b <- list(long = count_long(d13b, c(lv13, "Other")) |> suppress_long(),
+               levels = c(lv13, "Other"), small_rows = "dash")
+```
+
+{{< pagebreak >}}
+
+## Reasons for Discharge
+
+```{r}
+#| output: asis
+analyst_note("Data used: discharge_data episodes with an intervention end date. Raw reason_for_discharge values are mapped by pattern (see crosswalk in the appendix). Table 13a excludes 'No Reason Selected' (consistent with SQ 2.00); Table 13b keeps every discharge and folds 'No Reason Selected' and blanks into Other, so its round totals match Table 2.")
+```
+
+::: {custom-style="DHCS Table Caption"}
+`r table_titles$t13a`^[Data in this table do not include unique participant counts because participants can have multiple interventions and therefore multiple discharge reasons. Successful Completion indicates that the provider and participant agreed that the treatment/intervention has been successful, and discharge is appropriate. The value option in eInsight is 'Mutually agreed to cessation of treatment (Successful Completion)'.]
+:::
+
+```{r}
+#| label: t-discharge-overall
+dhcs_simple_table(t13a, c("Reason for Discharge – Overall", "%", "N"), widths = c(4, 1.3, 1.3),
+                  align_right = 2:3) |>
+  set_table_properties(layout = "fixed", align = "center")
+```
+
+::: {custom-style="DHCS Table Caption Below"}
+`r table_titles$t13a`
+:::
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_clin)`
+:::
+
+{{< pagebreak >}}
+
+::: {custom-style="DHCS Table Caption"}
+`r table_titles$t13b`^[Note: `r n_phrase(unassigned_discharged, cap = TRUE)` discharged participant records were not assigned to a funding round, so they are not reported in this table. The 'Other' reason for discharge combines 'Other', 'No Reason Selected', 'Death', and records with no reason recorded.]
+:::
+
+```{r}
+#| label: t-discharge-round
+dhcs_round_table(demo_wide(res13b, groups = round_levels), "Reason for Discharge by Round",
+                 groups = round_levels, show_grants = FALSE)
+```
+
+::: {custom-style="DHCS Table Caption Below"}
+`r table_titles$t13b`
+:::
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_clin)`
+:::
+
+```{r}
+#| label: outcomes-compute
+outcome_levels <- c("worsened", "no_change", "improved")
+
+score_stats <- function(long) {
+  long |>
+    filter(!is.na(score_value)) |>
+    group_by(score_type) |>
+    summarise(mean = round(mean(score_value, na.rm = TRUE), 2),
+              median = median(score_value, na.rm = TRUE),
+              sd = round(sd(score_value, na.rm = TRUE), 2),
+              n = sum(!is.na(score_value)), .groups = "drop")
+}
+to_long <- function(df, initial, follow_up) {
+  df |>
+    select(client_system_id, all_of(c(initial, follow_up))) |>
+    pivot_longer(all_of(c(initial, follow_up)), names_to = "score_type", values_to = "score_value") |>
+    mutate(score_type = factor(if_else(score_type == initial, "Initial", "Follow-up"),
+                               levels = c("Initial", "Follow-up")))
+}
+
+# 3.03 / 3.04 — NOMS Q1, single item, range 1–5 (same logic as the Q2 report)
+noms_single <- function(pairs, q) {
+  data <- pairs |> filter(question == q)
+  scored <- data |>
+    mutate(
+      positive_outcome = case_when(
+        is.na(follow_up_score) | is.na(initial_score) ~ NA_character_,
+        follow_up_score > initial_score ~ "improved",
+        follow_up_score < initial_score ~ "worsened",
+        TRUE ~ "no_change"
+      ),
+      positive_outcome = factor(positive_outcome, levels = outcome_levels)
+    ) |>
+    filter(!is.na(positive_outcome))
+  long <- data |>
+    filter(!is.na(client_system_id), !is.na(initial_score), !is.na(follow_up_score)) |>
+    to_long("initial_score", "follow_up_score")
+  list(outcome = scored$positive_outcome,
+       tabyl = scored |> tabyl(positive_outcome) |> adorn_pct_formatting(digits = 0),
+       stats = score_stats(long),
+       pct = data |>
+         summarise(initial_4_5  = round(100 * mean(initial_score[!is.na(initial_score)]     %in% c(4, 5)), 2),
+                   followup_4_5 = round(100 * mean(follow_up_score[!is.na(follow_up_score)] %in% c(4, 5)), 2)))
+}
+
+# 3.05–3.10 — NOMS Q2–Q4 subscales, summed items (same logic as the Q2 report)
+noms_subscale <- function(pairs, prefix, lo, hi, cutoff) {
+  diff <- pairs |>
+    filter(str_detect(question, paste0("^", prefix, ".*_score$")),
+           !is.na(initial_score), !is.na(follow_up_score), !is.na(client_system_id)) |>
+    group_by(client_system_id) |>
+    summarise(initial_total  = sum(initial_score, na.rm = TRUE),
+              followup_total = sum(follow_up_score, na.rm = TRUE),
+              positive_outcome = case_when(
+                followup_total > initial_total ~ "improved",
+                followup_total < initial_total ~ "worsened",
+                TRUE ~ "no_change"
+              ),
+              positive_outcome = factor(positive_outcome, levels = outcome_levels),
+              .groups = "drop") |>
+    distinct(client_system_id, .keep_all = TRUE) |>
+    filter(between(initial_total, lo, hi), between(followup_total, lo, hi))
+  list(outcome = diff$positive_outcome,
+       tabyl = diff |> filter(!is.na(positive_outcome)) |> tabyl(positive_outcome) |> adorn_pct_formatting(digits = 0),
+       stats = score_stats(to_long(diff, "initial_total", "followup_total")),
+       pct = diff |>
+         summarise(!!paste0("initial_", cutoff)  := round(100 * mean(initial_total >= cutoff), 2),
+                   !!paste0("followup_", cutoff) := round(100 * mean(followup_total >= cutoff), 2)))
+}
+
+q303 <- noms_single(pairs_primary_long_child, "q1_how_would_you_rate_your_child_s_overall_mental_health_right_now_score")
+q304 <- noms_single(pairs_primary_long_self,  "q1_how_would_you_rate_your_overall_mental_health_right_now_score")
+q305 <- noms_subscale(pairs_primary_long_child, "x2", 7, 35, 28)
+q306 <- noms_subscale(pairs_primary_long_self,  "x2", 7, 35, 28)
+q307 <- noms_subscale(pairs_primary_long_child, "x3", 7, 35, 28)
+q308 <- noms_subscale(pairs_primary_long_self,  "x3", 7, 35, 28)
+q309 <- noms_subscale(pairs_primary_long_child, "x4", 6, 30, 24)
+q310 <- noms_subscale(pairs_primary_long_self,  "x4", 6, 30, 24)
+
+# 3.12 PSS and 3.15 CPSS-5 (positive_outcome comes precomputed in the paired files)
+paired_summary <- function(paired) {
+  list(tabyl = paired |> filter(!is.na(positive_outcome)) |> tabyl(positive_outcome) |> adorn_pct_formatting(digits = 0),
+       stats = paired |>
+         filter(!is.na(client_system_id), !is.na(initial_score), !is.na(follow_up_score)) |>
+         to_long("initial_score", "follow_up_score") |> score_stats(),
+       paired = paired)
+}
+q312  <- paired_summary(pss_paired)
+q315i <- paired_summary(cpss_i_paired)
+q315s <- paired_summary(cpss_s_paired)
+
+# positive_outcome may be text ("improved"/"positive"/"yes"), logical, or 0/1
+is_positive <- function(x) {
+  if (is.logical(x)) return(x)
+  if (is.numeric(x)) return(x == 1)
+  x <- str_to_lower(str_trim(as.character(x)))
+  if_else(is.na(x), NA, str_detect(x, "^(improv|positiv|yes|true|1$)"))
+}
+
+outcome_row <- function(domain, reporter, outcome) {
+  outcome <- outcome[!is.na(outcome)]
+  n <- length(outcome)
+  p <- function(l) if (n == 0) "—" else if (n < threshold) "*" else fmt_pct(mean(outcome == l), 0)
+  tibble(domain = domain, reporter = reporter,
+         n = if (n == 0) "—" else if (n < threshold) "*" else fmt_n(n),
+         worsened = p("worsened"), no_change = p("no_change"), improved = p("improved"))
+}
+t14 <- bind_rows(
+  outcome_row("Mental health",          "Caregiver-rated youth", q303$outcome),
+  outcome_row("Mental health",          "Self-report",           q304$outcome),
+  outcome_row("Daily life functioning", "Caregiver-rated youth", q305$outcome),
+  outcome_row("Daily life functioning", "Self-report",           q306$outcome),
+  outcome_row("General well-being",     "Caregiver-rated youth", q307$outcome),
+  outcome_row("General well-being",     "Self-report",           q308$outcome),
+  outcome_row("Social connectedness",   "Caregiver-rated youth", q309$outcome),
+  outcome_row("Social connectedness",   "Self-report",           q310$outcome)
+)
+
+paired_row <- function(measure, reporter, res, range) {
+  ini <- res$stats |> filter(score_type == "Initial")
+  fu  <- res$stats |> filter(score_type == "Follow-up")
+  n   <- if (nrow(ini) == 0) 0 else ini$n
+  pos <- is_positive(res$paired$positive_outcome)
+  pos <- pos[!is.na(pos)]
+  small <- n < threshold
+  chg <- function(a, b) paste0(fmt_num(a), " → ", fmt_num(b), "\nRange: ", range)
+  tibble(measure = measure, reporter = reporter,
+         n = if (n == 0) "—" else if (small) "*" else fmt_n(n),
+         direction = "Lower = better",
+         mean   = if (small) "*" else chg(ini$mean, fu$mean),
+         median = if (small) "*" else chg(ini$median, fu$median),
+         pos    = if (small || length(pos) == 0) "*" else fmt_pct(mean(pos), 0))
+}
+t15 <- bind_rows(
+  paired_row("Child/Youth PTSD Symptoms/Severity (CPSS-5)", "Interviewer-rated youth aged 8–18", q315i, "0–80"),
+  paired_row("Child/Youth PTSD Symptoms/Severity (CPSS-5)", "Self-report youth aged 8–18",       q315s, "0–80")
+)
+t16 <- paired_row("Parent-related stress (PSS)", "Self-report caregiver/parent aged 18 or older", q312, "18–90")
+paired_labels <- c("Domain and Measure details", "Reporter", "Paired N (Initial/ Most Recent Follow-up)",
+                   "Direction", "Mean (Initial → Most Recent Follow-up)",
+                   "Median (Initial → Most Recent Follow-up)",
+                   "% with a positive outcome from Initial to Most Recent Follow-up")
+paired_widths <- c(1.6, 1.5, 1.0, 0.9, 1.35, 1.35, 1.3)
+```
+
+{{< pagebreak >}}
+
+## Participant Outcomes (Pre and Post Measures)
+
+This section summarizes within-participant changes in clinical and functional outcomes from the initial assessment to the most recent follow-up among participants with outcomes data available at both time points (paired assessments). To improve readability, results are organized by outcome domain (functional outcomes, symptom/stress outcomes, and assessing equitable impact: exploratory subgroup analyses) rather than by individual evaluation questions.
+
+Because paired sample sizes vary by measure and because outcome tools differ in scale and distribution, results are presented using the highest feasible level of evidence for each measure:
+
+- **Tier 1 (Descriptive paired change):** Paired pre/post descriptive change (e.g., mean/median change and distribution summaries) when sample sizes are smaller and/or tests are not appropriate.
+- **Tier 2 (Distribution shifts/categorical outcomes):** Paired shifts in response distributions or percent meeting a "positive outcome" definition; interpret as preliminary unless a paired test is explicitly noted.
+
+These interim findings provide early evidence on outcome trajectories among participants served, but they do not yet establish whether observed changes can be attributed to the Workstream, nor do they fully answer all the evaluation study questions focused on Workstream impact. Assessing "impact" requires additional analytic steps, including stronger baseline/contextual comparisons, adjustment for differences in participant characteristics and service exposure, and (where feasible) comparison to appropriate reference groups or historical trends.
+
+::: {custom-style="DHCS Caution"}
+**Interpretation cautions.**
+
+• NOMS subscales do not have established clinical cutoffs or a reliable change index; improvements are summarized using mean/median shifts and the share rating 4–5.
+
+• Not all grantees administer the same tools, and not all participants have both initial and discharge assessments; results reflect the subset with available data.
+
+• Some measures are reported with more than one "positive outcome" definition (e.g., YOQ results with/without a reliable change requirement); interpret comparisons accordingly.
+
+• Exploratory subgroup models are descriptive and may be affected by missing data and measurement differences across programs.
+:::
+
+```{r}
+#| output: asis
+analyst_note("Inclusion criteria: 1. must have initial time point data; 2. must have a valid assessment at both intake and discharge; 3. limited to tools with a clinical cut-off. Paired to the last follow-up. NAs excluded before computing percentages. NOMS Q2–Q4 subscales are sums of items, kept only when both totals fall inside the valid range (7–35 or 6–30). The per-question detail tables (summary statistics, % scoring 4–5 / at or above the cutoff) and the SDQ results are in the analyst appendix.")
+```
+
+### Functional outcomes: NOMS subscales
+
+NOMS subscales are used to describe functional change over the course of services. The table below summarizes baseline and follow-up results across NOMS domains.
+
+::: {custom-style="DHCS Table Caption"}
+`r table_titles$t14`^[The mental health domain includes just one (1) statement: 'How would you rate your overall mental health/your child's overall mental health right now?' (unlike the other domains that include multiple statements).]
+:::
+
+```{r}
+#| label: t-noms
+dhcs_simple_table(t14, c("NOMS Domain", "Reporter", "Paired N (Initial/ Most Recent Follow-up)",
+                         "Worsened", "No Change", "Improved"),
+                  widths = c(2, 1.9, 1.6, 1.15, 1.15, 1.15), bold_last = FALSE) |>
+  merge_v(j = 1, part = "body") |>
+  align(j = 3:6, align = "center", part = "body") |>
+  border_inner_h(border = fp_border(color = "black", width = 0.5), part = "body") |>
+  set_table_properties(layout = "fixed", align = "center")
+```
+
+::: {custom-style="DHCS Table Caption Below"}
+`r table_titles$t14`
+:::
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_clin)`
+:::
+
+### Clinical outcomes: Decrease in PTSD Symptoms
+
+::: {custom-style="DHCS Table Caption"}
+`r table_titles$t15`
+:::
+
+```{r}
+#| label: t-cpss
+dhcs_simple_table(t15, paired_labels, widths = paired_widths, bold_last = FALSE) |>
+  merge_v(j = 1, part = "body") |>
+  align(j = 3:7, align = "center", part = "body") |>
+  set_table_properties(layout = "fixed", align = "center")
+```
+
+::: {custom-style="DHCS Table Caption Below"}
+`r table_titles$t15`
+:::
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_clin)`
+:::
+
+### Decrease in Parental Stress
+
+::: {custom-style="DHCS Table Caption"}
+`r table_titles$t16`
+:::
+
+```{r}
+#| label: t-pss
+dhcs_simple_table(t16, paired_labels, widths = paired_widths, bold_last = FALSE) |>
+  align(j = 3:7, align = "center", part = "body") |>
+  set_table_properties(layout = "fixed", align = "center")
+```
+
+::: {custom-style="DHCS Table Caption Below"}
+`r table_titles$t16`
+:::
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_clin)`
+:::
+
+```{r}
+#| label: setup-outcomes
+# "Including no change" outcome rules (from the Q2 report); used for the
+# met-treatment-goals RBA and the appendix.
+assessment_rules <- tibble::tribble(
+  ~trimmed_pre_assessment_name, ~higher_is_better, ~min_change,
+  "Basis-24",  FALSE, 0.001, # weighted 0–4 scale; any positive change counts
+  "CATS",      FALSE, 1,
+  "GAD-7",     FALSE, 1,
+  "NOMS",      TRUE,  1,
+  "Pediatric", FALSE, 1,
+  "PHQ-9",     FALSE, 1,
+  "PSS",       FALSE, 1,
+  "SDQ",       FALSE, 1,
+  "YOQ",       FALSE, 10
+)
+
+discharge_outcome <- discharge_data |>
+  left_join(assessment_rules, by = "trimmed_pre_assessment_name") |>
+  mutate(
+    raw_change    = post_score - pre_score,
+    better_change = if_else(higher_is_better, raw_change, -raw_change),
+    min_change    = coalesce(min_change, 0),
+    outcome = case_when(
+      is.na(pre_score) | is.na(post_score) ~ NA_character_,
+      better_change >=  min_change ~ "improved",
+      better_change <= -min_change ~ "worsened",
+      TRUE                         ~ "no_change"
+    ),
+    outcome = factor(outcome, levels = c("worsened", "no_change", "improved"))
+  )
+
+# Met treatment goals: Successful Completion AND a simple pre/post improvement
+# in the tool's positive direction (footnote definition). Rows need a discharge
+# reason (not "No Reason Selected") and a tool with a known direction.
+goals_base <- discharge_outcome |>
+  mutate(reason = recode_by_pattern(reason_for_discharge, discharge_rules, other = "Other")) |>
+  filter(!is.na(better_change), !is.na(reason), reason != "No Reason Selected")
+pct_met <- mean(goals_base$reason == "Successful Completion" & goals_base$better_change > 0)
+```
+
+```{r}
+#| label: setup-satisfaction
+sat_all <- read_csv(params$satisfaction_data_path, show_col_types = FALSE)
+
+# Unified Q1 score — coalesce across three survey-specific Q1 columns
+sat_all <- sat_all |>
+  mutate(
+    q1_score = coalesce(
+      x1_overall_i_am_satisfied_with_the_services_my_child_received_score,
+      x1_overall_i_am_satisfied_with_the_services_i_received_score,
+      x1_i_like_the_services_that_i_received_here_score
+    )
+  )
+
+all_data_distinct <- all_data |>
+  distinct(client_system_id, .keep_all = TRUE) |>
+  mutate(
+    provider_system_id = as.character(provider_system_id),
+    client_system_id   = as.character(client_system_id)
+  )
+
+sat_all_data <- sat_all |>
+  mutate(
+    provider_system_id = as.character(provider_system_id),
+    client_system_id   = as.character(client_system_id)
+  ) |>
+  left_join(all_data_distinct,
+            by = c("provider", "provider_id", "provider_system_id", "client_system_id")) |>
+  filter(!is.na(intervention_name))
+
+# Survey item columns only (taken from the survey file, so score columns that
+# arrive with the join aren't counted; q1_score is a copy of an x1 column)
+score_cols <- setdiff(names(sat_all)[str_detect(names(sat_all), "_score$")], "q1_score")
+
+sat_round <- sat_all_data |> mutate(round = as_round(funding_round))
+sat_by_round <- sat_round |>
+  filter(!is.na(round)) |>
+  group_by(round) |>
+  summarise(n_surveys = n(), n_q1 = sum(!is.na(q1_score)), n_high = sum(q1_score %in% c(4, 5)),
+            .groups = "drop") |>
+  complete(round, fill = list(n_surveys = 0L, n_q1 = 0L, n_high = 0L))
+n_surveys        <- sum(sat_by_round$n_surveys)
+pct_q1           <- sum(sat_by_round$n_high) / sum(sat_by_round$n_q1)
+n_sat_unassigned <- sum(is.na(sat_round$round))
+
+pref_col <- "were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response"
+sat_assigned <- sat_round |> filter(!is.na(round))
+pref_yes <- if (pref_col %in% names(sat_assigned)) {
+  str_detect(sat_assigned[[pref_col]], regex("^\\s*yes", ignore_case = TRUE))
+} else rep(NA, nrow(sat_assigned))
+pct_pref          <- sum(pref_yes, na.rm = TRUE) / nrow(sat_assigned)   # definition: out of all surveys
+pct_pref_answered <- mean(pref_yes, na.rm = TRUE)                       # alternative: out of those who answered
+```
+
+### Results-Based Accountability Metrics (RBAs)
+
+```{r}
+#| output: asis
+analyst_note("High satisfaction = Q1 answered 4 or 5, among surveys with Q1 answered; Number of Surveys = surveys joined to a client with an intervention and a funding round. Preferred language = 'Yes' out of all of those surveys (per the definition: ", fmt_pct(pct_pref), "); out of surveys that answered the item it is ", fmt_pct(pct_pref_answered), ". Met treatment goals uses discharge_data assessment rows with a known tool direction and a discharge reason (n = ", fmt_n(nrow(goals_base)), ").")
+```
+
+::: {custom-style="DHCS Table Caption"}
+`r table_titles$t17`^[Two criteria must be met for a client/individual to have 'met treatment goals': 1) a discharge reason of Mutually agreed to cessation of treatment and 2) an improvement according to pre and post measures collected (i.e., the NOMS sub-scales). For this metric, a simple difference between the pre and post score (in the positive direction depending on the tool) is used to determine a positive outcome.]
+:::
+
+```{r}
+#| label: t-rba
+t17 <- tibble(
+  metric = c("Number of participants enrolled in an EBP/CDEP",
+             "Percentage of participants that report high satisfaction",
+             "Percentage of participants receiving services in preferred language",
+             "Number of clients/participants who met treatment goals"),
+  value = c(fmt_n(n_enrolled),
+            paste0("Number of Surveys: ", fmt_n(n_surveys), "\nRBA Metric: ", fmt_pct(pct_q1)),
+            paste0("Number of Surveys: ", fmt_n(n_surveys), "\nRBA Metric: ", fmt_pct(pct_pref, 0)),
+            paste0("RBA Metric: ", fmt_pct(pct_met, 0)))
+)
+dhcs_simple_table(t17, c("RBA Metric", paste("Through", through_month)), widths = c(5, 3), bold_last = FALSE) |>
+  align(j = 2, align = "center", part = "body") |>
+  set_table_properties(layout = "fixed", align = "center")
+```
+
+::: {custom-style="DHCS Table Caption Below"}
+`r table_titles$t17`
+:::
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_clin)`
+:::
+
+{{< pagebreak >}}
+
+## Satisfaction Survey Results
+
+This section displays the results of the satisfaction survey completed by participants.
+
+::: {custom-style="DHCS Table Caption"}
+`r table_titles$t18`^[Note: `r n_phrase(n_sat_unassigned, cap = TRUE)` surveys had no funding round selected, so they are not included in this table; percentage satisfied was based on answering a 4 or 5 (agree or strongly agree) for question 1, "Overall, I am satisfied with the services I received" / "I like the services I received here."]
+:::
+
+```{r}
+#| label: t-satisfaction
+t18 <- bind_rows(
+  sat_by_round |> mutate(round = as.character(round)),
+  tibble(round = "Overall", n_surveys = n_surveys, n_q1 = sum(sat_by_round$n_q1), n_high = sum(sat_by_round$n_high))
+) |>
+  transmute(round,
+            n = if_else(n_surveys > 0 & n_surveys < threshold, "*", fmt_n(n_surveys)),
+            pct = case_when(n_q1 == 0 ~ "—", n_surveys < threshold ~ "*", TRUE ~ fmt_pct(n_high / n_q1)))
+dhcs_simple_table(t18, c("Round", "Number of Surveys", "Percentage Satisfied"), widths = c(2.2, 2.6, 2.6)) |>
+  align(j = 2:3, align = "center", part = "body") |>
+  set_table_properties(layout = "fixed", align = "center")
+```
+
+::: {custom-style="DHCS Table Caption Below"}
+`r table_titles$t18`
+:::
+
+::: {custom-style="DHCS Data Note"}
+`r source_note(ds_sat)`
+:::
+
+```{r}
+#| output: asis
+if (show_notes) {
+  cat('\n\n```{=openxml}\n<w:p><w:r><w:br w:type="page"/></w:r></w:p>\n```\n\n',
+      "## Analyst Appendix (Internal Only)\n\n",
+      "::: {custom-style=\"DHCS Internal Note\"}\n",
+      "**Internal only — do not publish.** This appendix appears only when `show_notes: true`. ",
+      "The crosswalk shows UNSUPPRESSED counts so the label mapping can be checked; the remaining tables carry over detail from the Q2 report that is not part of the Q3 layout.\n",
+      ":::\n\n", sep = "")
+}
+```
+
+```{r}
+#| label: appendix-setup
+#| eval: !expr show_notes
+# Q2 suppression helpers, kept for the appendix tables -------------------------------
+suppress_labeled_counts <- function(labels, counts, threshold = 11, total_label = "Total") {
+  is_total <- labels == total_label
+  is_small <- !is.na(counts) & counts < threshold & !is_total
+  any_small <- any(is_small)
+  out <- ifelse(!is.na(counts) & counts < threshold,
+                paste0("<", threshold), format(counts, big.mark = ","))
+  if (any_small) out[is_total] <- paste0("<", threshold)
+  list(display = out, suppressed = is_small | (any_small & is_total))
+}
+apply_suppression <- function(tabyl_df, label_col = 1, n_col = "n", pct_col = "percent") {
+  labels <- tabyl_df[[label_col]]
+  counts <- tabyl_df[[n_col]]
+  sup <- suppress_labeled_counts(labels, counts, threshold = threshold)
+  tabyl_df[[n_col]] <- sup$display
+  tabyl_df[[pct_col]] <- ifelse(sup$suppressed, "suppressed", tabyl_df[[pct_col]])
+  tabyl_df
+}
+dhcs_crosstab <- function(data, row_var, col_var, threshold = 11) {
+  row_var <- rlang::ensym(row_var)
+  col_var <- rlang::ensym(col_var)
+  counts <- data |>
+    filter(!is.na(!!row_var), !is.na(!!col_var)) |>
+    count(!!row_var, !!col_var, name = "n") |>
+    pivot_wider(names_from = !!col_var, values_from = n, values_fill = 0)
+  group_cols <- setdiff(names(counts), rlang::as_string(row_var))
+  totals <- counts |>
+    summarise(across(all_of(group_cols), sum)) |>
+    mutate(!!row_var := "Total")
+  full <- bind_rows(counts |> mutate(!!row_var := as.character(!!row_var)), totals)
+  col_totals <- full[full[[rlang::as_string(row_var)]] == "Total", group_cols] |> unlist()
+  out <- full
+  for (col in group_cols) {
+    raw <- full[[col]]
+    labels <- full[[rlang::as_string(row_var)]]
+    sup <- suppress_labeled_counts(labels, raw, threshold = threshold)
+    pct <- percent(raw / col_totals[[col]], accuracy = 1)
+    out[[col]] <- ifelse(sup$suppressed, paste0("<", threshold),
+                         paste0(format(raw, big.mark = ","), " (", pct, ")"))
+  }
+  out
+}
+```
+
+```{r}
+#| output: asis
+if (show_notes) cat("\n\n### Category crosswalk check\n\n")
+```
+
+```{r}
+#| label: appendix-crosswalk
+#| eval: !expr show_notes
+#| output: asis
+xwalk <- function(variable, raw, fun, flag_nonresponse = TRUE) {
+  tibble(raw = as.character(raw)) |>
+    count(raw, name = "n") |>
+    mutate(variable = variable,
+           label = if (flag_nonresponse) if_else(is_nonresponse(raw), "(excluded: non-response)", fun(raw)) else fun(raw),
+           label = coalesce(label, "(blank)"), raw = coalesce(raw, "(blank)")) |>
+    select(variable, raw, label, n)
+}
+crosswalk <- bind_rows(
+  xwalk("Gender identity", all_data$gender_identity, function(x) recode_by_pattern(x, gender_rules)),
+  xwalk("Sexual orientation", all_data$sexual_orientation, function(x) recode_by_pattern(x, orientation_rules)),
+  xwalk("Primary language", all_data$primary_language, function(x) recode_by_pattern(x, language_rules)),
+  xwalk("Insurance status", all_data$insurance_status, function(x) recode_by_pattern(x, insurance_rules, other = "Other")),
+  xwalk("Housing status", all_data$housing_status, function(x) recode_by_pattern(x, housing_rules, other = house_levels[3])),
+  xwalk("Participant type", all_data$client_type, function(x) recode_by_pattern(x, client_type_rules)),
+  xwalk("Caregiver education", all_data$highest_caregiver_education_level, function(x) recode_by_pattern(x, education_rules)),
+  xwalk("Discharge reason", discharged$reason_for_discharge,
+        function(x) recode_by_pattern(x, discharge_rules, other = "Other"), flag_nonresponse = FALSE)
+) |>
+  mutate(n = fmt_n(n))
+dhcs_simple_table(crosswalk, c("Variable", "Raw eInsight value", "Report label", "n (unsuppressed)"),
+                  widths = c(1.7, 3.4, 2.6, 1.3), bold_last = FALSE) |>
+  fontsize(size = 8, part = "all") |>
+  align(j = 4, align = "right", part = "body") |>
+  show_table("Category crosswalk – raw eInsight values and report labels (unsuppressed; internal only)")
+```
+
+```{r}
+#| output: asis
+if (show_notes) cat("\n\n### Q2 detail tables\n\n")
+```
+
+```{r}
+#| label: appendix-outcomes
+#| eval: !expr show_notes
+#| output: asis
+outcomes_base <- discharge_data %>%
+  filter(!is.na(intervention_start), !is.na(intervention_end),
+         !is.na(reason_for_discharge), !is.na(positive_outcomes))
+
+appx_table(outcomes_base |> tabyl(positive_outcomes) |> adorn_totals("row") |>
+             adorn_pct_formatting(digits = 1) |> apply_suppression(),
+           "Improved outcomes (positive_outcomes; rows with start, end and discharge reason)")
+appx_table(dhcs_crosstab(outcomes_base, positive_outcomes, funding_round),
+           "Improved outcomes by funding round — n (% of round)")
+appx_table(discharge_outcome |> tabyl(outcome) |> adorn_totals("row") |> adorn_pct_formatting(digits = 1),
+           "Including no change in outcomes (assessment_rules thresholds), overall")
+```
+
+```{r}
+#| label: appendix-satisfaction
+#| eval: !expr show_notes
+#| output: asis
+sat_items <- sat_round |>
+  select(round, all_of(score_cols)) |>
+  mutate(across(all_of(score_cols), ~ na_if(suppressWarnings(as.numeric(.x)), 0)))
+m <- as.matrix(sat_items[score_cols])
+sat_items <- sat_items |>
+  mutate(n_answered = rowSums(!is.na(m)),
+         n_agree    = rowSums(m == 4 | m == 5, na.rm = TRUE),
+         pct_agree  = n_agree / n_answered)
+combined_overall <- sat_items |>
+  summarise(n_total = n(), n_meeting_80pct = sum(pct_agree >= 0.8, na.rm = TRUE),
+            pct_meeting_80pct = round(100 * n_meeting_80pct / n_total, 1))
+combined_by_round <- sat_items |>
+  filter(!is.na(round)) |>
+  group_by(round) |>
+  summarise(n_total = n(), n_meeting_80pct = sum(pct_agree >= 0.8, na.rm = TRUE),
+            pct_meeting_80pct = round(100 * n_meeting_80pct / n_total, 1), .groups = "drop")
+
+appx_table(combined_overall, "Combined survey high satisfaction (>=80% of answered items agree/strongly agree), overall")
+appx_table(combined_by_round, "Combined survey high satisfaction, by funding round")
+if (pref_col %in% names(sat_round)) {
+  appx_table(sat_round |> rename(preferred_lang_response = all_of(pref_col)) |>
+               tabyl(preferred_lang_response) |> adorn_totals("row") |>
+               adorn_pct_formatting(digits = 1) |> apply_suppression(),
+             "Services received in preferred language (all responses)")
+}
+```
+
+```{r}
+#| label: appendix-noms
+#| eval: !expr show_notes
+#| output: asis
+appx_table(q303$stats, "3.03 NOMS Child Q1 — Summary statistics by timepoint")
+appx_table(q303$pct,   "3.03 NOMS Child Q1 — % scoring 4 or 5")
+appx_table(q304$stats, "3.04 NOMS Self Q1 — Summary statistics by timepoint")
+appx_table(q304$pct,   "3.04 NOMS Self Q1 — % scoring 4 or 5")
+appx_table(q305$stats, "3.05 NOMS Child Q2 — Summary statistics by timepoint")
+appx_table(q305$pct,   "3.05 NOMS Child Q2 — % scoring 28 or higher")
+appx_table(q306$stats, "3.06 NOMS Self Q2 — Summary statistics by timepoint")
+appx_table(q306$pct,   "3.06 NOMS Self Q2 — % scoring 28 or higher")
+appx_table(q307$stats, "3.07 NOMS Child Q3 — Summary statistics by timepoint")
+appx_table(q307$pct,   "3.07 NOMS Child Q3 — % scoring 28 or higher")
+appx_table(q308$stats, "3.08 NOMS Self Q3 — Summary statistics by timepoint")
+appx_table(q308$pct,   "3.08 NOMS Self Q3 — % scoring 28 or higher")
+appx_table(q309$stats, "3.09 NOMS Child Q4 — Summary statistics by timepoint")
+appx_table(q309$pct,   "3.09 NOMS Child Q4 — % scoring 24 or higher")
+appx_table(q310$stats, "3.10 NOMS Self Q4 — Summary statistics by timepoint")
+appx_table(q310$pct,   "3.10 NOMS Self Q4 — % scoring 24 or higher")
+appx_table(q312$tabyl,  "3.12 PSS — positive_outcome as recorded")
+appx_table(q312$stats,  "3.12 PSS — Summary statistics by timepoint")
+appx_table(q315i$tabyl, "3.15 CPSS-5 Interviewer — positive_outcome as recorded")
+appx_table(q315i$stats, "3.15 CPSS-5 Interviewer — Summary statistics by timepoint")
+appx_table(q315s$tabyl, "3.15 CPSS-5 Self — positive_outcome as recorded")
+appx_table(q315s$stats, "3.15 CPSS-5 Self — Summary statistics by timepoint")
+```
+
+```{r}
+#| label: appendix-sdq
+#| eval: !expr show_notes
+#| output: asis
+# 3.11 / 3.16 SDQ — a decrease in score indicates a positive outcome (Q2 code)
+analyze_sdq <- function(paired) {
+  tab_total <- paired |>
+    filter(!is.na(positive_outcome_total)) |>
+    tabyl(positive_outcome_total) |>
+    adorn_pct_formatting(digits = 0)
+  tab_ext <- paired |>
+    filter(!is.na(positive_outcome_ext)) |>
+    tabyl(positive_outcome_ext) |>
+    adorn_pct_formatting(digits = 0)
+  list(summary_total = tab_total, summary_ext = tab_ext)
+}
+sdq_subgroup_levels <- c("SDQ Parent (2-4)", "SDQ Parent (4-10)", "SDQ Parent (11-17)", "SDQ Self (11-17)")
+res_P24   <- analyze_sdq(sdq_P24_pairs)
+res_P410  <- analyze_sdq(sdq_P410_pairs)
+res_P1117 <- analyze_sdq(sdq_P1117_pairs)
+res_S1117 <- analyze_sdq(sdq_S1117_pairs)
+
+df_from_lists <- bind_rows(
+  sdq_P24_pairs   |> transmute(subgroup = "SDQ Parent (2-4)",   initial_total, follow_up_total, initial_ext, follow_up_ext),
+  sdq_P410_pairs  |> transmute(subgroup = "SDQ Parent (4-10)",  initial_total, follow_up_total, initial_ext, follow_up_ext),
+  sdq_P1117_pairs |> transmute(subgroup = "SDQ Parent (11-17)", initial_total, follow_up_total, initial_ext, follow_up_ext),
+  sdq_S1117_pairs |> transmute(subgroup = "SDQ Self (11-17)",   initial_total, follow_up_total, initial_ext, follow_up_ext)
+)
+sdq_stats <- function(init, fu) {
+  df_from_lists |>
+    filter(!is.na(.data[[init]]), !is.na(.data[[fu]])) |>
+    pivot_longer(all_of(c(init, fu)), names_to = "timepoint", values_to = "value") |>
+    mutate(subgroup  = factor(subgroup, levels = sdq_subgroup_levels),
+           timepoint = if_else(timepoint == init, "Initial", "Follow-up")) |>
+    group_by(subgroup, timepoint) |>
+    summarise(mean = round(mean(value, na.rm = TRUE), 2),
+              median = median(value, na.rm = TRUE),
+              sd = round(sd(value, na.rm = TRUE), 2),
+              n = sum(!is.na(value)), .groups = "drop")
+}
+
+appx_table(res_P24$summary_total,   "3.16 SDQ Parent (2–4) — % with positive outcome, total score")
+appx_table(res_P24$summary_ext,     "3.11 SDQ Parent (2–4) — % with positive outcome, externalizing score")
+appx_table(res_P410$summary_total,  "3.16 SDQ Parent (4–10) — % with positive outcome, total score")
+appx_table(res_P410$summary_ext,    "3.11 SDQ Parent (4–10) — % with positive outcome, externalizing score")
+appx_table(res_P1117$summary_total, "3.16 SDQ Parent (11–17) — % with positive outcome, total score")
+appx_table(res_P1117$summary_ext,   "3.11 SDQ Parent (11–17) — % with positive outcome, externalizing score")
+appx_table(res_S1117$summary_total, "3.16 SDQ Self (11–17) — % with positive outcome, total score")
+appx_table(res_S1117$summary_ext,   "3.11 SDQ Self (11–17) — % with positive outcome, externalizing score")
+appx_table(sdq_stats("initial_total", "follow_up_total"), "3.16 SDQ — Summary statistics, total difficulties score")
+appx_table(sdq_stats("initial_ext", "follow_up_ext"),     "3.11 SDQ — Summary statistics, externalizing score")
+```
