@@ -4,10 +4,10 @@ subtitle: "`r params$quarter_label`"
 author: "Cristin Young"
 date: "`r Sys.Date()`"
 params:
-  quarter_label: "2026 Q2"
+  quarter_label: "2026 Q3"
   period_start: "2024-01-01"
-  period_end: "2026-06-30"
-  date_downloaded: "2026-07-17"
+  period_end: "2026-09-30"
+  date_downloaded: "2026-10-08"
   suppression_threshold: 11
   discharge_data_path: "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv"
   demo_data_path: "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv"
