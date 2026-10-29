@@ -1,13 +1,12 @@
 ---
 title: "BASIS-24 Assessment Data Cleaning"
 author: "Cristin Young"
-date: "`r Sys.Date()`"
+date: today
 format:
   html:
-    self-contained: true
+    embed-resources: true
     df-print: paged
     toc: true
-    toc-float: true
 ---
 
 ## Project Overview
@@ -18,26 +17,37 @@ This notebook prepares **CYBHI EBP/CDEP** BASIS-24 assessment data for analysis 
 
 **Scoring:**
 
--   24 items, each rated 0–4.
+-   24 items, each rated 0–4. Values that are non-numeric or outside 0–4 are set to `NA` (and counted).
 -   Items **4 through 9 are reverse scored** using the formula `4 − raw_score`.
+-   **The eInsight export already reverses items 4–9**, so the script reverses none of them (`basis24_reversed_in_export <- 4:9` in Setup). Evidence from the October 2026 run: the export's items are in the official order, and as exported, items 4–8 (as a group) and item 9 both correlate positively with the never-reversed problem items (r = 0.29 and 0.49).
 -   Total score is a **weighted sum**: `sum(weight_i × rating_i) / (1 − sum of weights for missing items)`. Weights for Q1–Q24 are defined in the scoring chunk below and sum to 1.
 -   Total score range: 0–4. Higher scores indicate greater functional impairment.
 -   **A lower follow-up score indicates a positive outcome.**
 -   `total_score` is set to `NA` if fewer than 23 of 24 items are answered (more than 1 item missing).
 
-The items comprising each subscale are as follows: - Depression/Functioning: 1,2,3,9,10,12 - Relationships: 4,5,6,7,8 - Self-Harm: 11,20 - Emotional Lability: 13,18,19 - Psychosis: 14,15,16,17 - Substance Abuse: 21,22,23,24
+Subscale item mappings (documented for reference; **subscale scores are not currently computed**):
 
-**Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 exist) is the follow-up. Clients with only one assessment are excluded.
+-   Depression/Functioning: 1, 2, 3, 9, 10, 12
+-   Relationships: 4, 5, 6, 7, 8
+-   Self-Harm: 11, 20
+-   Emotional Lability: 13, 18, 19
+-   Psychosis: 14, 15, 16, 17
+-   Substance Abuse: 21, 22, 23, 24
+
+**Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 exist) is the follow-up. Clients with only one assessment are excluded. No minimum gap is enforced; `days_since_initial` is included so a gap rule can be applied downstream.
 
 **Output:**
 
 | File | Contents |
 |------------------------------------|------------------------------------|
-| `basis24_paired_clean.csv` | One row per client: initial/follow-up scores, `positive_outcome`, `score_change`, quarter labels |
+| `basis24_paired_clean.csv` | One row per client: initial/follow-up scores, `positive_outcome`, `score_change`, quarter labels, `days_since_initial` |
 
 ------------------------------------------------------------------------
 
 ## Open Issues / Action Items
+
+-   [ ] Confirm with eInsight that items 4–9 are exported already reversed. Totals before this fix counted them backwards (about 19% of the total weight), so earlier BASIS-24 results, including the interim report, are provisional.
+-   [ ] Subscale scores are documented but not computed. Add them if needed for reporting (official BASIS-24 subscale scoring uses its own weights).
 
 ------------------------------------------------------------------------
 
@@ -47,14 +57,33 @@ The items comprising each subscale are as follows: - Depression/Functioning: 1,2
 library(tidyverse)
 library(janitor)
 library(zoo)
+
+# ---- Configuration: edit paths and reporting window here ----
+in_dir  <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments"
+out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+start_date <- as.Date("2024-01-01")
+end_date   <- Sys.Date()   # set to a fixed date (e.g., as.Date("2026-09-30")) to freeze the data window
+
+# BASIS-24 items the eInsight export already reverses, so the script must not
+# reverse them again. Checked October 2026: items 4-9. If the direction check
+# flags an item after a new export, update this.
+basis24_reversed_in_export <- 4:9
 ```
 
 ------------------------------------------------------------------------
 
-# Helper Function
+# Helper Functions
 
-```{r header-helper}
-read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A", "0")) {
+```{r helpers}
+# ---- Shared helpers (identical across the cleaning scripts) ----
+
+# Reads an eInsight assessment CSV export with two-row headers.
+# Row 1 holds question text (merged cells export as blanks and are forward-
+# filled); row 2 holds sub-headers ("Response", "Score", ...). Returns a data
+# frame with combined snake_case names and fully blank columns removed.
+# "0" is deliberately NOT treated as missing: it is a valid rating on most tools.
+read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A")) {
   raw <- read_csv(path, na = na_vals, col_names = FALSE, show_col_types = FALSE,
                   col_types = cols(.default = "c"))
 
@@ -74,6 +103,98 @@ read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A", "0")) {
 
   df |> select(where(~ !all(is.na(.))))
 }
+
+# Parses eInsight date strings in ISO (2024-03-15) or US (03/15/2024) format,
+# with or without a time stamp. Warns with a count of non-blank values that
+# could not be parsed (these become NA and are dropped by the date filter).
+parse_einsight_date <- function(x, label = "date_completed") {
+  x   <- na_if(str_squish(as.character(x)), "")
+  out <- as.Date(parse_date_time(
+    x,
+    orders = c("Ymd", "mdY", "mdy", "Ymd HMS", "Ymd HM", "mdY HMS", "mdY HM"),
+    quiet  = TRUE
+  ))
+  n_bad <- sum(!is.na(x) & is.na(out))
+  if (n_bad > 0) {
+    warning(label, ": ", n_bad, " non-blank value(s) could not be parsed as dates and were set to NA.",
+            call. = FALSE)
+  }
+  out
+}
+
+# Removes demo/test rows (provider_id or client_system_id contains "DEMO") and
+# rows with no client_system_id (they cannot be linked or paired). Rows with a
+# missing provider_id are kept. Prints a count for each.
+remove_demo_rows <- function(df, label) {
+  missing_ids <- setdiff(c("provider_id", "client_system_id"), names(df))
+  if (length(missing_ids) > 0) {
+    stop(label, ": column(s) needed for the demo filter not found: ",
+         paste(missing_ids, collapse = ", "), call. = FALSE)
+  }
+  is_demo   <- coalesce(str_detect(df$provider_id, "DEMO"), FALSE) |
+               coalesce(str_detect(df$client_system_id, "DEMO"), FALSE)
+  no_client <- is.na(df$client_system_id) & !is_demo
+  cat(label, "- rows read:", nrow(df),
+      "| DEMO rows removed:", sum(is_demo),
+      "| rows with no client_system_id removed:", sum(no_client),
+      "| rows with missing provider_id (kept):", sum(is.na(df$provider_id) & !is_demo & !no_client), "\n")
+  df[!is_demo & !no_client, ]
+}
+
+# Stops if the number of item columns differs from what scoring expects.
+# Scoring is positional, so a missing or extra column would silently shift
+# reverse-scored items and weights onto the wrong questions.
+check_items <- function(cols, expected, label) {
+  if (length(cols) != expected) {
+    stop(label, ": expected ", expected, " item columns but found ", length(cols), ":\n  ",
+         paste(cols, collapse = "\n  "), call. = FALSE)
+  }
+  message(label, ": found ", expected, " item columns as expected.")
+  invisible(cols)
+}
+
+# Converts item columns to numeric. Values that are non-numeric or outside
+# [min, max] are set to NA and counted (e.g., a stray "9" or text in a score column).
+clean_item_scores <- function(df, cols, min, max, label) {
+  num   <- df[cols] |> mutate(across(everything(), ~ suppressWarnings(as.numeric(.x))))
+  raw_m <- as.matrix(df[cols])
+  num_m <- as.matrix(num)
+  n_non_numeric  <- sum(!is.na(raw_m) & is.na(num_m))
+  n_out_of_range <- sum(num_m < min | num_m > max, na.rm = TRUE)
+  if (n_non_numeric + n_out_of_range > 0) {
+    warning(label, ": ", n_non_numeric, " non-numeric and ", n_out_of_range,
+            " out-of-range (", min, "-", max, ") item value(s) set to NA.", call. = FALSE)
+  } else {
+    message(label, ": all item values are numeric and within ", min, "-", max, ".")
+  }
+  df[cols] <- num |> mutate(across(everything(), ~ if_else(.x < min | .x > max, NA_real_, .x)))
+  df
+}
+
+# After reverse scoring, every item should correlate positively with the sum of
+# the anchor items (excluding itself). Pass the items the instrument never
+# reverse-scores as `anchor`: comparing against all items can hide a block of
+# reversed items that mostly agree with each other. A negative value means the
+# item's direction is wrong (reversed twice, or a positively worded item that
+# was not reversed). Returns only the items that need a look (empty = all fine).
+item_rest_check <- function(df, cols, label, anchor = cols) {
+  anchor_sum <- rowSums(df[anchor], na.rm = TRUE)
+  out <- tibble(
+    item        = cols,
+    item_rest_r = map_dbl(cols, function(col) {
+      rest <- anchor_sum - if (col %in% anchor) coalesce(df[[col]], 0) else 0
+      suppressWarnings(cor(df[[col]], rest, use = "pairwise.complete.obs"))
+    })
+  )
+  n_neg <- sum(out$item_rest_r < 0, na.rm = TRUE)
+  if (n_neg > 0) {
+    warning(label, ": ", n_neg, " item(s) correlate negatively with the rest of the scale; ",
+            "check reverse scoring (see table).", call. = FALSE)
+  } else {
+    message(label, ": all item-rest correlations are positive.")
+  }
+  out |> filter(item_rest_r < 0 | is.na(item_rest_r))
+}
 ```
 
 ------------------------------------------------------------------------
@@ -81,16 +202,16 @@ read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A", "0")) {
 # 1. Read and Score
 
 ```{r basis24-read}
+basis24_raw <- read_assessment_csv(file.path(in_dir, "Basis-24.csv")) |>
+  remove_demo_rows("BASIS-24")
 
-# "0" is a valid rating on the 0–4 scale — do not treat it as NA
-basis24_raw <- read_assessment_csv(
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/Basis-24.csv",
-  na_vals = c("-", "", "NA", "N/A")
-)
-
-# Reverse-scored item positions (1-indexed within score columns)
-rev_idx    <- c(4, 5, 6, 7, 8, 9)
 score_cols <- names(basis24_raw)[endsWith(names(basis24_raw), "_score")]
+check_items(score_cols, 24, "BASIS-24")
+
+# BASIS-24 reverse-scores items 4-9 (positions within score columns, which match
+# the official item order); skip any the export already reverses
+basis24_rev_items <- 4:9
+rev_idx <- setdiff(basis24_rev_items, basis24_reversed_in_export)
 
 # Official BASIS-24 item weights (Q1–Q24); sum to 1
 basis24_weights <- c(
@@ -99,6 +220,7 @@ basis24_weights <- c(
   0.038422, 0.016425, 0.022986, 0.024274, 0.030429, 0.064966,
   0.058904, 0.052358, 0.017836, 0.013450, 0.010047, 0.012771
 )
+stopifnot(length(basis24_weights) == 24, abs(sum(basis24_weights) - 1) < 1e-4)
 
 # Weighted score formula: sum(w_i * x_i) / (1 - sum of weights for missing items)
 weighted_basis24 <- function(vals, weights) {
@@ -106,9 +228,11 @@ weighted_basis24 <- function(vals, weights) {
   sum(weights * vals, na.rm = TRUE) / (1 - missing_wt)
 }
 
-basis24_scores <- basis24_raw |>
-  mutate(across(all_of(score_cols), as.numeric)) |>
-  mutate(across(all_of(score_cols[rev_idx]), ~ 4 - .x)) |>
+basis24_items <- basis24_raw |>
+  clean_item_scores(score_cols, min = 0, max = 4, label = "BASIS-24") |>
+  mutate(across(all_of(score_cols[rev_idx]), ~ 4 - .x))
+
+basis24_scores <- basis24_items |>
   rowwise() |>
   mutate(
     missing_count = sum(is.na(c_across(all_of(score_cols)))),
@@ -119,18 +243,19 @@ basis24_scores <- basis24_raw |>
     )
   ) |>
   ungroup() |>
-  mutate(
-    date_completed = as.Date(date_completed),
-    row_id         = row_number()
-  ) |>
+  mutate(date_completed = parse_einsight_date(date_completed)) |>
   select(client_system_id, collection, date_completed, total_score) |>
-  filter(
-    date_completed >= "2024-01-01",
-    date_completed <= Sys.Date()
-  )
+  filter(between(date_completed, start_date, end_date))
 
 cat("BASIS-24 rows after scoring:", nrow(basis24_scores), "\n")
 cat("Unique clients:             ", n_distinct(basis24_scores$client_system_id), "\n")
+cat("Missing total_score:        ", sum(is.na(basis24_scores$total_score)), "\n")
+```
+
+Direction check on the reverse-scored items (an empty table means every item correlates positively with the rest of the scale):
+
+```{r basis24-direction}
+item_rest_check(basis24_items, score_cols, "BASIS-24", anchor = score_cols[-basis24_rev_items])
 ```
 
 ------------------------------------------------------------------------
@@ -146,9 +271,9 @@ basis24_paired <- basis24_scores |>
     initial_date    = first(date_completed),
     initial_score   = first(total_score),
     follow_up_date  = if_else(n_assessments >= 2, last(date_completed),  as.Date(NA)),
-    follow_up_score = if_else(n_assessments >= 2, last(total_score),     NA_real_)
+    follow_up_score = if_else(n_assessments >= 2, last(total_score),     NA_real_),
+    .groups = "drop"
   ) |>
-  ungroup() |>
   filter(!is.na(follow_up_date)) |>
   mutate(
     # Lower follow-up = positive outcome (lower impairment is better)
@@ -158,9 +283,10 @@ basis24_paired <- basis24_scores |>
       follow_up_score == initial_score ~ 0L,
       follow_up_score >  initial_score ~ -1L
     ),
-    score_change      = follow_up_score - initial_score,
-    initial_quarter   = paste0("Q", quarter(initial_date),    " ", year(initial_date)),
-    follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date))
+    score_change       = follow_up_score - initial_score,
+    initial_quarter    = paste0("Q", quarter(initial_date),    " ", year(initial_date)),
+    follow_up_quarter  = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)),
+    days_since_initial = as.integer(follow_up_date - initial_date)
   )
 
 cat("BASIS-24 paired clients:", nrow(basis24_paired), "\n")
@@ -173,12 +299,13 @@ cat("BASIS-24 paired clients:", nrow(basis24_paired), "\n")
 ```{r basis24-check}
 basis24_paired |>
   summarise(
-    n_paired          = n(),
-    n_improved        = sum(positive_outcome ==  1, na.rm = TRUE),
-    n_no_change       = sum(positive_outcome ==  0, na.rm = TRUE),
-    n_worsened        = sum(positive_outcome == -1, na.rm = TRUE),
-    pct_improved      = round(100 * n_improved  / n_paired, 1),
-    n_missing_outcome = sum(is.na(positive_outcome))
+    n_paired           = n(),
+    n_improved         = sum(positive_outcome ==  1, na.rm = TRUE),
+    n_no_change        = sum(positive_outcome ==  0, na.rm = TRUE),
+    n_worsened         = sum(positive_outcome == -1, na.rm = TRUE),
+    pct_improved       = round(100 * n_improved  / n_paired, 1),
+    n_missing_outcome  = sum(is.na(positive_outcome)),
+    n_fu_within_3_days = sum(days_since_initial <= 3, na.rm = TRUE)
   )
 ```
 
@@ -187,8 +314,6 @@ basis24_paired |>
 # 4. Write Clean CSV
 
 ```{r write-csv}
-out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
-
 write_csv(basis24_paired, file.path(out_dir, "basis24_paired_clean.csv"))
 
 cat("CSV written successfully.\n")

@@ -1,13 +1,12 @@
 ---
 title: "PHQ-9 Assessment Data Cleaning"
 author: "Cristin Young"
-date: "`r Sys.Date()`"
+date: today
 format:
   html:
-    self-contained: true
+    embed-resources: true
     df-print: paged
     toc: true
-    toc-float: true
 ---
 
 ## Project Overview
@@ -18,24 +17,26 @@ This notebook prepares **CYBHI EBP/CDEP** Patient Health Questionnaire-9 (PHQ-9)
 
 **Scoring:**
 
-- 9 items. Responses are stored as text and mapped to numeric values: Not at all = 0, Several days = 1, More than half the days = 2, Nearly every day = 3.
-- Total score range: 0–27. Higher scores indicate greater depression severity.
-- **A lower follow-up score indicates a positive outcome.**
-- Total score is set to `NA` if 2 or more items are missing.
-- Cut-off bands: 0–4 = minimal, 5–9 = mild, 10–14 = moderate, 15–19 = moderately severe, 20–27 = severe.
-- Item 10 (functional impairment) is not included in the total score.
+-   9 items. Responses are stored as text and mapped to numeric values (case- and whitespace-insensitive): Not at all = 0, Several days = 1, More than half the days = 2, Nearly every day = 3. Any response that does not match is listed in Section 1.
+-   Total score range: 0–27. Higher scores indicate greater depression severity.
+-   **A lower follow-up score indicates a positive outcome.**
+-   Total score is set to `NA` if 2 or more items are missing. With 1 missing item the total is the sum of the 8 answered items (not prorated).
+-   Cut-off bands: 0–4 = minimal, 5–9 = mild, 10–14 = moderate, 15–19 = moderately severe, 20–27 = severe.
+-   Item 10 (functional impairment) is not included in the total score.
 
-**Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 exist) is the follow-up. Clients with only one assessment are excluded.
+**Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 exist) is the follow-up. Clients with only one assessment are excluded. No minimum gap is enforced; `days_since_initial` is included so a gap rule can be applied downstream.
 
 **Output:**
 
 | File | Contents |
-|----|----|
-| `phq9_paired_clean.csv` | One row per client: initial/follow-up scores and bands, `positive_outcome`, `score_change`, quarter labels |
+|------|----------|
+| `phq9_paired_clean.csv` | One row per client: initial/follow-up scores and bands, `days_since_initial`, `positive_outcome`, `score_change`, quarter labels |
 
 ------------------------------------------------------------------------
 
 ## Open Issues / Action Items
+
+-   [ ] With one missing item, the total is an unprorated sum of 8 items, so a skipped item at follow-up can look like improvement. Consider prorating (mean of answered items × 9) if this affects many records.
 
 ------------------------------------------------------------------------
 
@@ -45,15 +46,27 @@ This notebook prepares **CYBHI EBP/CDEP** Patient Health Questionnaire-9 (PHQ-9)
 library(tidyverse)
 library(janitor)
 library(zoo)
+
+# ---- Configuration: edit paths and reporting window here ----
+in_dir  <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments"
+out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+start_date <- as.Date("2024-01-01")
+end_date   <- Sys.Date()   # set to a fixed date (e.g., as.Date("2026-09-30")) to freeze the data window
 ```
 
 ------------------------------------------------------------------------
 
-# Helper Function
+# Helper Functions
 
-```{r header-helper}
+```{r helpers}
+# ---- Shared helpers (identical across the cleaning scripts) ----
+
 # Reads an eInsight assessment CSV export with two-row headers.
-# Returns a cleaned data frame with combined column names and empty columns removed.
+# Row 1 holds question text (merged cells export as blanks and are forward-
+# filled); row 2 holds sub-headers ("Response", "Score", ...). Returns a data
+# frame with combined snake_case names and fully blank columns removed.
+# "0" is deliberately NOT treated as missing: it is a valid rating on most tools.
 read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A")) {
   raw <- read_csv(path, na = na_vals, col_names = FALSE, show_col_types = FALSE,
                   col_types = cols(.default = "c"))
@@ -74,6 +87,81 @@ read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A")) {
 
   df |> select(where(~ !all(is.na(.))))
 }
+
+# Parses eInsight date strings in ISO (2024-03-15) or US (03/15/2024) format,
+# with or without a time stamp. Warns with a count of non-blank values that
+# could not be parsed (these become NA and are dropped by the date filter).
+parse_einsight_date <- function(x, label = "date_completed") {
+  x   <- na_if(str_squish(as.character(x)), "")
+  out <- as.Date(parse_date_time(
+    x,
+    orders = c("Ymd", "mdY", "mdy", "Ymd HMS", "Ymd HM", "mdY HMS", "mdY HM"),
+    quiet  = TRUE
+  ))
+  n_bad <- sum(!is.na(x) & is.na(out))
+  if (n_bad > 0) {
+    warning(label, ": ", n_bad, " non-blank value(s) could not be parsed as dates and were set to NA.",
+            call. = FALSE)
+  }
+  out
+}
+
+# Removes demo/test rows (provider_id or client_system_id contains "DEMO") and
+# rows with no client_system_id (they cannot be linked or paired). Rows with a
+# missing provider_id are kept. Prints a count for each.
+remove_demo_rows <- function(df, label) {
+  missing_ids <- setdiff(c("provider_id", "client_system_id"), names(df))
+  if (length(missing_ids) > 0) {
+    stop(label, ": column(s) needed for the demo filter not found: ",
+         paste(missing_ids, collapse = ", "), call. = FALSE)
+  }
+  is_demo   <- coalesce(str_detect(df$provider_id, "DEMO"), FALSE) |
+               coalesce(str_detect(df$client_system_id, "DEMO"), FALSE)
+  no_client <- is.na(df$client_system_id) & !is_demo
+  cat(label, "- rows read:", nrow(df),
+      "| DEMO rows removed:", sum(is_demo),
+      "| rows with no client_system_id removed:", sum(no_client),
+      "| rows with missing provider_id (kept):", sum(is.na(df$provider_id) & !is_demo & !no_client), "\n")
+  df[!is_demo & !no_client, ]
+}
+
+# Stops if the number of item columns differs from what scoring expects.
+# Scoring is positional, so a missing or extra column would silently shift
+# reverse-scored items and weights onto the wrong questions.
+check_items <- function(cols, expected, label) {
+  if (length(cols) != expected) {
+    stop(label, ": expected ", expected, " item columns but found ", length(cols), ":\n  ",
+         paste(cols, collapse = "\n  "), call. = FALSE)
+  }
+  message(label, ": found ", expected, " item columns as expected.")
+  invisible(cols)
+}
+
+# Maps text responses to numbers, ignoring case and extra whitespace
+# (e.g., "Strongly Disagree", "strongly disagree " and "Strongly disagree" all match).
+map_responses <- function(x, map) {
+  keys <- str_to_lower(str_squish(names(map)))
+  unname(map[match(str_to_lower(str_squish(x)), keys)])
+}
+
+# Lists non-blank responses that do not match the scoring map. These would
+# otherwise become NA silently and be counted as missing items.
+# Returns the unmatched values (empty table = everything matched).
+audit_unmapped <- function(df, cols, map, label) {
+  keys <- str_to_lower(str_squish(names(map)))
+  bad  <- df |>
+    select(all_of(cols)) |>
+    pivot_longer(everything(), values_to = "value") |>
+    filter(!is.na(value), !str_to_lower(str_squish(value)) %in% keys) |>
+    count(value, name = "n_values", sort = TRUE)
+  if (nrow(bad) > 0) {
+    warning(label, ": ", sum(bad$n_values), " non-blank response(s) did not match the scoring map ",
+            "and are treated as missing (see table).", call. = FALSE)
+  } else {
+    message(label, ": all non-blank responses match the scoring map.")
+  }
+  bad
+}
 ```
 
 ------------------------------------------------------------------------
@@ -81,24 +169,24 @@ read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A")) {
 # 1. Read and Score
 
 ```{r phq9-read}
-phq9_raw <- read_assessment_csv(
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/PHQ-9.csv"
-)
+phq9_raw <- read_assessment_csv(file.path(in_dir, "PHQ-9.csv")) |>
+  remove_demo_rows("PHQ-9")
 
 response_cols <- names(phq9_raw)[
   endsWith(names(phq9_raw), "_response") &
   !str_detect(names(phq9_raw), "if_you_checked")
 ]
+check_items(response_cols, 9, "PHQ-9")
 
 response_map <- c(
-  "Not at all"             = 0,
-  "Several days"           = 1,
+  "Not at all"              = 0,
+  "Several days"            = 1,
   "More than half the days" = 2,
-  "Nearly every day"       = 3
+  "Nearly every day"        = 3
 )
 
 phq9_scores <- phq9_raw |>
-  mutate(across(all_of(response_cols), ~ as.numeric(response_map[.]))) |>
+  mutate(across(all_of(response_cols), ~ map_responses(.x, response_map))) |>
   rowwise() |>
   mutate(
     missing_count = sum(is.na(c_across(all_of(response_cols)))),
@@ -118,17 +206,20 @@ phq9_scores <- phq9_raw |>
       total_score >= 20                       ~ "severe",
       .default = NA_character_
     ),
-    date_completed = as.Date(date_completed)
+    date_completed = parse_einsight_date(date_completed)
   ) |>
-  filter(
-    date_completed >= "2024-01-01",
-    date_completed <= Sys.Date()
-  ) |>
+  filter(between(date_completed, start_date, end_date)) |>
   select(client_system_id, collection, date_completed, total_score, cut_off_band)
 
 cat("PHQ-9 rows after scoring:", nrow(phq9_scores), "\n")
 cat("Unique clients:          ", n_distinct(phq9_scores$client_system_id), "\n")
 cat("Missing total_score:     ", sum(is.na(phq9_scores$total_score)), "\n")
+```
+
+Responses that did not match the scoring map (an empty table means every non-blank response was scored):
+
+```{r phq9-unmapped}
+audit_unmapped(phq9_raw, response_cols, response_map, "PHQ-9")
 ```
 
 ------------------------------------------------------------------------
@@ -140,13 +231,13 @@ phq9_paired <- phq9_scores |>
   group_by(client_system_id) |>
   arrange(date_completed, .by_group = TRUE) |>
   summarise(
-    n_assessments        = n(),
-    initial_date         = first(date_completed),
-    initial_score        = first(total_score),
-    initial_band         = first(cut_off_band),
-    follow_up_date       = if_else(n_assessments >= 2, last(date_completed),  as.Date(NA)),
-    follow_up_score      = if_else(n_assessments >= 2, last(total_score),     NA_real_),
-    follow_up_band       = if_else(n_assessments >= 2, last(cut_off_band),    NA_character_),
+    n_assessments  = n(),
+    initial_date   = first(date_completed),
+    initial_score  = first(total_score),
+    initial_band   = first(cut_off_band),
+    follow_up_date  = if_else(n_assessments >= 2, last(date_completed),  as.Date(NA)),
+    follow_up_score = if_else(n_assessments >= 2, last(total_score),     NA_real_),
+    follow_up_band  = if_else(n_assessments >= 2, last(cut_off_band),    NA_character_),
     .groups = "drop"
   ) |>
   filter(!is.na(follow_up_date)) |>
@@ -174,12 +265,13 @@ cat("PHQ-9 paired clients:", nrow(phq9_paired), "\n")
 ```{r phq9-check}
 phq9_paired |>
   summarise(
-    n_paired          = n(),
-    n_improved        = sum(positive_outcome ==  1, na.rm = TRUE),
-    n_no_change       = sum(positive_outcome ==  0, na.rm = TRUE),
-    n_worsened        = sum(positive_outcome == -1, na.rm = TRUE),
-    pct_improved      = round(100 * n_improved / n_paired, 1),
-    n_missing_outcome = sum(is.na(positive_outcome))
+    n_paired           = n(),
+    n_improved         = sum(positive_outcome ==  1, na.rm = TRUE),
+    n_no_change        = sum(positive_outcome ==  0, na.rm = TRUE),
+    n_worsened         = sum(positive_outcome == -1, na.rm = TRUE),
+    pct_improved       = round(100 * n_improved / n_paired, 1),
+    n_missing_outcome  = sum(is.na(positive_outcome)),
+    n_fu_within_3_days = sum(days_since_initial <= 3, na.rm = TRUE)
   )
 ```
 
@@ -188,8 +280,6 @@ phq9_paired |>
 # 4. Write Clean CSV
 
 ```{r write-csv}
-out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
-
 write_csv(phq9_paired, file.path(out_dir, "phq9_paired_clean.csv"))
 
 cat("CSV written successfully.\n")

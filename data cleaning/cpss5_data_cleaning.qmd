@@ -1,13 +1,12 @@
 ---
 title: "CPSS-5 Assessment Data Cleaning"
 author: "Cristin Young"
-date: "`r Sys.Date()`"
+date: today
 format:
   html:
-    self-contained: true
+    embed-resources: true
     df-print: paged
     toc: true
-    toc-float: true
 ---
 
 ## Project Overview
@@ -18,11 +17,12 @@ This notebook prepares **CYBHI EBP/CDEP** Child PTSD Symptom Scale, 5th Edition 
 
 **Scoring:**
 
-- Sum of items Q1–Q20 only (the first 20 score columns).
+- Sum of symptom items Q1–Q20 only (the **first 20** `_score` columns). Any later `_score` columns (e.g., the 7 functional-impairment items) are excluded from the total and listed in the output.
+- Items are rated 0–4; values that are non-numeric or outside 0–4 are set to `NA` (and counted).
 - Total score range: 0–80. Higher scores indicate greater PTSD symptom severity.
-- A clinical cutoff score of ≥31 can be used to identify a probable PTSD diagnosis.
+- A clinical cutoff score of ≥31 can be used to identify a probable PTSD diagnosis (`initial_above_cutoff`, `follow_up_above_cutoff`).
 - **A lower follow-up score indicates a positive outcome.**
-- No missing-item threshold is applied (total computed with `na.rm = TRUE`).
+- Missing items: `total_score` is set to `NA` if more than `cpss_max_missing` items (default 2, i.e., ≥3 missing) are missing. This also prevents a blank form from scoring 0.
 
 | Symptom Severity | Score Range |
 |------------------|-------------|
@@ -32,20 +32,21 @@ This notebook prepares **CYBHI EBP/CDEP** Child PTSD Symptom Scale, 5th Edition 
 | Severe           | 41–60       |
 | Very Severe      | 61–80       |
 
-**Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 exist) is the follow-up. Clients with only one assessment are excluded.
+**Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 exist) is the follow-up. Clients with only one assessment are excluded. No minimum gap is enforced; `days_since_initial` is included so a gap rule can be applied downstream.
 
 **Outputs:**
 
 | File | Contents |
 |------------------------------------|------------------------------------|
-| `cpss_i_paired_clean.csv` | One row per client: initial/follow-up scores, `positive_outcome`, `score_change`, quarter labels — interviewer version |
+| `cpss_i_paired_clean.csv` | One row per client: initial/follow-up scores, `positive_outcome`, `score_change`, quarter labels, severity bands, cutoff flags, `days_since_initial` — interviewer version |
 | `cpss_s_paired_clean.csv` | Same, self-report version |
 
 ------------------------------------------------------------------------
 
 ## Open Issues / Action Items
 
-- [ ] Not sure how to handle NAs
+- [ ] **Missing-item rule (decision needed).** Previously no threshold was applied, so partially completed forms were summed as if blanks were 0 and a fully blank form scored 0 ("Minimal"). The total is now `NA` when ≥3 of 20 items are missing (`cpss_max_missing <- 2`), matching the SDQ/YOQ convention. Change the value in the Setup chunk if a different rule is preferred.
+- [ ] Confirm the first 20 `_score` columns are the 20 symptom items in both exports (the Section 1/2 output lists any score columns excluded from the total).
 
 ------------------------------------------------------------------------
 
@@ -55,20 +56,33 @@ This notebook prepares **CYBHI EBP/CDEP** Child PTSD Symptom Scale, 5th Edition 
 library(tidyverse)
 library(janitor)
 library(zoo)
+
+# ---- Configuration: edit paths and reporting window here ----
+in_dir  <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments"
+out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+start_date <- as.Date("2024-01-01")
+end_date   <- Sys.Date()   # set to a fixed date (e.g., as.Date("2026-09-30")) to freeze the data window
+
+# Maximum number of missing symptom items (of 20) before total_score is set to NA
+cpss_max_missing <- 2
 ```
 
 ------------------------------------------------------------------------
 
-# Helper Function
+# Helper Functions
 
-Both CPSS-5 files are CSVs with two-row headers. We use a `read_csv`-based helper (unlike NOMS/PSS/BASIS-24 which use Excel files).
+```{r helpers}
+# ---- Shared helpers (identical across the cleaning scripts) ----
 
-```{r header-helper}
-# Reads a CPSS-5 CSV with two-row hierarchical headers.
-# Returns a cleaned data frame with combined column names and empty columns removed.
-read_assessment_csv_headers <- function(path,
-                                        na_vals = c("-", "", "NA", "N/A", "0")) {
-  raw <- read_csv(path, na = na_vals, col_names = FALSE, show_col_types = FALSE)
+# Reads an eInsight assessment CSV export with two-row headers.
+# Row 1 holds question text (merged cells export as blanks and are forward-
+# filled); row 2 holds sub-headers ("Response", "Score", ...). Returns a data
+# frame with combined snake_case names and fully blank columns removed.
+# "0" is deliberately NOT treated as missing: it is a valid rating on most tools.
+read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A")) {
+  raw <- read_csv(path, na = na_vals, col_names = FALSE, show_col_types = FALSE,
+                  col_types = cols(.default = "c"))
 
   h1    <- unlist(raw[1, ], use.names = FALSE)
   h2    <- unlist(raw[2, ], use.names = FALSE)
@@ -86,39 +100,102 @@ read_assessment_csv_headers <- function(path,
 
   df |> select(where(~ !all(is.na(.))))
 }
+
+# Parses eInsight date strings in ISO (2024-03-15) or US (03/15/2024) format,
+# with or without a time stamp. Warns with a count of non-blank values that
+# could not be parsed (these become NA and are dropped by the date filter).
+parse_einsight_date <- function(x, label = "date_completed") {
+  x   <- na_if(str_squish(as.character(x)), "")
+  out <- as.Date(parse_date_time(
+    x,
+    orders = c("Ymd", "mdY", "mdy", "Ymd HMS", "Ymd HM", "mdY HMS", "mdY HM"),
+    quiet  = TRUE
+  ))
+  n_bad <- sum(!is.na(x) & is.na(out))
+  if (n_bad > 0) {
+    warning(label, ": ", n_bad, " non-blank value(s) could not be parsed as dates and were set to NA.",
+            call. = FALSE)
+  }
+  out
+}
+
+# Removes demo/test rows (provider_id or client_system_id contains "DEMO") and
+# rows with no client_system_id (they cannot be linked or paired). Rows with a
+# missing provider_id are kept. Prints a count for each.
+remove_demo_rows <- function(df, label) {
+  missing_ids <- setdiff(c("provider_id", "client_system_id"), names(df))
+  if (length(missing_ids) > 0) {
+    stop(label, ": column(s) needed for the demo filter not found: ",
+         paste(missing_ids, collapse = ", "), call. = FALSE)
+  }
+  is_demo   <- coalesce(str_detect(df$provider_id, "DEMO"), FALSE) |
+               coalesce(str_detect(df$client_system_id, "DEMO"), FALSE)
+  no_client <- is.na(df$client_system_id) & !is_demo
+  cat(label, "- rows read:", nrow(df),
+      "| DEMO rows removed:", sum(is_demo),
+      "| rows with no client_system_id removed:", sum(no_client),
+      "| rows with missing provider_id (kept):", sum(is.na(df$provider_id) & !is_demo & !no_client), "\n")
+  df[!is_demo & !no_client, ]
+}
+
+# Converts item columns to numeric. Values that are non-numeric or outside
+# [min, max] are set to NA and counted (e.g., a stray "9" or text in a score column).
+clean_item_scores <- function(df, cols, min, max, label) {
+  num   <- df[cols] |> mutate(across(everything(), ~ suppressWarnings(as.numeric(.x))))
+  raw_m <- as.matrix(df[cols])
+  num_m <- as.matrix(num)
+  n_non_numeric  <- sum(!is.na(raw_m) & is.na(num_m))
+  n_out_of_range <- sum(num_m < min | num_m > max, na.rm = TRUE)
+  if (n_non_numeric + n_out_of_range > 0) {
+    warning(label, ": ", n_non_numeric, " non-numeric and ", n_out_of_range,
+            " out-of-range (", min, "-", max, ") item value(s) set to NA.", call. = FALSE)
+  } else {
+    message(label, ": all item values are numeric and within ", min, "-", max, ".")
+  }
+  df[cols] <- num |> mutate(across(everything(), ~ if_else(.x < min | .x > max, NA_real_, .x)))
+  df
+}
 ```
 
-------------------------------------------------------------------------
-
-# Helper: Score and Pair
+## Score and Pair
 
 Both versions share identical scoring and pairing logic after header processing.
 
 ```{r pair-helper}
-score_and_pair_cpss <- function(df, clinical_cutoff = 31) {
-  score_cols <- names(df)[endsWith(names(df), "_score")]
+score_and_pair_cpss <- function(df, label, clinical_cutoff = 31, max_missing = cpss_max_missing) {
+  score_cols_all <- names(df)[endsWith(names(df), "_score")]
+  if (length(score_cols_all) < 20) {
+    stop(label, ": expected at least 20 score columns but found ", length(score_cols_all), call. = FALSE)
+  }
+  score_cols <- score_cols_all[1:20]
+  if (length(score_cols_all) > 20) {
+    message(label, ": using the first 20 score columns as Q1-Q20. Excluded from the total: ",
+            paste(score_cols_all[-(1:20)], collapse = ", "))
+  }
 
   scored <- df |>
-    #filter(date_completed <= "2025-12-31") |>
-    mutate(across(all_of(score_cols), as.numeric)) |>
-    rowwise() |>
+    clean_item_scores(score_cols, min = 0, max = 4, label = label) |>
     mutate(
-      missing_count       = sum(is.na(c_across(all_of(score_cols)))),
-      total_score         = rowSums(across(all_of(score_cols)), na.rm = TRUE),
-      clinically_relevant = if_else(
-        !is.na(total_score) & total_score >= clinical_cutoff, TRUE, FALSE
-      )
-    ) |>
-    ungroup() |>
-    mutate(
-      date_completed = as.Date(date_completed, format = "%m/%d/%Y"),
-      row_id         = row_number()
+      missing_count  = rowSums(is.na(across(all_of(score_cols)))),
+      total_score    = rowSums(across(all_of(score_cols)), na.rm = TRUE),
+      total_score    = if_else(missing_count > max_missing, NA_real_, total_score),
+      date_completed = parse_einsight_date(date_completed)
     ) |>
     select(client_system_id, collection, date_completed, total_score) |>
-    filter(
-      date_completed >= "2024-01-01",
-      date_completed <= Sys.Date()
-    )
+    filter(between(date_completed, start_date, end_date))
+
+  cat(label, "rows after scoring:  ", nrow(scored), "\n")
+  cat(label, "missing total_score: ", sum(is.na(scored$total_score)), "\n")
+
+  severity_band <- function(score) {
+    case_when(
+      score <= 10 ~ "Minimal",
+      score <= 20 ~ "Mild",
+      score <= 40 ~ "Moderate",
+      score <= 60 ~ "Severe",
+      score <= 80 ~ "Very Severe"
+    ) |> factor(levels = c("Minimal", "Mild", "Moderate", "Severe", "Very Severe"))
+  }
 
   scored |>
     group_by(client_system_id) |>
@@ -128,9 +205,9 @@ score_and_pair_cpss <- function(df, clinical_cutoff = 31) {
       initial_date    = first(date_completed),
       initial_score   = first(total_score),
       follow_up_date  = if_else(n_assessments >= 2, last(date_completed),  as.Date(NA)),
-      follow_up_score = if_else(n_assessments >= 2, last(total_score),     NA_real_)
+      follow_up_score = if_else(n_assessments >= 2, last(total_score),     NA_real_),
+      .groups = "drop"
     ) |>
-    ungroup() |>
     filter(!is.na(follow_up_date)) |>
     mutate(
       # Lower follow-up = positive outcome (lower symptom severity is better)
@@ -140,23 +217,27 @@ score_and_pair_cpss <- function(df, clinical_cutoff = 31) {
         follow_up_score == initial_score ~ 0L,
         follow_up_score >  initial_score ~ -1L
       ),
-      score_change      = follow_up_score - initial_score,
-      initial_quarter   = paste0("Q", quarter(initial_date),    " ", year(initial_date)),
-      follow_up_quarter = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)),
-      initial_severity  = case_when(
-        initial_score <= 10 ~ "Minimal",
-        initial_score <= 20 ~ "Mild",
-        initial_score <= 40 ~ "Moderate",
-        initial_score <= 60 ~ "Severe",
-        initial_score <= 80 ~ "Very Severe"
-      ) |> factor(levels = c("Minimal", "Mild", "Moderate", "Severe", "Very Severe")),
-      follow_up_severity = case_when(
-        follow_up_score <= 10 ~ "Minimal",
-        follow_up_score <= 20 ~ "Mild",
-        follow_up_score <= 40 ~ "Moderate",
-        follow_up_score <= 60 ~ "Severe",
-        follow_up_score <= 80 ~ "Very Severe"
-      ) |> factor(levels = c("Minimal", "Mild", "Moderate", "Severe", "Very Severe"))
+      score_change           = follow_up_score - initial_score,
+      initial_quarter        = paste0("Q", quarter(initial_date),    " ", year(initial_date)),
+      follow_up_quarter      = paste0("Q", quarter(follow_up_date), " ", year(follow_up_date)),
+      initial_severity       = severity_band(initial_score),
+      follow_up_severity     = severity_band(follow_up_score),
+      initial_above_cutoff   = initial_score   >= clinical_cutoff,
+      follow_up_above_cutoff = follow_up_score >= clinical_cutoff,
+      days_since_initial     = as.integer(follow_up_date - initial_date)
+    )
+}
+
+summarise_cpss <- function(paired) {
+  paired |>
+    summarise(
+      n_paired           = n(),
+      n_improved         = sum(positive_outcome ==  1, na.rm = TRUE),
+      n_no_change        = sum(positive_outcome ==  0, na.rm = TRUE),
+      n_worsened         = sum(positive_outcome == -1, na.rm = TRUE),
+      pct_improved       = round(100 * n_improved / n_paired, 1),
+      n_missing_outcome  = sum(is.na(positive_outcome)),
+      n_fu_within_3_days = sum(days_since_initial <= 3, na.rm = TRUE)
     )
 }
 ```
@@ -166,23 +247,14 @@ score_and_pair_cpss <- function(df, clinical_cutoff = 31) {
 # 1. CPSS-5 Interviewer Version
 
 ```{r cpss-i}
-cpss_i_raw <- read_assessment_csv_headers(
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/CPSS-5-Interviewer.csv"
-)
+cpss_i_raw <- read_assessment_csv(file.path(in_dir, "CPSS-5-Interviewer.csv")) |>
+  remove_demo_rows("CPSS-5 Interviewer")
 
-cpss_i_paired <- score_and_pair_cpss(cpss_i_raw)
+cpss_i_paired <- score_and_pair_cpss(cpss_i_raw, label = "CPSS-5 Interviewer")
 
 cat("CPSS-5 Interviewer paired clients:", nrow(cpss_i_paired), "\n")
 
-cpss_i_paired |>
-  summarise(
-    n_paired          = n(),
-    n_improved        = sum(positive_outcome ==  1, na.rm = TRUE),
-    n_no_change       = sum(positive_outcome ==  0, na.rm = TRUE),
-    n_worsened        = sum(positive_outcome == -1, na.rm = TRUE),
-    pct_improved      = round(100 * n_improved / n_paired, 1),
-    n_missing_outcome = sum(is.na(positive_outcome))
-  )
+summarise_cpss(cpss_i_paired)
 ```
 
 ------------------------------------------------------------------------
@@ -190,23 +262,14 @@ cpss_i_paired |>
 # 2. CPSS-5 Self-Report Version
 
 ```{r cpss-s}
-cpss_s_raw <- read_assessment_csv_headers(
-  "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments/CPSS-5-self.csv"
-)
+cpss_s_raw <- read_assessment_csv(file.path(in_dir, "CPSS-5-self.csv")) |>
+  remove_demo_rows("CPSS-5 Self")
 
-cpss_s_paired <- score_and_pair_cpss(cpss_s_raw)
+cpss_s_paired <- score_and_pair_cpss(cpss_s_raw, label = "CPSS-5 Self")
 
 cat("CPSS-5 Self paired clients:", nrow(cpss_s_paired), "\n")
 
-cpss_s_paired |>
-  summarise(
-    n_paired          = n(),
-    n_improved        = sum(positive_outcome ==  1, na.rm = TRUE),
-    n_no_change       = sum(positive_outcome ==  0, na.rm = TRUE),
-    n_worsened        = sum(positive_outcome == -1, na.rm = TRUE),
-    pct_improved      = round(100 * n_improved / n_paired, 1),
-    n_missing_outcome = sum(is.na(positive_outcome))
-  )
+summarise_cpss(cpss_s_paired)
 ```
 
 ------------------------------------------------------------------------
@@ -214,8 +277,6 @@ cpss_s_paired |>
 # 3. Write Clean CSVs
 
 ```{r write-csvs}
-out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
-
 write_csv(cpss_i_paired, file.path(out_dir, "cpss_i_paired_clean.csv"))
 write_csv(cpss_s_paired, file.path(out_dir, "cpss_s_paired_clean.csv"))
 
