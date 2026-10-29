@@ -25,7 +25,7 @@ editor_options:
 #| echo: false
 #| results: asis
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
-if (exists("params") && isTRUE(as.logical(params$shareable))) {
+if (isTRUE(getOption("knitr.in.progress")) && isTRUE(as.logical(params$shareable))) {
   k0 <- if (!is.null(params$suppress_n)) as.integer(params$suppress_n) else 60L
   cat(sprintf(paste0(
     "\n\n::: {.callout-note}\n## Shareable render\n\n",
@@ -61,7 +61,7 @@ defaults <- list(
   suppress_n        = 60,
   shareable         = FALSE
 )
-cfg <- modifyList(defaults, if (exists("params")) as.list(params) else list())
+cfg <- modifyList(defaults, if (isTRUE(getOption("knitr.in.progress"))) as.list(params) else list())
 
 # Shareable render: counts of 1 to SUPPRESS_N - 1 are suppressed in every results table (with
 # complementary suppression), funding round values seen for fewer than SUPPRESS_N respondents are
