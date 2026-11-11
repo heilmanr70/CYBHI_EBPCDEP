@@ -45,6 +45,7 @@ Each file has a two-row header: row 1 contains question text (with merged cells 
 library(tidyverse)
 library(janitor)
 library(zoo)
+end_date   <- as.Date("2027-03-31")
 ```
 
 ------------------------------------------------------------------------

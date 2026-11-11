@@ -23,7 +23,7 @@ This notebook prepares **CYBHI EBP/CDEP** BASIS-24 assessment data for analysis 
 -   Total score is a **weighted sum**: `sum(weight_i × rating_i) / (1 − sum of weights for missing items)`. Weights for Q1–Q24 are defined in the scoring chunk below and sum to 1.
 -   Total score range: 0–4. Higher scores indicate greater functional impairment.
 -   **A lower follow-up score indicates a positive outcome.**
--   `total_score` is set to `NA` if fewer than 23 of 24 items are answered (more than 1 item missing).
+-   `total_score` is set to `NA` if fewer than 23 of 24 items are answered (more than 1 item missing). This weighting, the weights, and the missing-item rule match the *BASIS-24 Instruction Guide* (2021) exactly, so the D10 policy changes nothing here.
 
 Subscale item mappings (documented for reference; **subscale scores are not currently computed**):
 
@@ -59,11 +59,11 @@ library(janitor)
 library(zoo)
 
 # ---- Configuration: edit paths and reporting window here ----
-in_dir  <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments"
-out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+in_dir  <- "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments"
+out_dir <- "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
 
 start_date <- as.Date("2024-01-01")
-end_date   <- Sys.Date()   # set to a fixed date (e.g., as.Date("2026-09-30")) to freeze the data window
+end_date   <- as.Date("2027-03-31")   # final-report data window (D1); filters nothing on interim exports
 
 # BASIS-24 items the eInsight export already reverses, so the script must not
 # reverse them again. Checked October 2026: items 4-9. If the direction check

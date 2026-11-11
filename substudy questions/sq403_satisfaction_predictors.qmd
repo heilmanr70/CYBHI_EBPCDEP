@@ -18,8 +18,8 @@ execute:
   warning: false
   message: false
 params:
-  path_combined_all: "~/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/combined_satisfaction_clean.csv"
-  path_all_data: "~/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv"
+  path_combined_all: "~/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/combined_satisfaction_clean_CDEP.csv"
+  path_all_data: "~/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean_CDEP.csv"
   path_grantee_lookup: ""
   output_dir: "output/sq403"
   data_through: ""
@@ -30,14 +30,15 @@ params:
   large_program_pattern: "give ?thx"
   shareable: true
   modality_subset: "CDEP"      # "CDEP" for Study Question 4.03; blank for 4.02 (all programs)
-  modality_col: "modality" # column in the grantee lookup file that says EBP or CDEP
+  modality_presubset: true     # true: the two data files already hold only modality_subset programs (no lookup needed)
+  modality_col: "modality" # column in the grantee lookup file that says EBP or CDEP (used only if a lookup is supplied)
 ---
 
 # Purpose and approach
 
 **Study question 4.03:** Within the grantees doing CDEPs, were there higher client satisfaction rates among specific target populations?
 
-This render uses the 4.02 methods, limited to surveys from programs whose modality is CDEP.
+This render uses the 4.02 methods on data files that were limited to CDEP programs before this script.
 
 The interim report (January 30, 2026) answered this question with separate, unadjusted ordinal models for participant type, race, ethnicity, gender identity, and sexual orientation. It recommended that the final report add program context and geography, and move to adjusted models that account for participant characteristics, service exposure, and baseline severity. This analysis does that in five steps:
 
@@ -87,8 +88,10 @@ if (exists("params") && !is.null(params$modality_subset) && nzchar(params$modali
   cat(sprintf(paste0(
     "\n\n::: {.callout-important}\n## Study Question 4.03: %1$s programs only\n\n",
     "Within the grantees doing %1$ss, were there higher client satisfaction rates among specific target populations? ",
-    "This render uses the 4.02 methods, limited to surveys from programs whose modality is %1$s.\n\n:::\n\n"),
-    params$modality_subset))
+    "This render uses the 4.02 methods, %2$s.\n\n:::\n\n"),
+    params$modality_subset,
+    if (isTRUE(as.logical(params$modality_presubset))) "on data files that were limited to these programs before this script"
+    else "limited to surveys from programs with this modality"))
 }
 ```
 
@@ -119,10 +122,10 @@ Edit this section if eInsight category labels differ from the patterns below. Ev
 #| label: config
 # Defaults are used when running chunks interactively; YAML params take precedence when rendering.
 defaults <- list(
-  path_combined_all = "~/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/combined_satisfaction_clean.csv",
-  path_all_data = "~/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv",
+  path_combined_all = "~/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/combined_satisfaction_clean_CDEP.csv",
+  path_all_data = "~/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean_CDEP.csv",
   path_grantee_lookup = "",
-  output_dir = "output/sq402",
+  output_dir = "output/sq403",
   data_through = "",
   suppress_n = 60,
   score_source = "score",
@@ -130,17 +133,21 @@ defaults <- list(
   link_fallback_primary_client = TRUE,
   large_program_pattern = "give ?thx",
   shareable = FALSE,
-  modality_subset = "",
+  modality_subset = "CDEP",
+  modality_presubset = TRUE,
   modality_col = "modality"
 )
 cfg <- modifyList(defaults, if (exists("params")) as.list(params) else list())
-if (nzchar(cfg$modality_subset) && cfg$output_dir == "output/sq402") cfg$output_dir <- "output/sq403"
 
 SUPPRESS_N  <- as.integer(cfg$suppress_n)
 SUPPR       <- "Suppr."
 # Shareable render: masks raw values seen fewer than SUPPRESS_N times and shows QA counts of
 # 1 to SUPPRESS_N - 1 as "<SUPPRESS_N". Results tables are suppressed in every render.
 SHAREABLE   <- isTRUE(as.logical(cfg$shareable))
+# Subset render (Study Question 4.03). PRESUBSET = the data files were limited to the subset upstream,
+# so nothing is filtered here; otherwise surveys are filtered on the grantee lookup's modality column.
+SUBSET_LABEL <- cfg$modality_subset
+PRESUBSET    <- nzchar(SUBSET_LABEL) && isTRUE(as.logical(cfg$modality_presubset))
 MIN_MODEL_N <- 300   # minimum sample for subset (sensitivity) models
 LIKERT_LABELS <- c("Strongly disagree", "Disagree", "Undecided", "Agree", "Strongly agree")
 
@@ -490,9 +497,10 @@ read_any <- function(path) {
     stop("Unsupported file type: ", path, call. = FALSE))
 }
 
-# Objects already in the environment (interactive use) are used as-is.
-if (!exists("combined_all")) combined_all <- read_any(cfg$path_combined_all)
-if (!exists("all_data"))     all_data     <- read_any(cfg$path_all_data)
+# Always read from the configured paths, so a full (all-program) dataset left in the
+# workspace by another script can never stand in for the subset files.
+combined_all   <- read_any(cfg$path_combined_all)
+all_data       <- read_any(cfg$path_all_data)
 grantee_lookup <- read_any(cfg$path_grantee_lookup)
 
 check_cols <- function(df, cols, name) {
@@ -863,15 +871,25 @@ if (!is.null(grantee_lookup)) {
               by = "provider_system_id")
 }
 
-# Study Question 4.03: keep only surveys from programs whose modality matches modality_subset.
+# Study Question 4.03. Pre-subsetted files are used as they are; if a grantee lookup is also
+# supplied, it is used only to confirm that no other modality is present. Otherwise surveys are
+# filtered to programs whose modality matches modality_subset.
 n_before_subset <- nrow(analytic)
-if (nzchar(cfg$modality_subset)) {
-  if (!"modality" %in% names(analytic)) {
+if (nzchar(SUBSET_LABEL)) {
+  has_modality <- "modality" %in% names(analytic)
+  if (!PRESUBSET && !has_modality) {
     stop("modality_subset is set, but no modality column was found. Set path_grantee_lookup to the file ",
-         "that flags CDEP programs, and modality_col to its EBP/CDEP column.", call. = FALSE)
+         "that flags ", SUBSET_LABEL, " programs and modality_col to its modality column, or set ",
+         "modality_presubset: true if the data files are already limited to ", SUBSET_LABEL, ".", call. = FALSE)
   }
-  analytic <- analytic |>
-    filter(coalesce(str_detect(as.character(modality), regex(cfg$modality_subset, ignore_case = TRUE)), FALSE))
+  if (has_modality) {
+    in_subset <- str_detect(as.character(analytic$modality), regex(SUBSET_LABEL, ignore_case = TRUE))
+    if (PRESUBSET && any(!in_subset, na.rm = TRUE)) {
+      stop("modality_presubset is true, but ", sum(!in_subset, na.rm = TRUE), " linked surveys have a modality other than ",
+           SUBSET_LABEL, " in the grantee lookup. Check the data file paths.", call. = FALSE)
+    }
+    if (!PRESUBSET) analytic <- analytic |> filter(coalesce(in_subset, FALSE))
+  }
 }
 
 for (v in setdiff(c(DEMO_VARS, "funding_round", "county", "reason_for_discharge"), names(analytic))) {
@@ -893,8 +911,10 @@ flow <- tribble(
   "Linked on primary (family) client ID (fallback)", if (is.null(linked_2)) 0L else nrow(linked_2),
   "Analytic sample (one survey per respondent per version)", n_before_subset
 )
-if (nzchar(cfg$modality_subset)) {
-  flow <- add_row(flow, step = paste0("Limited to ", cfg$modality_subset, " programs (4.03 analytic sample)"), n = nrow(analytic))
+if (PRESUBSET) {
+  flow <- flow |> mutate(step = if_else(row_number() == 1, sprintf("%s (file pre-limited to %s programs)", step, SUBSET_LABEL), step))
+} else if (nzchar(SUBSET_LABEL)) {
+  flow <- add_row(flow, step = paste0("Limited to ", SUBSET_LABEL, " programs (4.03 analytic sample)"), n = nrow(analytic))
 }
 flow_display <- flow |> mutate(n = fmt_n_qa(n))
 flow_display |> kable(col.names = c("Step", "Surveys"))

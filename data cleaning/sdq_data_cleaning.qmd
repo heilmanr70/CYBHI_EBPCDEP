@@ -24,10 +24,12 @@ Each file has a two-row header: row 1 contains question text, row 2 contains sub
 
 **Scoring:** An **increase** in score indicates a negative outcome.
 
--   Items are rated 0–2 (Not True = 0, Somewhat True = 1, Certainly True = 2; matched case- and whitespace-insensitively). Total difficulties score = sum of 20 items (items 1, 4, 9, 17, 20 are excluded; items 7, 11, 14, 21, 25 are reverse-coded).
+-   Items are rated 0–2 (Not True = 0, Somewhat True = 1, Certainly True = 2; matched case- and whitespace-insensitively). Items 7, 11, 14, 21, 25 are reverse-coded. Scoring follows the published SDQ scoring sheets (4–17/18+, June 2016; 2–4, October 2015).
+-   Four difficulty subscales of 5 items each: emotional (3, 8, 13, 16, 24), conduct (5, 7, 12, 18, 22), hyperactivity (2, 10, 15, 21, 25), and peer problems (6, 11, 14, 19, 23). The prosocial items (1, 4, 9, 17, 20) are not scored.
+-   **Missing items (published rule):** a subscale is prorated when at least 3 of its 5 items are answered (sum × 5 ÷ number answered, rounded to the nearest whole number) and is `NA` otherwise.
 -   **The eInsight export already reverses items 7, 11, 14, 21, 25.** Their response text arrives flipped, so the script does not reverse them again (`sdq_reverse_items_in_export <- TRUE` in Setup). Evidence from the October 2026 run: in all four versions these five items, and only these, correlated negatively with the rest of the scale after the script's reversal, and their answer patterns were implausible (e.g., "Has at least one good friend" = "Not True" for 63% of P4-10 children).
--   Total score range: 0–40. Set to `NA` if ≥3 items are missing.
--   Externalizing score = sum of conduct (5, 7, 12, 18, 22) + hyperactivity (2, 10, 15, 21, 25) items. Range: 0–20. Set to `NA` if ≥3 of the 10 items are missing.
+-   Total difficulties score = sum of the four difficulty subscales, range 0–40; `NA` if any subscale is `NA`.
+-   Externalizing score = conduct + hyperactivity subscales, range 0–20; `NA` if either is `NA`.
 -   Cut-off bands (close to average / slightly raised / high / very high) are version-specific.
 
 **Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 exist) is the follow-up. Clients with only one assessment are excluded.
@@ -52,7 +54,7 @@ Existing columns are unchanged; `initial_ext_band` and `follow_up_ext_band` are 
 -   [ ] The externalizing cut-off bands are not part of the standard published SDQ banding (which bands conduct and hyperactivity separately). Confirm the source of these thresholds before reporting externalizing bands.
 -   [ ] Confirm with eInsight that the response text for items 7, 11, 14, 21, 25 is exported already reversed. Totals before this fix counted those items backwards, so earlier SDQ results (including the interim report) are provisional.
 -   [x] **Expected warning:** P2-4 item 21 ("Can stop and think things out before acting") shows a near-zero negative item-rest correlation (−0.04, October 2026). Against its own hyperactivity items (2, 10, 15) it is positive (0.13; 0.19–0.40 in the other versions), so its direction is right and the item is simply weak for ages 2–4. Investigate only if it becomes clearly negative.
--   [ ] Missing-item rules here (≥3 missing → `NA`, no prorating) differ from the official SDQ scoring, which prorates a subscale when at least 3 of its 5 items are answered.
+-   [x] ~~Missing-item rules differ from the official SDQ scoring.~~ Now follows the published rule (D10): subscales prorated when at least 3 of 5 items are answered; total and externalizing built from the subscales.
 
 ------------------------------------------------------------------------
 
@@ -64,11 +66,11 @@ library(janitor)
 library(zoo)
 
 # ---- Configuration: edit paths and reporting window here ----
-in_dir  <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments"
-out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+in_dir  <- "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments"
+out_dir <- "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
 
 start_date <- as.Date("2024-01-01")
-end_date   <- Sys.Date()   # set to a fixed date (e.g., as.Date("2026-09-30")) to freeze the data window
+end_date   <- as.Date("2027-03-31")   # final-report data window (D1); filters nothing on interim exports
 
 # eInsight exports the response text for the reverse-scored items (7, 11, 14, 21, 25)
 # already flipped, so the script must not reverse them again. If a future export
@@ -198,6 +200,41 @@ item_rest_check <- function(df, cols, label, anchor = cols) {
   }
   out |> filter(item_rest_r < 0 | is.na(item_rest_r))
 }
+
+# Missing-item policy (decided October 2026, D10): use the instrument's
+# published rule where one exists; otherwise allow up to 10% of items to be
+# blank and prorate. Filled-in values are rounded half up to whole numbers,
+# as the published rules do.
+round_half_up <- function(x) floor(x + 0.5)
+
+default_max_missing <- function(n_items) floor(0.10 * n_items)
+
+# Scores a total from a data frame holding only the item columns. Rows with
+# more than `max_missing` blank items get NA. Otherwise blanks are filled in
+# by `method`:
+#   "prorate":   total = sum of answered items x number of items / number answered
+#   "item_mean": each blank item takes the rounded mean of the answered items
+#   "zero":      blank items count as 0 (the PSC-35 rule)
+# When `label` is given, reports how many totals were filled in or set to NA.
+score_total <- function(items, max_missing, method = c("prorate", "item_mean", "zero"), label = NULL) {
+  method   <- match.arg(method)
+  items    <- as.matrix(items)
+  answered <- rowSums(!is.na(items))
+  n_blank  <- ncol(items) - answered
+  item_sum <- rowSums(items, na.rm = TRUE)
+  total <- switch(method,
+    prorate   = round_half_up(item_sum * ncol(items) / answered),
+    item_mean = item_sum + n_blank * round_half_up(item_sum / answered),
+    zero      = item_sum
+  )
+  total[n_blank > max_missing] <- NA_real_
+  if (!is.null(label)) {
+    message(label, ": ", sum(n_blank > 0 & n_blank <= max_missing), " total(s) with up to ",
+            max_missing, " blank item(s) filled in (", method, "); ", sum(n_blank > max_missing),
+            " set to NA (more than ", max_missing, " of ", ncol(items), " items blank).")
+  }
+  total
+}
 ```
 
 ## Score SDQ
@@ -221,7 +258,8 @@ band_sdq <- function(score, cutoffs) {
 }
 
 score_sdq <- function(df, lookup, cutoffs_total, cutoffs_externalizing,
-                      rev_items, reverse_in_script, exclude_items, externalizing_items, label) {
+                      rev_items, reverse_in_script, subscales, externalizing_scales,
+                      subscale_max_missing, label) {
 
   lookup <- lookup |>
     mutate(new_name = paste0("q", item, "_", column_name))
@@ -241,7 +279,7 @@ score_sdq <- function(df, lookup, cutoffs_total, cutoffs_externalizing,
     rename(all_of(setNames(lookup$column_name, lookup$new_name))) |>
     mutate(across(all_of(lookup$new_name), ~ map_responses(.x, sdq_response_map)))
 
-  included <- lookup |> filter(item %in% 1:25, !item %in% exclude_items)
+  included <- lookup |> filter(item %in% unlist(subscales))
   rev_cols <- included$new_name[included$item %in% rev_items]
   stopifnot(nrow(included) == 20, length(rev_cols) == length(rev_items))
 
@@ -264,29 +302,19 @@ score_sdq <- function(df, lookup, cutoffs_total, cutoffs_externalizing,
   print(item_rest_check(df, effective_cols, label,
                         anchor = effective_cols[!included$new_name %in% rev_cols]))
 
-  # Total score
-  df <- df |>
-    mutate(
-      missing_count_total = rowSums(is.na(across(all_of(included$new_name)))),
-      total_score  = rowSums(across(all_of(effective_cols)), na.rm = TRUE),
-      total_score  = ifelse(missing_count_total >= 3, NA_real_, total_score),
-      cut_off_band = band_sdq(total_score, cutoffs_total)
-    )
-
-  # Externalizing score
-  ext_lookup <- lookup |> filter(item %in% externalizing_items)
-  stopifnot(nrow(ext_lookup) == length(externalizing_items))
-  ext_effective_cols <- ifelse(
-    ext_lookup$new_name %in% cols_to_reverse,
-    paste0(ext_lookup$new_name, "_rev"),
-    ext_lookup$new_name
-  )
+  # Subscales (published rule: prorated when no more than 2 of 5 items are
+  # blank). Total = the four difficulty subscales; externalizing = conduct +
+  # hyperactivity. A sum is NA when any subscale in it is NA.
+  subscale_scores <- map(subscales, function(items) {
+    score_total(df[effective_cols[match(items, included$item)]], subscale_max_missing)
+  }) |>
+    as_tibble()
 
   df |>
     mutate(
-      missing_count_externalizing = rowSums(is.na(across(all_of(ext_lookup$new_name)))),
-      externalizing_score = rowSums(across(all_of(ext_effective_cols)), na.rm = TRUE),
-      externalizing_score = ifelse(missing_count_externalizing >= 3, NA_real_, externalizing_score),
+      total_score         = rowSums(subscale_scores),
+      cut_off_band        = band_sdq(total_score, cutoffs_total),
+      externalizing_score = rowSums(subscale_scores[externalizing_scales]),
       externalizing_band  = band_sdq(externalizing_score, cutoffs_externalizing)
     )
 }
@@ -303,8 +331,9 @@ read_score_sdq <- function(file, lookup, cutoffs_total, cutoffs_externalizing, l
       cutoffs_externalizing = cutoffs_externalizing,
       rev_items             = rev_items,
       reverse_in_script     = !sdq_reverse_items_in_export,
-      exclude_items         = exclude_items,
-      externalizing_items   = externalizing_items,
+      subscales             = sdq_subscales,
+      externalizing_scales  = sdq_externalizing_scales,
+      subscale_max_missing  = sdq_subscale_max_missing,
       label                 = label
     )
 
@@ -396,10 +425,16 @@ sdq_1117_self_questions <- read_csv(file.path(in_dir, "sdq-1117-self-scoring.csv
 
 # Reverse-coded items (same across all versions); see sdq_reverse_items_in_export in Setup
 rev_items          <- c(7, 11, 14, 21, 25)
-# Items excluded from total score (prosocial scale)
-exclude_items      <- c(1, 4, 9, 17, 20)
-# Externalizing items (conduct + hyperactivity)
-externalizing_items <- c(2, 5, 7, 10, 12, 15, 18, 21, 22, 25)
+# Difficulty subscales (the prosocial items 1, 4, 9, 17, 20 are not scored)
+sdq_subscales <- list(
+  emotional     = c(3, 8, 13, 16, 24),
+  conduct       = c(5, 7, 12, 18, 22),
+  hyperactivity = c(2, 10, 15, 21, 25),
+  peer          = c(6, 11, 14, 19, 23)
+)
+sdq_externalizing_scales <- c("conduct", "hyperactivity")
+# Published rule: a subscale is prorated when at least 3 of its 5 items are answered
+sdq_subscale_max_missing <- 2
 
 # Cut-off bands — Parent 2–4
 cutoffs_total_P24 <- list(

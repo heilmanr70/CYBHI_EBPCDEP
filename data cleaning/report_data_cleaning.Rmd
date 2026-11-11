@@ -36,12 +36,14 @@ This notebook prepares **CYBHI EBP/CDEP** program data for analysis and reportin
 
 ## Open Issues / Action Items
 
-- [ ] Confirm we are filtering to the **last follow-up time point**. `post_follow_up_number` (integer) is now available for this, e.g., keep the maximum per client and intervention.
+- [ ] Confirm we are filtering to the **last follow-up time point** (D6, open). Section 3.2 already removes follow-ups after `end_date`, so the last remaining follow-up is the last one inside the window. `post_follow_up_number` (integer) is available for the rule, e.g., keep the maximum per client and intervention.
 - [x] ~~`nrow(dup_clients_diff_time) + nrow(dup_clients_same_time)` should equal `nrow(dup_clients)` but does not.~~ Explained in Section 4.4: the same-time count was counting client × date rows rather than clients, the categories overlap, and a third pattern (one initial paired with several follow-ups) fits neither. Section 4.4 classifies every client.
 - [ ] Clients with the same `client_system_id` but different `assessment_date` values need special handling (see `client_system_id == 3664` as an example). Clarify whether mismatched dates reflect linked assessment + intervention records, or data entry errors.
-- [x] Provider 573 is reassigned to Round 2 **regardless of its recorded round** (the other four providers are only reassigned when the round is "No Funding Round Selected"). Section 3.4 shows what 573's rows had before the fix. Confirm this is intended.
-- [ ] Race and ethnicity cleaning strips "Don't Know", "Prefer Not To Answer", and "Not Applicable". The interim report treats valid nonresponses as meaningful categories; confirm downstream scripts take those from the raw `race`/`ethnicity` columns.
-- [ ] Clients dropped as demographic duplicates still appear in `demographic_discharge_clean.csv` (left join from discharge) with blank demographics. Section 5 reports how many rows this affects.
+- [x] Provider 573 is reassigned to Round 2 **regardless of its recorded round** (the other four providers are only reassigned when the round is "No Funding Round Selected"). Confirmed (D4). Section 3.5 shows what 573's rows had before the fix and lists providers still without a round.
+- [x] ~~Race and ethnicity nonresponse stripped.~~ Kept as categories with separate codes (D11): 97 Don't Know, 98 Prefer Not To Answer, 99 Not Applicable. Confirm these code numbers suit the downstream codebooks.
+- [x] ~~Demographic duplicates dropped.~~ Resolved field by field (D5, Section 2.4). Clients whose duplicate rows disagree on an ID column still have no demographics in the joined file; Sections 2.4 and 5 count them.
+- [ ] `intervention_start` / `intervention_end` are left as exported until their format is confirmed (Q5). Section 3.2 parses `intervention_start` for the window filter only and warns about values it cannot read.
+- [ ] The data window applies to discharge rows only. The demographics file has no intervention date, so on the final export "people with demographic data" will include anyone added after `end_date`. Decide whether to limit that count to clients enrolled inside the window.
 
 ---
 
@@ -55,11 +57,16 @@ library(readxl)
 # ---- Configuration: edit export date and paths here ----
 export_date <- "2026-10-08"   # date prefix of the eInsight export files
 
-export_root <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports"
+# Final-report data window (D1): applies to intervention start; follow-ups
+# after end_date are cut (Section 3.2). Filters nothing on interim exports.
+start_date <- as.Date("2024-01-01")
+end_date   <- as.Date("2027-03-31")
+
+export_root <- "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Data/eInsight Exports"
 discharge_path   <- file.path(export_root, "Discharge Report Export", paste0(export_date, "-discharge_report.xlsx"))
 demographic_path <- file.path(export_root, "Admin Report Exports",    paste0(export_date, "-client_demographics.xlsx"))
 
-out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+out_dir <- "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
 
 na_vals <- c("-", "", "NA", "N/A", "<NA>", "NA ")
 id_cols <- c("client_system_id", "provider_id", "provider_system_id", "primary_client_system_id")
@@ -78,7 +85,7 @@ id_to_chr <- function(x) {
 
 # Converts an eInsight/Excel date column to Date. Handles columns that arrive as
 # Date/POSIXct, as Excel serial numbers, or as a character mix of serials and
-# text dates (m/d/y or y-m-d). Years below 100 (e.g., 0025) are shifted by 2000.
+# text dates (m/d/y or y-m-d, with or without a time). Years below 100 (e.g., 0025) are shifted by 2000.
 # Warns with a count of non-blank values that could not be parsed.
 parse_excel_date <- function(x, label) {
   if (inherits(x, "Date"))   return(x)
@@ -94,7 +101,9 @@ parse_excel_date <- function(x, label) {
   }
   is_text <- !is.na(x) & !is_serial
   if (any(is_text)) {
-    out[is_text] <- as.Date(parse_date_time(x[is_text], orders = c("mdy", "Ymd"), quiet = TRUE))
+    out[is_text] <- as.Date(parse_date_time(
+      x[is_text], orders = c("mdy", "Ymd", "mdy HM", "mdy HMS", "Ymd HM", "Ymd HMS"), quiet = TRUE
+    ))
   }
 
   # Fix 2-digit years parsed as e.g. year 25 instead of 2025
@@ -128,18 +137,63 @@ remove_demo_rows <- function(df, label) {
   df[!is_demo & !no_client, ]
 }
 
-# Splits a comma-separated multi-select field, trims each value, drops
-# non-informative responses and blanks, removes repeats, and rejoins with ", ".
-# Returns NA when nothing informative remains.
-nonresponse_pattern <- "^(don['\u2019]?t know|prefer not to answer|not applicable)$"
+# Race and ethnicity nonresponse options are kept as categories with their own
+# codes (D11, as in the interim report). 88 = two or more values selected.
+codebook_nonresponse <- c("Don't Know" = 97, "Prefer Not To Answer" = 98, "Not Applicable" = 99)
+multi_code <- 88
 
-clean_multiselect <- function(x, drop = nonresponse_pattern) {
+# Comparison key for responses: lower case, no apostrophes (straight or curly),
+# single spaces. "Don’t know", "Dont Know" and "Don't Know" all match.
+response_key <- function(x) str_to_lower(str_remove_all(str_squish(x), "['\u2019]"))
+
+# Splits a comma-separated multi-select field, trims each value, and removes
+# blanks and repeats. Informative values take priority: nonresponse options
+# are dropped when anything else was selected, and otherwise returned with the
+# standard labels in codebook_nonresponse. Rejoins with ", "; NA when blank.
+clean_multiselect <- function(x) {
+  nonresponse <- names(codebook_nonresponse)
   map_chr(str_split(x, ","), function(values) {
-    values <- str_squish(values)
-    values <- values[!is.na(values) & values != "" & !str_detect(str_to_lower(values), drop)]
-    values <- unique(values)
-    if (length(values) == 0) NA_character_ else paste(values, collapse = ", ")
+    values <- unique(str_squish(values))
+    values <- values[!is.na(values) & values != ""]
+    nr_idx <- match(response_key(values), response_key(nonresponse))
+    keep   <- if (any(is.na(nr_idx))) values[is.na(nr_idx)] else unique(nonresponse[nr_idx])
+    if (length(keep) == 0) NA_character_ else paste(keep, collapse = ", ")
   })
+}
+
+# TRUE when a cleaned value holds only nonresponse options
+is_nonresponse <- function(cleaned) {
+  word(cleaned, 1, sep = fixed(", ")) %in% names(codebook_nonresponse)
+}
+
+# Number of informative values: 1 = one, 2 = two or more, NA = blank or nonresponse only
+recode_count <- function(cleaned) {
+  case_when(
+    is.na(cleaned) | is_nonresponse(cleaned) ~ NA,
+    str_detect(cleaned, ",")                 ~ 2L,
+    TRUE                                     ~ 1L
+  )
+}
+
+# Numeric code: the codebook value for one response, multi_code for two or
+# more, the nonresponse code for one nonresponse option. NA when blank, when a
+# value has no codebook entry, or when different nonresponse options were
+# combined (both are listed for review after each recode).
+recode_value <- function(cleaned, codebook) {
+  case_when(
+    is.na(cleaned)                                      ~ NA,
+    is_nonresponse(cleaned) & str_detect(cleaned, ",") ~ NA,
+    is_nonresponse(cleaned)                             ~ unname(codebook_nonresponse[cleaned]),
+    str_detect(cleaned, ",")                            ~ multi_code,
+    TRUE                                                ~ unname(codebook[cleaned])
+  )
+}
+
+# Collapses one field across a client's duplicate demographic rows (D5): the
+# shared value when every non-blank value agrees, NA when they conflict.
+collapse_agreeing <- function(x) {
+  values <- unique(x[!is.na(x)])
+  if (length(values) == 1) values else x[NA_integer_]
 }
 
 # Standardizes extracted time points to "Initial" / "Follow Up N".
@@ -200,7 +254,7 @@ demographic_data_filtered |>
 
 ## 2.2 Identify and Handle Duplicate Client IDs
 
-The demographics export should have one row per client, but some clients appear more than once (e.g., due to selecting multiple languages or data entry errors). We identify duplicates, export them for review, then drop them from the analysis dataset for now.
+The demographics export should have one row per client, but some clients appear more than once (e.g., due to selecting multiple languages or data entry errors). We identify duplicates and export them for review here; Section 2.4 resolves them to one row per client.
 
 ```{r demo-duplicates}
 # Identify which client IDs appear more than once
@@ -234,28 +288,58 @@ duplicate_list <- demographic_data_filtered |>
 write_csv(duplicate_list, file.path(out_dir, "demographic_duplicate_list.csv"))
 ```
 
-```{r demo-drop-duplicates}
-# Drop all rows for clients with any duplicate — conservative approach until
-# a resolution strategy is decided for these records
+## 2.3 Clean Race and Ethnicity Text
+
+Race and ethnicity are stored as free-text, comma-separated fields. Each value is split on commas, trimmed, and stripped of blanks and repeats. Nonresponse options ("Don't Know", "Prefer Not To Answer", "Not Applicable"; matched case-insensitively, including curly apostrophes) are dropped when a race or ethnicity was also selected, and otherwise kept under a standard label (D11: kept as categories, as in the interim report). Values are rejoined with ", ".
+
+Splitting value by value fixes cases where leftover separators were misread: previously "White, Don't Know" could be left as "White, " and coded multiracial, and "Don't Know, White" could be left as " White" and receive no code.
+
+```{r clean-race-ethnicity}
 demographic_data_filtered <- demographic_data_filtered |>
-  filter(!(client_system_id %in% duplicates$client_system_id))
+  mutate(
+    cleaned_race = clean_multiselect(race),
+    cleaned_ethn = clean_multiselect(ethnicity)
+  )
+```
+
+## 2.4 Resolve Duplicate Records
+
+Each client with more than one demographic row is collapsed to one row (D5): a field keeps its value when every non-blank value agrees and is set to `NA` when they conflict. This runs on the cleaned race and ethnicity text, so differences in order or in dropped nonresponse fragments (e.g., "White" vs. "White, Don't Know") are not conflicts, and the numeric codes in Sections 2.5–2.6 are derived from the resolved values. The raw `race` and `ethnicity` columns are collapsed by the same rule, so they can be `NA` where the cleaned columns agree. The table lists each conflicting field and how many clients it affects.
+
+```{r demo-resolve-duplicates}
+dup_rows <- demographic_data_filtered |>
+  filter(client_system_id %in% duplicates$client_system_id) |>
+  group_by(client_system_id)
+
+dup_conflicts <- dup_rows |>
+  summarise(across(everything(), ~ n_distinct(.x, na.rm = TRUE) > 1), .groups = "drop") |>
+  pivot_longer(-client_system_id, names_to = "field", values_to = "conflict") |>
+  filter(conflict)
+
+dup_conflicts |> count(field, name = "n_clients", sort = TRUE)
+
+# Clients whose rows disagree on a join key: the key becomes NA, so their
+# discharge rows cannot join to demographics (counted again in Section 5)
+id_conflict_clients <- dup_conflicts |>
+  filter(field %in% id_cols) |>
+  distinct(client_system_id) |>
+  pull(client_system_id)
+cat("Duplicated clients with conflicting IDs:", length(id_conflict_clients), "\n")
+
+demographic_data_filtered <- demographic_data_filtered |>
+  filter(!client_system_id %in% duplicates$client_system_id) |>
+  bind_rows(summarise(dup_rows, across(everything(), collapse_agreeing), .groups = "drop"))
 
 # Confirm one row per client (stops the render if not)
 stopifnot(n_distinct(demographic_data_filtered$client_system_id) == nrow(demographic_data_filtered))
 ```
 
-## 2.3 Recode Race
+## 2.5 Recode Race
 
-Race is stored as a free-text, comma-separated field. We clean it in two passes:
+The cleaned race text is recoded to a numeric summary:
 
-1. Split on commas, trim each value, and drop non-informative responses ("Don't Know", "Prefer Not To Answer", "Not Applicable"; matched case-insensitively, including curly apostrophes) and repeats. Remaining values are rejoined with ", ".
-2. Recode to a numeric summary:
-   - `NA` — no valid response after stripping
-   - `1` — exactly one valid race reported
-   - `2` — two or more valid races reported (multiracial)
-   - `code_num` assigns each single-race response a numeric code, or `88` for multiracial.
-
-Splitting value by value fixes cases where leftover separators were misread: previously "White, Don't Know" could be left as "White, " and coded multiracial, and "Don't Know, White" could be left as " White" and receive no code.
+- `recoded_race`: `1` = one race reported, `2` = two or more (multiracial), `NA` = blank or nonresponse only
+- `code_num`: the codebook code for one race, `88` for multiracial, and `97` Don't Know, `98` Prefer Not To Answer, `99` Not Applicable for nonresponse. Blank stays `NA`.
 
 ```{r recode-race}
 codebook_race <- c(
@@ -269,29 +353,20 @@ codebook_race <- c(
 )
 
 demographic_data_filtered <- demographic_data_filtered |>
-  mutate(cleaned_race = clean_multiselect(race)) |>
   mutate(
-    recoded_race = case_when(
-      is.na(cleaned_race)              ~ NA,   # no valid response
-      str_detect(cleaned_race, ",")    ~ 2L,   # multiracial
-      TRUE                             ~ 1L    # single race
-    ),
-    code_num = case_when(
-      is.na(cleaned_race)              ~ NA,
-      str_detect(cleaned_race, ",")    ~ 88L,  # multiracial code
-      TRUE ~ unname(codebook_race[cleaned_race])
-    )
+    recoded_race = recode_count(cleaned_race),
+    code_num     = recode_value(cleaned_race, codebook_race)
   )
 
-# Single-race values with no codebook entry (these get code_num = NA)
+# Non-blank values with no code (no codebook entry, or mixed nonresponse options)
 demographic_data_filtered |>
-  filter(recoded_race == 1, is.na(code_num)) |>
+  filter(!is.na(cleaned_race), is.na(code_num)) |>
   count(cleaned_race, name = "n_clients", sort = TRUE)
 ```
 
-## 2.4 Recode Ethnicity
+## 2.6 Recode Ethnicity
 
-Same two-pass approach as race. Ethnicity is also stored as a comma-separated string. Non-informative values are removed and responses are recoded to numeric codes; `88` = 2+ ethnicities selected.
+Same approach as race: `88` = 2+ ethnicities selected, and nonresponse options get the same codes as race (97–99).
 
 ```{r recode-ethnicity}
 codebook_eth <- c(
@@ -305,23 +380,14 @@ codebook_eth <- c(
 )
 
 demographic_data_filtered <- demographic_data_filtered |>
-  mutate(cleaned_ethn = clean_multiselect(ethnicity)) |>
   mutate(
-    recoded_ethn = case_when(
-      is.na(cleaned_ethn)              ~ NA,
-      str_detect(cleaned_ethn, ",")    ~ 2L,
-      TRUE                             ~ 1L
-    ),
-    ethn_num = case_when(
-      is.na(cleaned_ethn)              ~ NA,
-      str_detect(cleaned_ethn, ",")    ~ 88L,
-      TRUE ~ unname(codebook_eth[cleaned_ethn])
-    )
+    recoded_ethn = recode_count(cleaned_ethn),
+    ethn_num     = recode_value(cleaned_ethn, codebook_eth)
   )
 
-# Single-ethnicity values with no codebook entry (these get ethn_num = NA)
+# Non-blank values with no code (no codebook entry, or mixed nonresponse options)
 demographic_data_filtered |>
-  filter(recoded_ethn == 1, is.na(ethn_num)) |>
+  filter(!is.na(cleaned_ethn), is.na(ethn_num)) |>
   count(cleaned_ethn, name = "n_clients", sort = TRUE)
 ```
 
@@ -341,7 +407,58 @@ cat("One row per client in discharge data:",
     n_distinct(discharge_data_filtered$client_system_id) == nrow(discharge_data_filtered), "\n")
 ```
 
-## 3.2 Inspect Duplicate Client Records
+## 3.2 Apply the Data Window
+
+The final-report window (D1) applies to intervention start. Rows whose intervention started before `start_date` or after `end_date` are removed; rows with no intervention start are kept, because enrollment needs only an `intervention_name` (D0). `intervention_start` is parsed only for this filter and left as exported, since its format is not yet confirmed (Q5); a warning reports any values that could not be read as dates.
+
+Each initial assessment is paired with its last follow-up before `end_date`. A row whose follow-up falls after `end_date` is dropped when the same initial assessment has a follow-up inside the window. Otherwise it is kept with its follow-up fields cleared, so the client stays enrolled but has no pair. The first table counts clients removed by the start-date filter; the second counts the rows changed by the follow-up cutoff.
+
+```{r data-window}
+window_check <- discharge_data_filtered |>
+  mutate(
+    start_parsed      = parse_excel_date(intervention_start, "intervention_start"),
+    start_in_window   = is.na(start_parsed) | between(start_parsed, start_date, end_date),
+    post_after_cutoff = coalesce(post_completion_date > end_date, FALSE)
+  )
+
+# Clients with an intervention outside the window, and those left with none inside it
+window_check |>
+  group_by(client_system_id) |>
+  summarise(
+    before_start = any(start_parsed < start_date, na.rm = TRUE),
+    after_end    = any(start_parsed > end_date,   na.rm = TRUE),
+    none_left    = !any(start_in_window),
+    .groups = "drop"
+  ) |>
+  summarise(
+    clients_with_intervention_before_start = sum(before_start),
+    clients_with_intervention_after_end    = sum(after_end),
+    clients_removed_entirely               = sum(none_left)
+  )
+
+window_check <- window_check |>
+  filter(start_in_window) |>
+  group_by(client_system_id, intervention_name, intervention_start, pre_measure_s, pre_completion_date) |>
+  mutate(
+    keep_as_initial_only = post_after_cutoff & all(post_after_cutoff) & row_number() == 1,
+    drop_row             = post_after_cutoff & !keep_as_initial_only
+  ) |>
+  ungroup()
+
+window_check |>
+  summarise(rows_dropped = sum(drop_row), rows_kept_as_initial_only = sum(keep_as_initial_only))
+
+# Follow-up fields cleared on rows kept as initial only (check this list)
+post_cols <- names(discharge_data_filtered)[str_detect(names(discharge_data_filtered), "^post_|^positive_outcome")]
+cat("Follow-up fields cleared:", paste(post_cols, collapse = ", "), "\n")
+
+discharge_data_filtered <- window_check |>
+  filter(!drop_row) |>
+  mutate(across(all_of(post_cols), ~ replace(.x, keep_as_initial_only, NA))) |>
+  select(all_of(names(discharge_data_filtered)))
+```
+
+## 3.3 Inspect Duplicate Client Records
 
 Unlike demographics, it is expected for a client to appear more than once in the discharge report (e.g., multiple interventions or follow-ups). This chunk documents which columns vary across rows for the same client.
 
@@ -365,7 +482,7 @@ discharge_data_filtered |>
   select(client_system_id, where(~ any(!is.na(.))))
 ```
 
-## 3.3 Parse Pre/Post Measure Names
+## 3.4 Parse Pre/Post Measure Names
 
 The `pre_measure_s` and `post_measure_s` fields combine the time point (e.g., "Initial", "Follow Up 1") and assessment name (e.g., "SDQ") into one string. We split these into separate columns so they can be matched and filtered independently.
 
@@ -413,7 +530,7 @@ discharge_data_filtered |>
   filter(trimmed_match == FALSE)
 ```
 
-## 3.4 Fix Missing Funding Rounds
+## 3.5 Fix Missing Funding Rounds
 
 Some providers did not select a funding round in eInsight ("No Funding Round Selected"). Based on program records, we manually assign the correct round for known providers.
 
@@ -422,10 +539,12 @@ Some providers did not select a funding round in eInsight ("No Funding Round Sel
 | 604         | Monterey Health Dept           | 2             |
 | 508         | Children of the Rainbow        | 2             |
 | 607         | Youth for Change               | 1             |
-| 573         | Homeless Children's Network    | 2 (all rows; see Open Issues) |
+| 573         | Homeless Children's Network    | 2 (all rows; confirmed, D4) |
 | 709         | Placer County Office of Education | 1          |
 
 ```{r fix-funding-rounds}
+no_round <- "No Funding Round Selected"
+
 # Recorded rounds for these providers before the fix
 discharge_data_filtered |>
   filter(provider_id %in% c("604", "508", "607", "573", "709")) |>
@@ -434,11 +553,11 @@ discharge_data_filtered |>
 discharge_data_filtered_clean <- discharge_data_filtered |>
   mutate(
     funding_round = case_when(
-      provider_id == "604" & funding_round == "No Funding Round Selected" ~ "2",
-      provider_id == "508" & funding_round == "No Funding Round Selected" ~ "2",
-      provider_id == "607" & funding_round == "No Funding Round Selected" ~ "1",
-      provider_id == "573"                                                 ~ "2",  # all rows (intentional?)
-      provider_id == "709" & funding_round == "No Funding Round Selected" ~ "1",
+      provider_id == "604" & funding_round == no_round ~ "2",
+      provider_id == "508" & funding_round == no_round ~ "2",
+      provider_id == "607" & funding_round == no_round ~ "1",
+      provider_id == "573"                              ~ "2",  # all rows (confirmed, D4)
+      provider_id == "709" & funding_round == no_round ~ "1",
       TRUE ~ funding_round
     )
   )
@@ -446,6 +565,11 @@ discharge_data_filtered_clean <- discharge_data_filtered |>
 # Funding round values after the fix (check labels are consistent, e.g., "2" vs "Round 2")
 discharge_data_filtered_clean |>
   count(funding_round)
+
+# Providers still without a funding round after the fix (send to Rikke, D4/Q4)
+discharge_data_filtered_clean |>
+  filter(is.na(funding_round) | funding_round == no_round) |>
+  count(across(any_of(c("provider_id", "provider"))), name = "n_rows")
 ```
 
 ---
@@ -578,8 +702,8 @@ cat("Discharge rows with no demographic match:      ", nrow(no_demo_match), "\n"
 cat("  ...client_system_id is in demographics       \n")
 cat("     (other IDs differ, e.g., provider):       ",
     sum(no_demo_match$client_system_id %in% demographic_data_filtered$client_system_id), "\n")
-cat("  ...client was dropped as a demographic dup:  ",
-    sum(no_demo_match$client_system_id %in% duplicates$client_system_id), "\n")
+cat("  ...duplicate demographic rows had conflicting IDs (set to NA): ",
+    sum(no_demo_match$client_system_id %in% id_conflict_clients), "\n")
 
 all_data <- left_join(
   discharge_data_filtered_clean,
@@ -600,8 +724,11 @@ if (length(suffixed) > 0) {
 # 6. Quick Counts
 
 ```{r counts}
-cat("Unique clients in demographics (served):      ", n_distinct(demographic_data_filtered$client_system_id), "\n")
-cat("Unique clients in joined dataset (outcomes):  ", n_distinct(all_data$client_system_id), "\n")
+# D0: "people with demographic data" = de-duplicated demographics file;
+# "enrolled" = an intervention_name in the discharge file (no start date needed)
+cat("People with demographic data (de-duplicated): ", n_distinct(demographic_data_filtered$client_system_id), "\n")
+cat("People enrolled (intervention_name recorded): ",
+    n_distinct(all_data$client_system_id[!is.na(all_data$intervention_name)]), "\n")
 cat("Rows in joined dataset:                       ", nrow(all_data), "\n")
 cat("Joined rows with no demographic record:       ", nrow(no_demo_match), "\n")
 ```
