@@ -20,14 +20,14 @@ This notebook prepares **CYBHI EBP/CDEP** NOMS (National Outcome Measures) asses
 
 Each file has a two-row header: row 1 contains question text, row 2 contains subheader labels (e.g., "Score", "Comments").
 
-**Scoring:** Each item is scored 1–5; values that are non-numeric or outside 1–5 are set to `NA` (and counted). An increase in follow-up score vs. initial indicates a positive outcome. Items are grouped into four domains:
+**Scoring:** Each item is scored 1–5; values that are non-numeric or outside 1–5 are set to `NA` (and counted). An increase in follow-up score vs. initial indicates a positive outcome. The CYBHI *NOMS Quick Guide* groups the items into four subscales, each scored as the sum of its items, with higher = better and no clinical cutoffs:
 
--   Q1: Overall mental health (single item)
--   Q2: Daily life functioning (7 items; domain sum range 7–35)
--   Q3: Well-being (7 items, 3a–3g; domain sum range 7–35). Items 3a–3f ask how often the child felt nervous, hopeless, etc.; 3g asks how much the child was bothered by these problems.
--   Q4: Social connectedness (6 items; domain sum range 6–30)
+-   Q1: Mental Health (single item; range 1–5)
+-   Q2: Handling Daily Life (2a–2g; range 7–35)
+-   Q3: General Well-Being (3a–3g; range 7–35). The items ask how often in the last 30 days the respondent felt nervous, hopeless, etc., and 3g asks how often they were bothered by psychological or emotional problems.
+-   Q4: Social Connectedness (4a–4f; range 6–30)
 
-**Direction:** the outcome logic assumes every item is coded so that higher = better. Q3 items are negatively worded, so this holds only if eInsight codes them in reverse (e.g., "None of the time" = 5). The item-rest check in each section flags any item running the opposite way.
+**Direction:** the outcome logic assumes every item is coded so that higher = better. The Quick Guide codes the Q3 items 1 = All of the time to 5 = None of the time, so this holds when eInsight exports the guide's codes. The item-rest check in each section flags any item running the opposite way.
 
 **Room to improve:** a pair whose initial score is already the top of the scale (5) cannot improve. `room_to_improve` flags pairs that can, so % improved can also be reported among them; the share starting at the top changes a lot across cohorts.
 
@@ -48,7 +48,7 @@ The paired output is **item-level** (one row per client × item, each 1–5). Do
 
 -   [ ] The 3-day threshold for "follow-up" is a pragmatic cutoff. Confirm this is the intended definition (code uses `days_since_initial > 3`).
 -   [ ] Output is item-level, not domain-level. Confirm downstream analyses (SQ 3.03–3.10) aggregate items into the four domains as intended.
--   [ ] Confirm every item is coded higher = better, especially the Q3 distress items (3a–3g) and Q1. If the item-rest check flags them, their outcome direction must be flipped.
+-   [x] ~~Confirm every item is coded higher = better, especially Q3.~~ The NOMS Quick Guide codes all four subscales so that higher = better (Q3: 5 = None of the time). The item-rest check still verifies the export.
 -   [ ] If an item was skipped at the initial assessment, that client × item pair has an `NA` outcome (it does not fall back to a later assessment). The per-item summary reports `n_missing_outcome`.
 
 ------------------------------------------------------------------------
@@ -61,11 +61,11 @@ library(janitor)
 library(zoo)
 
 # ---- Configuration: edit paths and reporting window here ----
-in_dir  <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments"
-out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+in_dir  <- "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments"
+out_dir <- "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
 
 start_date <- as.Date("2024-01-01")
-end_date   <- Sys.Date()   # set to a fixed date (e.g., as.Date("2026-09-30")) to freeze the data window
+end_date   <- as.Date("2027-03-31")   # final-report data window (D1); filters nothing on interim exports
 
 # Follow-up must be more than this many days after the initial assessment
 noms_min_gap_days <- 3
@@ -307,6 +307,27 @@ summarise_noms(pairs_primary_long_self)
 ```
 
 ------------------------------------------------------------------------
+
+```{r}
+noms_gap_check <- function(df) {
+  df |>
+    mutate(date_completed = parse_einsight_date(date_completed)) |>
+    filter(between(date_completed, start_date, end_date)) |>
+    group_by(client_system_id) |>
+    filter(n() >= 2) |>
+    arrange(date_completed, .by_group = TRUE) |>
+    mutate(days = as.integer(date_completed - first(date_completed))) |>
+    summarise(last_within = last(days) <= noms_min_gap_days,
+              any_within  = any(days[-1] <= noms_min_gap_days)) |>
+    summarise(clients_2plus        = n(),
+              dropped_no_pair      = sum(last_within),
+              any_fu_within_3_days = sum(any_within))
+}
+
+bind_rows(child = noms_gap_check(noms_child_raw),
+          self  = noms_gap_check(noms_self_raw), .id = "version")
+```
+
 
 # 3. Write Clean CSVs
 

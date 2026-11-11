@@ -1,0 +1,243 @@
+---
+title: "Satisfaction Survey Data Cleaning"
+author: "Cristin Young"
+date: today
+format:
+  html:
+    embed-resources: true
+    df-print: paged
+    toc: true
+---
+
+## Project Overview
+
+This notebook prepares **CYBHI EBP/CDEP** satisfaction survey data for analysis and reporting. It ingests four raw exports from the eInsight clinical management platform (one per respondent type), processes the two-row hierarchical headers, removes test/demo accounts, and writes one cleaned CSV per survey type plus a combined file for use by downstream analysis scripts.
+
+**Data sources (eInsight exports):**
+
+- **Satisfaction Survey — Caregiver** — Respondents who are caregivers of a child receiving services.
+- **Satisfaction Survey — Child (13–17)** — Respondents who are youth ages 13–17.
+- **Satisfaction Survey — Adult (18–59)** — Respondents who are adults ages 18–59.
+- **Satisfaction Survey — Adult (60+)** — Respondents who are older adults age 60 and above.
+
+Each file has a two-row header: row 1 contains question text (with merged cells exported as `NA`), and row 2 contains subheader labels (e.g., "Rating", "Comments"). These are combined into clean column names using `zoo::na.locf()` to forward-fill the question text across merged cells.
+
+**Demo filter:** rows whose `provider_id` contains "DEMO" are removed. Rows with a missing `provider_id` are **kept** and counted (previously they were dropped as a side effect of the filter). Unlike the assessment scripts, rows with no `client_system_id` are also kept, because a survey response without a client ID is still a valid response.
+
+**Data window (D1):** survey responses dated from `start_date` (2024-01-01) through `end_date` (2027-03-31) go into the combined file.
+
+**Outputs:**
+
+| File | Contents |
+|------------------------------------|------------------------------------|
+| `satisfaction_caregiver_clean.csv` | Cleaned caregiver survey responses (demo rows removed; no date cleaning or period filter) |
+| `satisfaction_child_clean.csv` | Cleaned child (13–17) survey responses |
+| `satisfaction_adult_clean.csv` | Cleaned adult (18–59) survey responses |
+| `satisfaction_senior_clean.csv` | Cleaned adult (60+) survey responses |
+| `combined_satisfaction_clean.csv` | All four surveys combined, with cleaned dates, period filter, `year`, and `quarter_label` — **primary input for downstream analysis** |
+
+------------------------------------------------------------------------
+
+## Open Issues / Action Items
+
+- [ ] Rows with a missing `provider_id` are now retained (count shown in Sections 1 and 2). Confirm they are real responses; if not, filter them explicitly (D3).
+- [ ] Section 2 lists any provider IDs that look like test accounts (contain "demo" or "test" in any case) but were not removed by the "DEMO" rule.
+
+------------------------------------------------------------------------
+
+# Setup
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(janitor)
+library(zoo)
+
+# ---- Configuration: edit paths and reporting window here ----
+in_dir  <- "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Data/eInsight Exports/Satisfaction Survey Export"
+out_dir <- "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+start_date <- as.Date("2024-01-01")
+end_date   <- as.Date("2027-03-31")   # final-report data window (D1); filters nothing on interim exports
+```
+
+------------------------------------------------------------------------
+
+# Helper Functions
+
+The header-processing logic is identical across all four survey files (and the assessment cleaning scripts).
+
+```{r helpers}
+# ---- Shared helpers (identical across the cleaning scripts) ----
+
+# Reads an eInsight assessment CSV export with two-row headers.
+# Row 1 holds question text (merged cells export as blanks and are forward-
+# filled); row 2 holds sub-headers ("Response", "Score", ...). Returns a data
+# frame with combined snake_case names and fully blank columns removed.
+# "0" is deliberately NOT treated as missing: it is a valid rating on most tools.
+read_assessment_csv <- function(path, na_vals = c("-", "", "NA", "N/A")) {
+  raw <- read_csv(path, na = na_vals, col_names = FALSE, show_col_types = FALSE,
+                  col_types = cols(.default = "c"))
+
+  h1    <- unlist(raw[1, ], use.names = FALSE)
+  h2    <- unlist(raw[2, ], use.names = FALSE)
+  h1_ff <- na.locf(h1, na.rm = FALSE) |> str_squish()
+
+  new_names <- ifelse(
+    is.na(h1_ff) | h1_ff == "",
+    h2,
+    paste(h1_ff, h2, sep = " - ")
+  )
+  new_names <- janitor::make_clean_names(new_names)
+
+  df <- raw[-c(1, 2), ]
+  names(df) <- new_names
+
+  df |> select(where(~ !all(is.na(.))))
+}
+
+# Parses eInsight date strings in ISO (2024-03-15) or US (03/15/2024) format,
+# with or without a time stamp. Warns with a count of non-blank values that
+# could not be parsed (these become NA and are dropped by the date filter).
+parse_einsight_date <- function(x, label = "date_completed") {
+  x   <- na_if(str_squish(as.character(x)), "")
+  out <- as.Date(parse_date_time(
+    x,
+    orders = c("Ymd", "mdY", "mdy", "Ymd HMS", "Ymd HM", "mdY HMS", "mdY HM"),
+    quiet  = TRUE
+  ))
+  n_bad <- sum(!is.na(x) & is.na(out))
+  if (n_bad > 0) {
+    warning(label, ": ", n_bad, " non-blank value(s) could not be parsed as dates and were set to NA.",
+            call. = FALSE)
+  }
+  out
+}
+
+# Reads a satisfaction survey CSV and removes rows whose provider_id contains
+# "DEMO". Rows with a missing provider_id are kept (and counted).
+read_satisfaction_survey <- function(path, label) {
+  df <- read_assessment_csv(path)
+
+  is_demo <- coalesce(str_detect(as.character(df$provider_id), "DEMO"), FALSE)
+  cat(label, "- rows read:", nrow(df),
+      "| DEMO rows removed:", sum(is_demo),
+      "| rows with missing provider_id (kept):", sum(is.na(df$provider_id)), "\n")
+
+  df[!is_demo, ]
+}
+```
+
+------------------------------------------------------------------------
+
+# 1. Read and Clean Survey Files
+
+## 1.1 Caregiver
+
+```{r read-caregiver}
+caregiver <- read_satisfaction_survey(file.path(in_dir, "Satisfaction_survey-caregiver.csv"), "Caregiver")
+```
+
+## 1.2 Child (13–17)
+
+```{r read-child}
+child <- read_satisfaction_survey(file.path(in_dir, "Satisfaction_survey-child_13-17.csv"), "Child")
+```
+
+## 1.3 Adult (18–59)
+
+```{r read-adult}
+adult <- read_satisfaction_survey(file.path(in_dir, "Satisfaction_survey-adult_18-59.csv"), "Adult")
+```
+
+## 1.4 Adult (60+)
+
+```{r read-senior}
+senior <- read_satisfaction_survey(file.path(in_dir, "Satisfaction_survey-adult_60_plus.csv"), "Senior")
+```
+
+------------------------------------------------------------------------
+
+# 2. Quick Checks
+
+Row counts, a check that no DEMO records remain after filtering, and a list of provider IDs that look like test accounts but were not caught by the "DEMO" rule (review these; they are not removed).
+
+```{r checks}
+surveys <- list(caregiver = caregiver, child = child, adult = adult, senior = senior)
+
+purrr::imap_dfr(surveys, ~ {
+  tibble(
+    survey                = .y,
+    n_rows                = nrow(.x),
+    n_demo_remaining      = sum(str_detect(as.character(.x$provider_id), "DEMO"), na.rm = TRUE),
+    n_missing_provider_id = sum(is.na(.x$provider_id)),
+    n_missing_client_id   = sum(is.na(.x$client_system_id))
+  )
+})
+
+# Possible test accounts not caught by the "DEMO" rule
+purrr::imap_dfr(surveys, ~ .x |>
+  filter(str_detect(as.character(provider_id), regex("demo|test", ignore_case = TRUE))) |>
+  count(provider_id, name = "n_rows") |>
+  mutate(survey = .y, .before = 1))
+```
+
+------------------------------------------------------------------------
+
+# 3. Create Combined Dataset
+
+Bind all four survey types into a single data frame, clean malformed dates, filter to the reporting period, and add `quarter_label` and `year` columns. The `source` column identifies which survey each row came from.
+
+**Date cleaning rationale:** Some date_completed values have year prefixes of `00` or `29` (e.g., "0024-03-15" or "2924-03-15"), likely from data entry errors in eInsight. These are corrected to `20` before converting to Date.
+
+**Period filter:** Rows with no valid date, with `date_clean` before `start_date`, or after `end_date` are excluded. The counts for each reason are printed below.
+
+```{r create-combined}
+combined_raw <- bind_rows(
+  caregiver |> mutate(source = "caregiver"),
+  child     |> mutate(source = "child"),
+  adult     |> mutate(source = "adult"),
+  senior    |> mutate(source = "senior")
+) |>
+  mutate(
+    date_clean = str_replace(date_completed, "^00", "20"),
+    date_clean = str_replace(date_clean,     "^29", "20"),
+    date_clean = parse_einsight_date(date_clean, label = "Satisfaction date_completed")
+  )
+
+cat("Rows before period filter:   ", nrow(combined_raw), "\n")
+cat("  Year prefix corrected:     ", sum(str_detect(combined_raw$date_completed, "^(00|29)"), na.rm = TRUE), "\n")
+cat("  Dropped - no valid date:   ", sum(is.na(combined_raw$date_clean)), "\n")
+cat("  Dropped - before start:    ", sum(combined_raw$date_clean < start_date, na.rm = TRUE), "\n")
+cat("  Dropped - after end:       ", sum(combined_raw$date_clean > end_date, na.rm = TRUE), "\n")
+
+combined_all <- combined_raw |>
+  filter(between(date_clean, start_date, end_date)) |>
+  mutate(
+    year          = year(date_clean),
+    quarter_label = paste0("Q", quarter(date_clean), " ", year(date_clean))
+  ) |>
+  # Sort chronologically so quarter_label order is preserved when read back from CSV
+  arrange(date_clean)
+
+cat("Combined rows:", nrow(combined_all), "\n")
+cat("Date range:   ", format(min(combined_all$date_clean)), "to",
+                      format(max(combined_all$date_clean)), "\n")
+
+combined_all |> count(source)
+```
+
+------------------------------------------------------------------------
+
+# 4. Write Clean CSVs
+
+Individual survey files are written for reference. The combined file is the primary input for downstream analysis.
+
+```{r write-csvs}
+write_csv(caregiver,    file.path(out_dir, "satisfaction_caregiver_clean.csv"))
+write_csv(child,        file.path(out_dir, "satisfaction_child_clean.csv"))
+write_csv(adult,        file.path(out_dir, "satisfaction_adult_clean.csv"))
+write_csv(senior,       file.path(out_dir, "satisfaction_senior_clean.csv"))
+write_csv(combined_all, file.path(out_dir, "combined_satisfaction_clean.csv"))
+
+cat("CSVs written successfully.\n")
+```

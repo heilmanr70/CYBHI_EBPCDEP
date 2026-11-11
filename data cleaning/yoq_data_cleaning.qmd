@@ -17,10 +17,13 @@ This notebook prepares **CYBHI EBP/CDEP** Youth Outcome Questionnaire (YOQ) asse
 
 **Scoring:**
 
+Scoring follows the *Y-OQ-30.2 Administration and Scoring Manual*:
+
 - 30 items (columns starting with `x` after `clean_names()`), each rated 0–4. Values that are non-numeric or outside 0–4 are set to `NA` (and counted).
-- Total score range: 0–120. Higher scores indicate greater distress.
-- Total score is set to `NA` if 3 or more items are missing.
-- **RCI = initial score − follow-up score.** RCI ≥ 10 = "reliably better"; RCI ≤ −10 = "reliably worse"; `meaningful_change` = reliably better OR reliably worse.
+- Total score = simple sum of the 30 items, range 0–120. Higher scores indicate greater distress. No items are reverse scored.
+- **Missing items:** each blank item is replaced by the mean of the answered items, rounded to the nearest whole number. The total is `NA` when more than 10% of items are blank (4 or more of 30), because the manual treats its reliability as questionable beyond that.
+- **RCI = initial score − follow-up score.** The manual's reliable change value is 10 points: RCI ≥ 10 = "reliably better"; RCI ≤ −10 = "reliably worse"; `meaningful_change` = reliably better OR reliably worse.
+- The manual's clinical cutoffs (29 parent report, 30 self-report) are not applied here.
 
 **Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 exist) is the follow-up. Clients with only one assessment are excluded. No minimum gap is enforced; `days_since_initial` is included so a gap rule can be applied downstream.
 
@@ -38,7 +41,7 @@ Column order is unchanged from earlier versions (`rci` is still column 7); `days
 ## Open Issues / Action Items
 
 - [ ] The downstream analysis references the RCI as `yoq_caregiver_paired[,7]` (by position). Column 7 is `rci`; switch the downstream code to `rci` / `reliably_better` / `reliably_worse` by name. Column order here is kept stable in the meantime.
-- [ ] Confirm whether any YOQ items are positively worded and need reverse scoring, or whether eInsight exports them pre-scored. The item-rest check in Sections 1–2 will flag items with the wrong direction.
+- [x] ~~Confirm whether any YOQ items need reverse scoring.~~ The 30.2 manual scores every item by simple addition, so none do. The item-rest check in Sections 1–2 still flags any item that runs the wrong way in the export.
 
 ---
 
@@ -49,11 +52,11 @@ library(tidyverse)
 library(janitor)
 
 # ---- Configuration: edit paths and reporting window here ----
-in_dir  <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments"
-out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+in_dir  <- "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments"
+out_dir <- "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
 
 start_date <- as.Date("2024-01-01")
-end_date   <- Sys.Date()   # set to a fixed date (e.g., as.Date("2026-09-30")) to freeze the data window
+end_date   <- as.Date("2027-03-31")   # final-report data window (D1); filters nothing on interim exports
 ```
 
 ---
@@ -154,6 +157,41 @@ item_rest_check <- function(df, cols, label, anchor = cols) {
   }
   out |> filter(item_rest_r < 0 | is.na(item_rest_r))
 }
+
+# Missing-item policy (decided October 2026, D10): use the instrument's
+# published rule where one exists; otherwise allow up to 10% of items to be
+# blank and prorate. Filled-in values are rounded half up to whole numbers,
+# as the published rules do.
+round_half_up <- function(x) floor(x + 0.5)
+
+default_max_missing <- function(n_items) floor(0.10 * n_items)
+
+# Scores a total from a data frame holding only the item columns. Rows with
+# more than `max_missing` blank items get NA. Otherwise blanks are filled in
+# by `method`:
+#   "prorate":   total = sum of answered items x number of items / number answered
+#   "item_mean": each blank item takes the rounded mean of the answered items
+#   "zero":      blank items count as 0 (the PSC-35 rule)
+# When `label` is given, reports how many totals were filled in or set to NA.
+score_total <- function(items, max_missing, method = c("prorate", "item_mean", "zero"), label = NULL) {
+  method   <- match.arg(method)
+  items    <- as.matrix(items)
+  answered <- rowSums(!is.na(items))
+  n_blank  <- ncol(items) - answered
+  item_sum <- rowSums(items, na.rm = TRUE)
+  total <- switch(method,
+    prorate   = round_half_up(item_sum * ncol(items) / answered),
+    item_mean = item_sum + n_blank * round_half_up(item_sum / answered),
+    zero      = item_sum
+  )
+  total[n_blank > max_missing] <- NA_real_
+  if (!is.null(label)) {
+    message(label, ": ", sum(n_blank > 0 & n_blank <= max_missing), " total(s) with up to ",
+            max_missing, " blank item(s) filled in (", method, "); ", sum(n_blank > max_missing),
+            " set to NA (more than ", max_missing, " of ", ncol(items), " items blank).")
+  }
+  total
+}
 ```
 
 Both YOQ files share identical scoring and pairing logic. We define a single helper to avoid duplication.
@@ -174,13 +212,14 @@ clean_yoq <- function(path, label) {
   print(item_rest_check(items, item_cols, label))
 
   scored <- items |>
-    mutate(
-      missing_count  = rowSums(is.na(across(all_of(item_cols)))),
-      total_score    = rowSums(across(all_of(item_cols)), na.rm = TRUE),
-      total_score    = if_else(missing_count >= 3, NA_real_, total_score),
-      date_completed = parse_einsight_date(date_completed)
-    ) |>
+    mutate(date_completed = parse_einsight_date(date_completed)) |>
     filter(between(date_completed, start_date, end_date)) |>
+    mutate(
+      # Y-OQ-30.2 manual: blank items take the rounded mean of the answered
+      # items; the total is not valid when more than 10% of items are blank
+      total_score = score_total(pick(all_of(item_cols)), default_max_missing(length(item_cols)),
+                                method = "item_mean", label = label)
+    ) |>
     select(client_system_id, collection, date_completed, total_score)
 
   cat(label, "rows after scoring:  ", nrow(scored), "\n")

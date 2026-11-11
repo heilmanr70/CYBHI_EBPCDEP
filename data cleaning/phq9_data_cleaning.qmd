@@ -20,7 +20,7 @@ This notebook prepares **CYBHI EBP/CDEP** Patient Health Questionnaire-9 (PHQ-9)
 -   9 items. Responses are stored as text and mapped to numeric values (case- and whitespace-insensitive): Not at all = 0, Several days = 1, More than half the days = 2, Nearly every day = 3. Any response that does not match is listed in Section 1.
 -   Total score range: 0–27. Higher scores indicate greater depression severity.
 -   **A lower follow-up score indicates a positive outcome.**
--   Total score is set to `NA` if 2 or more items are missing. With 1 missing item the total is the sum of the 8 answered items (not prorated).
+-   **Missing items** (published rule, APA adapted PHQ-9): with 1–2 blank items the total is prorated (sum of answered items × 9 ÷ number answered, rounded to the nearest whole number); with 3 or more blank the total is `NA`.
 -   Cut-off bands: 0–4 = minimal, 5–9 = mild, 10–14 = moderate, 15–19 = moderately severe, 20–27 = severe.
 -   Item 10 (functional impairment) is not included in the total score.
 
@@ -36,7 +36,7 @@ This notebook prepares **CYBHI EBP/CDEP** Patient Health Questionnaire-9 (PHQ-9)
 
 ## Open Issues / Action Items
 
--   [ ] With one missing item, the total is an unprorated sum of 8 items, so a skipped item at follow-up can look like improvement. Consider prorating (mean of answered items × 9) if this affects many records.
+-   [x] ~~Unprorated sum with one missing item.~~ Now follows the published APA rule (prorate 1–2 blank items, `NA` at 3 or more).
 
 ------------------------------------------------------------------------
 
@@ -48,11 +48,11 @@ library(janitor)
 library(zoo)
 
 # ---- Configuration: edit paths and reporting window here ----
-in_dir  <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments"
-out_dir <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+in_dir  <- "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Data/eInsight Exports/Individual Assessments"
+out_dir <- "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
 
 start_date <- as.Date("2024-01-01")
-end_date   <- Sys.Date()   # set to a fixed date (e.g., as.Date("2026-09-30")) to freeze the data window
+end_date   <- as.Date("2027-03-31")   # final-report data window (D1); filters nothing on interim exports
 ```
 
 ------------------------------------------------------------------------
@@ -162,6 +162,41 @@ audit_unmapped <- function(df, cols, map, label) {
   }
   bad
 }
+
+# Missing-item policy (decided October 2026, D10): use the instrument's
+# published rule where one exists; otherwise allow up to 10% of items to be
+# blank and prorate. Filled-in values are rounded half up to whole numbers,
+# as the published rules do.
+round_half_up <- function(x) floor(x + 0.5)
+
+default_max_missing <- function(n_items) floor(0.10 * n_items)
+
+# Scores a total from a data frame holding only the item columns. Rows with
+# more than `max_missing` blank items get NA. Otherwise blanks are filled in
+# by `method`:
+#   "prorate":   total = sum of answered items x number of items / number answered
+#   "item_mean": each blank item takes the rounded mean of the answered items
+#   "zero":      blank items count as 0 (the PSC-35 rule)
+# When `label` is given, reports how many totals were filled in or set to NA.
+score_total <- function(items, max_missing, method = c("prorate", "item_mean", "zero"), label = NULL) {
+  method   <- match.arg(method)
+  items    <- as.matrix(items)
+  answered <- rowSums(!is.na(items))
+  n_blank  <- ncol(items) - answered
+  item_sum <- rowSums(items, na.rm = TRUE)
+  total <- switch(method,
+    prorate   = round_half_up(item_sum * ncol(items) / answered),
+    item_mean = item_sum + n_blank * round_half_up(item_sum / answered),
+    zero      = item_sum
+  )
+  total[n_blank > max_missing] <- NA_real_
+  if (!is.null(label)) {
+    message(label, ": ", sum(n_blank > 0 & n_blank <= max_missing), " total(s) with up to ",
+            max_missing, " blank item(s) filled in (", method, "); ", sum(n_blank > max_missing),
+            " set to NA (more than ", max_missing, " of ", ncol(items), " items blank).")
+  }
+  total
+}
 ```
 
 ------------------------------------------------------------------------
@@ -187,17 +222,11 @@ response_map <- c(
 
 phq9_scores <- phq9_raw |>
   mutate(across(all_of(response_cols), ~ map_responses(.x, response_map))) |>
-  rowwise() |>
+  mutate(date_completed = parse_einsight_date(date_completed)) |>
+  filter(between(date_completed, start_date, end_date)) |>
   mutate(
-    missing_count = sum(is.na(c_across(all_of(response_cols)))),
-    total_score   = if_else(
-      missing_count >= 2,
-      NA_real_,
-      sum(c_across(all_of(response_cols)), na.rm = TRUE)
-    )
-  ) |>
-  ungroup() |>
-  mutate(
+    # APA adapted PHQ-9: prorate 1-2 blank items, do not score 3 or more
+    total_score  = score_total(pick(all_of(response_cols)), 2, label = "PHQ-9"),
     cut_off_band = case_when(
       total_score <= 4                        ~ "minimal",
       total_score >= 5  & total_score <= 9   ~ "mild",
@@ -205,10 +234,8 @@ phq9_scores <- phq9_raw |>
       total_score >= 15 & total_score <= 19  ~ "moderately severe",
       total_score >= 20                       ~ "severe",
       .default = NA_character_
-    ),
-    date_completed = parse_einsight_date(date_completed)
+    )
   ) |>
-  filter(between(date_completed, start_date, end_date)) |>
   select(client_system_id, collection, date_completed, total_score, cut_off_band)
 
 cat("PHQ-9 rows after scoring:", nrow(phq9_scores), "\n")

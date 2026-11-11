@@ -21,7 +21,7 @@ This notebook prepares **CYBHI EBP/CDEP** Parental Stress Scale (PSS) assessment
 - Items 1, 2, 5, 6, 7, 8, 17, and 18 are **reverse scored** using the formula `6 − raw_score`.
 - Total score range: 18–90. Higher scores indicate greater parenting stress.
 - **A lower follow-up score indicates a positive outcome.**
-- Total score is set to `NA` if 2 or more items are missing. With 1 missing item the total is the sum of the 17 answered items (not prorated).
+- **Missing items** (project default, D10; the Parental Stress Scale scoring guide gives no rule): up to 10% of items may be blank (1 of 18), and that total is prorated (sum of the 17 answered items × 18 ÷ 17, rounded). With 2 or more blank the total is `NA`.
 - **Contradictory forms:** a form is flagged when its answers disagree on average with both the 8 positive items and the 10 stress items (mean answer ≤ `pss_contradiction_cutoff`, default 2 = Disagree, on each set, before reversal). Such forms cannot be scored as answered. By default they are dropped before pairing (`pss_drop_contradictory <- TRUE`), so a client's initial or follow-up is their first or last usable form. Section 1 shows how many were flagged, by provider.
 
 **Pairing logic:** Clients are grouped by `client_system_id`. The first assessment is the initial; the last assessment (if ≥2 assessments exist) is the follow-up. Clients with only one assessment are excluded. No minimum gap is enforced; `days_since_initial` is included so a gap rule can be applied downstream.
@@ -36,7 +36,7 @@ This notebook prepares **CYBHI EBP/CDEP** Parental Stress Scale (PSS) assessment
 
 ## Open Issues / Action Items
 
-- [ ] The `missing_count` threshold of 2 for treating total score as `NA` — confirm this is the correct PSS rule.
+- [x] ~~Missing-item threshold.~~ Decided (D10): 10% default, 1 blank item prorated.
 - [ ] **Contradictory forms (decision):** dropped by default. In October 2026, 31% of forms at one provider were contradictory versus 0.6% elsewhere. Keep `pss_drop_contradictory <- TRUE` or set it to `FALSE` to flag only.
 - [ ] **Items 17 and 18 at the same provider:** among its non-contradictory forms, "I am satisfied as a parent" (r = −0.69) and "I find my child(ren) enjoyable" (r = −0.80) run backwards, so its form or data entry likely reverses them. Not corrected in code; confirm with the provider first. Until then, report SQ 3.12 with and without this provider. The direction check below will keep flagging these two items.
 - [ ] Response matching is now case-insensitive. The previous map used lower-case "Strongly disagree"/"Strongly agree", so any export using "Strongly Disagree"/"Strongly Agree" was being scored as missing. Compare paired N against the last run.
@@ -55,7 +55,7 @@ in_dir  <- "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Data/eInsight
 out_dir <- "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
 
 start_date <- as.Date("2024-01-01")
-end_date   <- Sys.Date()   # set to a fixed date (e.g., as.Date("2026-09-30")) to freeze the data window
+end_date   <- as.Date("2027-03-31")   # final-report data window (D1); filters nothing on interim exports
 
 # Contradictory forms: mean answer at or below the cutoff (2 = Disagree) on both the
 # positive and the stress items. Set pss_drop_contradictory to FALSE to keep them
@@ -196,6 +196,41 @@ item_rest_check <- function(df, cols, label, anchor = cols) {
   }
   out |> filter(item_rest_r < 0 | is.na(item_rest_r))
 }
+
+# Missing-item policy (decided October 2026, D10): use the instrument's
+# published rule where one exists; otherwise allow up to 10% of items to be
+# blank and prorate. Filled-in values are rounded half up to whole numbers,
+# as the published rules do.
+round_half_up <- function(x) floor(x + 0.5)
+
+default_max_missing <- function(n_items) floor(0.10 * n_items)
+
+# Scores a total from a data frame holding only the item columns. Rows with
+# more than `max_missing` blank items get NA. Otherwise blanks are filled in
+# by `method`:
+#   "prorate":   total = sum of answered items x number of items / number answered
+#   "item_mean": each blank item takes the rounded mean of the answered items
+#   "zero":      blank items count as 0 (the PSC-35 rule)
+# When `label` is given, reports how many totals were filled in or set to NA.
+score_total <- function(items, max_missing, method = c("prorate", "item_mean", "zero"), label = NULL) {
+  method   <- match.arg(method)
+  items    <- as.matrix(items)
+  answered <- rowSums(!is.na(items))
+  n_blank  <- ncol(items) - answered
+  item_sum <- rowSums(items, na.rm = TRUE)
+  total <- switch(method,
+    prorate   = round_half_up(item_sum * ncol(items) / answered),
+    item_mean = item_sum + n_blank * round_half_up(item_sum / answered),
+    zero      = item_sum
+  )
+  total[n_blank > max_missing] <- NA_real_
+  if (!is.null(label)) {
+    message(label, ": ", sum(n_blank > 0 & n_blank <= max_missing), " total(s) with up to ",
+            max_missing, " blank item(s) filled in (", method, "); ", sum(n_blank > max_missing),
+            " set to NA (more than ", max_missing, " of ", ncol(items), " items blank).")
+  }
+  total
+}
 ```
 
 ------------------------------------------------------------------------
@@ -230,14 +265,11 @@ pss_items <- pss_raw |>
   mutate(across(all_of(response_cols[rev_idx]), ~ 6 - .x))
 
 pss_scores <- pss_items |>
-  mutate(
-    missing_count  = rowSums(is.na(across(all_of(response_cols)))),
-    total_score    = rowSums(across(all_of(response_cols)), na.rm = TRUE),
-    total_score    = if_else(missing_count >= 2, NA_real_, total_score),
-    date_completed = parse_einsight_date(date_completed)
-  ) |>
-  select(client_system_id, provider_id, collection, date_completed, total_score, contradictory) |>
-  filter(between(date_completed, start_date, end_date))
+  mutate(date_completed = parse_einsight_date(date_completed)) |>
+  filter(between(date_completed, start_date, end_date)) |>
+  mutate(total_score = score_total(pick(all_of(response_cols)), default_max_missing(length(response_cols)),
+                                   label = "PSS")) |>
+  select(client_system_id, provider_id, collection, date_completed, total_score, contradictory)
 
 cat("Contradictory forms in window:", sum(pss_scores$contradictory), "of", nrow(pss_scores),
     if (pss_drop_contradictory) "(dropped before pairing)" else "(kept and flagged)", "\n")
@@ -250,7 +282,9 @@ cat("Unique clients:        ", n_distinct(pss_scores$client_system_id), "\n")
 cat("Missing total_score:   ", sum(is.na(pss_scores$total_score)), "\n")
 ```
 
-```{r}
+Forms by number of items answered, in the whole export (sizes the missing-item rule):
+
+```{r pss-items-answered}
 min_complete_total <- length(response_cols) * min(response_map)
 
 pss_items |>
@@ -267,11 +301,6 @@ pss_items |>
     n_below_min = sum(blank_as_zero_total < min_complete_total),
     .groups     = "drop"
   )
-
-test <- pss_raw |> 
-  filter(client_system_id == 13175)
-
-test
 ```
 
 Contradictory forms by provider, within the reporting window (providers with at least one):
