@@ -49,7 +49,7 @@ The interim report (January 30, 2026) answered this question with separate, unad
 | Primary outcome | **High satisfaction** = Agree (4) or Strongly Agree (5) on the overall satisfaction item: YSS-F item 1 ("Overall, I am satisfied with the services my child received"), YSS item 1 ("Overall, I am satisfied with the services I received"), or MHSIP item 1 ("I like the services that I received here"). |
 | Secondary outcomes | The full 5-point rating on the same item (ordinal models); a positive General Satisfaction domain score (domain mean > 3.5, at least two-thirds of domain items answered). |
 | Unit of analysis | One survey per respondent per survey version, linked to the discharged intervention it evaluates. |
-| Suppression | Any category with fewer than 60 respondents (the `suppress_n` parameter) is displayed as "Suppr." in descriptive tables and omitted from model tables, per the report's confidentiality standard. |
+| Suppression | Any category with fewer than 60 respondents (the `suppress_n` parameter) is displayed as "Suppr." in descriptive tables and omitted from model tables, per the report's confidentiality standard. Another group's count is also shown as "Suppr." when needed so that a suppressed count cannot be recovered by subtraction from the total. |
 
 ::: {.callout-warning}
 ## Verify before final rendering
@@ -70,7 +70,9 @@ if (isTRUE(getOption("knitr.in.progress")) && isTRUE(as.logical(params$shareable
   cat(sprintf(paste0(
     "\n\n::: {.callout-note}\n## Shareable render\n\n",
     "Raw category values seen fewer than %1$s times are masked, and data-quality counts below %1$s are shown as \"<%1$s\". ",
-    "Results tables use the same n < %1$s suppression as every render. Render with `shareable: false` to see the masked values locally.",
+    "Results tables use the same n < %1$s suppression as every render. In results and data-quality tables alike, any other count ",
+    "that would let a suppressed count be recovered by subtraction from a published total is hidden as well. ",
+    "Render with `shareable: false` to see the masked values locally.",
     "\n\n:::\n\n"), n0))
 }
 ```
@@ -454,6 +456,144 @@ save_table <- function(df, name) {
 }
 ```
 
+```{r}
+#| label: suppression-helpers
+# Copied verbatim from the 1.01 script's helpers; keep the two in sync.
+# ---- Primary and complementary suppression ----
+# `x` holds every published or derivable number in a table (cells and totals). Each element of `lines`
+# indexes entries tied by one additive constraint, with the total LAST (a row's cells, then its total).
+# Counts of 1 to k - 1 are suppressed, then more entries are suppressed until:
+#   (a) no line has exactly one suppressed entry, which subtraction would recover;
+#   (b) in a line whose total is shown, the suppressed cells add up to at least k, so their combined
+#       count (total minus the shown cells) is not itself a small count; and
+#   (c) no suppressed count below k, and no sum of two suppressed counts that is below k, can be
+#       solved for exactly from all of the table's constraints taken together (checked by matrix rank).
+# Extra suppressions go to the entry with the lowest `weight` (by default, the smallest count).
+# An entry with weight Inf is never chosen, e.g. because another table already shows it. An entry
+# that can be read off a line whose other entries are all zero or shown elsewhere cannot be
+# protected, so it is never chosen either. If no entry can protect a hidden count, the render stops
+# rather than publish a count that could be recovered.
+pick_entry <- function(cand, weight) {
+  cand <- cand[is.finite(weight[cand])]
+  if (length(cand) == 0L) NA_integer_ else cand[which.min(weight[cand])]
+}
+
+recoverable_entries <- function(x, lines, s, k) {
+  sup <- which(s)
+  if (length(sup) == 0L) return(integer())
+  A <- do.call(rbind, lapply(lines, function(ln) {
+    row <- numeric(length(x))
+    row[ln] <- c(rep(1, length(ln) - 1L), -1)
+    row[sup]
+  }))
+  A <- A[rowSums(A != 0) > 0, , drop = FALSE]
+  if (nrow(A) == 0L) return(integer())
+  r <- qr(A)$rank
+  solvable <- function(v) qr(rbind(A, v))$rank == r
+  unit <- function(j) as.numeric(seq_along(sup) == j)
+  small <- which(x[sup] < k)
+  hits <- sup[small[vapply(small, function(j) solvable(unit(j)), logical(1))]]
+  if (length(hits) == 0L && length(small) > 1L) {
+    for (pr in combn(small, 2, simplify = FALSE)) {
+      if (sum(x[sup[pr]]) < k && solvable(unit(pr[1]) + unit(pr[2]))) {
+        hits <- sup[pr]
+        break
+      }
+    }
+  }
+  hits
+}
+
+suppress_lines <- function(x, lines, k = SUPPRESS_N, init = NULL, weight = x) {
+  s <- !is.na(x) & x > 0 & x < k
+  if (!is.null(init)) s <- s | init
+  repeat {
+    pinned <- unlist(lapply(lines, function(ln) {
+      unknown <- ln[x[ln] > 0 & (is.finite(weight[ln]) | s[ln])]
+      if (length(unknown) == 1L && is.finite(weight[unknown])) unknown
+    }))
+    if (length(pinned) == 0L) break
+    weight[pinned] <- Inf
+  }
+  open_entries <- function(idx) idx[!s[idx] & x[idx] > 0]
+  cannot_protect <- function() {
+    stop("Complementary suppression cannot protect a hidden count: every entry that could be ",
+         "hidden with it is zero or shown in another table.", call. = FALSE)
+  }
+  repeat {
+    j <- NA_integer_
+    for (ln in lines) {
+      tot <- ln[length(ln)]
+      cells <- ln[-length(ln)]
+      small_sum <- !s[tot] && any(s[cells]) && sum(x[cells][s[cells]]) < k
+      if (sum(s[ln]) == 1L || small_sum) {
+        j <- pick_entry(open_entries(ln), weight)
+        if (is.na(j)) cannot_protect()
+        break
+      }
+    }
+    if (is.na(j)) {
+      rec <- recoverable_entries(x, lines, s, k)
+      if (length(rec) > 0L) {
+        near <- unique(unlist(lines[vapply(lines, function(ln) any(rec %in% ln), logical(1))]))
+        j <- pick_entry(open_entries(near), weight)
+        if (is.na(j)) j <- pick_entry(open_entries(seq_along(x)), weight)
+        if (is.na(j)) cannot_protect()
+      }
+    }
+    if (is.na(j)) break
+    s[j] <- TRUE
+  }
+  s
+}
+
+# Suppression pattern for a matrix of counts with its totals attached: row totals in the last column
+# and column totals in the last row. Every row and column is a line. Extra suppressions go to inner
+# cells first, then to row totals, and to the grand total last, because hiding the grand total forces
+# a column total to be hidden too. `init` marks entries that start hidden and `fixed` marks entries
+# that are never hidden, usually because another table hides or shows the same number.
+suppress_table <- function(ext, init = FALSE, fixed = FALSE) {
+  R <- nrow(ext) - 1L
+  C <- ncol(ext) - 1L
+  idx <- matrix(seq_along(ext), nrow(ext))
+  lines <- c(lapply(seq_len(R + 1L), function(i) idx[i, ]),
+             lapply(seq_len(C + 1L), function(j) idx[, j]))
+  weight <- as.vector(ext)
+  weight[idx[seq_len(R), C + 1L]] <- weight[idx[seq_len(R), C + 1L]] + 1e9
+  weight[idx[R + 1L, C + 1L]] <- weight[idx[R + 1L, C + 1L]] + 2e9
+  weight[rep_len(as.vector(fixed), length(ext))] <- Inf
+  s <- suppress_lines(as.vector(ext), lines, init = rep_len(as.vector(init), length(ext)), weight = weight)
+  matrix(s, nrow(ext))
+}
+
+# ---- 4.02 wrappers ----
+# Counts in one breakdown whose total is published (for example, the analytic N): TRUE for counts of
+# 1 to k - 1 and for the other counts hidden so those cannot be recovered from the total.
+hide_counts <- function(n) {
+  suppress_lines(c(n, sum(n)), list(seq_len(length(n) + 1L)), weight = c(n, Inf))[seq_along(n)]
+}
+
+# Crosswalk rows of one field, nested in the categories they were recoded to. When `published`,
+# each category's total is the n shown (or hidden) in the descriptive table and the field total is
+# the analytic N. Otherwise no total is published, so only counts of 1 to k - 1 are hidden.
+hide_nested <- function(n, category, published) {
+  if (!published) return(n > 0 & n < SUPPRESS_N)
+  cat_n <- tapply(n, category, sum)
+  m <- length(n)
+  G <- length(cat_n)
+  cat_of_row <- match(category, names(cat_n))
+  lines <- c(lapply(seq_len(G), function(g) c(which(cat_of_row == g), m + g)),
+             list(c(m + seq_len(G), m + G + 1L)))
+  init <- c(rep(FALSE, m), hide_counts(cat_n), FALSE)
+  suppress_lines(c(n, cat_n, sum(n)), lines, init = init, weight = c(n, rep(Inf, G + 1L)))[seq_len(m)]
+}
+
+# A count that may be hidden: "<k" when it is small, "Suppr." when it is hidden only to protect one.
+fmt_n_hidden <- function(n, hide) {
+  case_when(!hide ~ fmt_n(n), n < SUPPRESS_N ~ paste0("<", SUPPRESS_N), TRUE ~ SUPPR)
+}
+```
+
 ## Load data
 
 ```{r}
@@ -652,11 +792,16 @@ sat <- sat_raw |>
   ) |>
   select(-lang_lower)
 
-survey_version |>
+version_check <- survey_version |>
   count(survey_type = coalesce(survey_type, "(missing)"),
         answered = coalesce(detected_version, "No items answered")) |>
-  pivot_wider(names_from = answered, values_from = n, values_fill = 0) |>
-  mutate(across(-survey_type, fmt_n_qa)) |>
+  pivot_wider(names_from = answered, values_from = n, values_fill = 0)
+vc <- as.matrix(version_check[-1])
+# Row and column totals are not shown, so the only published constraint is that all cells add up to
+# the survey count in the sample flow.
+vc_hide <- matrix(SHAREABLE & hide_counts(vc), nrow(vc))
+version_check[-1] <- map(seq_len(ncol(vc)), \(j) fmt_n_hidden(vc[, j], vc_hide[, j]))
+version_check |>
   rename(`Survey type (source)` = survey_type) |>
   kable(caption = "QA: survey type from `source` vs. the item set actually answered")
 ```
@@ -977,7 +1122,7 @@ analytic |>
     after_90    = mean(days_end_to_survey > 90, na.rm = TRUE),
     .by = program_group
   ) |>
-  mutate(n = fmt_n_qa(n), across(c(before, after_90), fmt_pct)) |>
+  mutate(n = fmt_n_hidden(n, SHAREABLE & hide_counts(n)), across(c(before, after_90), fmt_pct)) |>
   kable(col.names = c("Program group", "Surveys", "Median days, discharge to survey",
                       sprintf("> %s days before discharge", SURVEY_WINDOW_DAYS), "> 90 days after discharge"),
         caption = "Survey timing by program group")
@@ -1004,13 +1149,35 @@ summarise_rule <- function(d, flag) {
   )
 }
 
+# Shareable render: in each group kept + dropped = surveys, and the groups add up to the overall row
+# (`total_hidden` marks its kept and dropped counts if hidden). Group sizes are published in the
+# descriptive and program-group tables when `sizes_published`, so they keep the same status here.
+add_rule_hiding <- function(tab, total_hidden, sizes_published = TRUE) {
+  if (!SHAREABLE) return(mutate(tab, hide_kept = FALSE, hide_dropped = FALSE, hide_surveys = FALSE))
+  m <- as.matrix(tab[c("kept", "dropped")])
+  R <- nrow(m)
+  ext <- rbind(cbind(m, rowSums(m)), c(colSums(m), sum(m)))
+  init <- fixed <- matrix(FALSE, R + 1, 3)
+  init[R + 1, ] <- c(total_hidden, FALSE)
+  fixed[R + 1, ] <- !init[R + 1, ]
+  if (sizes_published) {
+    init[seq_len(R), 3] <- hide_counts(tab$surveys)
+    fixed[seq_len(R), 3] <- !init[seq_len(R), 3]
+  }
+  h <- suppress_table(ext, init, fixed)
+  mutate(tab, hide_kept = h[seq_len(R), 1], hide_dropped = h[seq_len(R), 2], hide_surveys = h[seq_len(R), 3])
+}
+
 format_rule_tab <- function(tab) {
   tab |>
     mutate(
-      pct_dropped = if_else(SHAREABLE & dropped > 0 & dropped < SUPPRESS_N, SUPPR, fmt_pct(pct_dropped)),
+      pct_dropped = if_else(hide_dropped | hide_surveys, SUPPR, fmt_pct(pct_dropped)),
       across(c(high_kept, high_dropped), \(x) coalesce(fmt_pct(x), SUPPR)),
-      across(c(surveys, kept, dropped), fmt_n_qa)
-    )
+      surveys = fmt_n_hidden(surveys, hide_surveys),
+      kept    = fmt_n_hidden(kept, hide_kept),
+      dropped = fmt_n_hidden(dropped, hide_dropped)
+    ) |>
+    select(-starts_with("hide_"))
 }
 
 if (has_score_cols) {
@@ -1034,7 +1201,11 @@ if (has_score_cols) {
   pair_overall <- bind_rows(
     summarise_rule(paired_check, "pair_episode") |> mutate(rule = "Episode rule: pair on the linked episode", .before = 1),
     summarise_rule(paired_check, "pair_client")  |> mutate(rule = "Client rule: pair on any episode", .before = 1)
-  )
+  ) |>
+    # Each rule splits the analytic N (published) into kept and dropped.
+    mutate(hide_kept = SHAREABLE & map2_lgl(kept, dropped, \(k, d) any(hide_counts(c(k, d)))),
+           hide_dropped = hide_kept, hide_surveys = FALSE)
+  overall_hidden <- c(pair_overall$hide_kept[1], pair_overall$hide_dropped[1])
 
   # Breakdowns under the episode rule
   breakdown_vars <- c(program_group = "Program group", respondent = "Survey version (respondent)",
@@ -1045,7 +1216,8 @@ if (has_score_cols) {
       group_by(group) |>
       group_modify(\(d, k) summarise_rule(d, "pair_episode")) |>
       ungroup() |>
-      mutate(characteristic = label, .before = 1)
+      mutate(characteristic = label, .before = 1) |>
+      add_rule_hiding(overall_hidden)
   })
 
   # By program; programs with fewer than SUPPRESS_N surveys are combined
@@ -1056,6 +1228,7 @@ if (has_score_cols) {
     group_modify(\(d, k) summarise_rule(d, "pair_episode")) |>
     ungroup() |>
     mutate(program = as.character(program)) |>
+    add_rule_hiding(overall_hidden, sizes_published = FALSE) |>
     arrange(desc(pct_dropped), desc(surveys))
 
   # Programs with no valid pairs at all (every program, before combining small ones)
@@ -1068,7 +1241,8 @@ if (has_score_cols) {
     "**%s programs** have no surveys with a valid pair at all; together they account for %s of the analytic sample.",
     "For comparison, the \"+ clinical improvement\" sensitivity model already applies a similar restriction,",
     "because it requires paired outcome data."),
-    fmt_n_qa(ep$dropped), fmt_n(ep$surveys), fmt_pct(ep$pct_dropped),
+    fmt_n_hidden(ep$dropped, ep$hide_dropped), fmt_n(ep$surveys),
+    if (ep$hide_dropped) SUPPR else fmt_pct(ep$pct_dropped),
     fmt_n(nrow(no_pair_programs)), fmt_pct(sum(no_pair_programs$surveys) / nrow(paired_check)))
 
   save_table(bind_rows(format_rule_tab(pair_overall), format_rule_tab(pair_breakdown), format_rule_tab(pair_programs)),
@@ -1176,7 +1350,8 @@ if (SHAREABLE) {
                                                 if (k == 1) "" else "s", SUPPRESS_N) else first(raw_value),
       .by = c(field, variable, recoded_to, rule, masked, grp)
     ) |>
-    mutate(n_disp = if_else(n < SUPPRESS_N, paste0("<", SUPPRESS_N), fmt_n(n))) |>
+    mutate(hide = hide_nested(n, recoded_to, published = first(variable) != "cps_items"), .by = field) |>
+    mutate(n_disp = fmt_n_hidden(n, hide)) |>
     arrange(field, recoded_to, desc(n))
 }
 
@@ -1265,12 +1440,13 @@ describe_factor <- function(data, var) {
            pct_high = n_high / n)
 }
 
-desc_all <- map_dfr(names(CANDIDATE_VARS), \(v) describe_factor(analytic, v))
+desc_all <- map_dfr(names(CANDIDATE_VARS), \(v) describe_factor(analytic, v)) |>
+  mutate(hidden = hide_counts(n), .by = variable)
 
 desc_display <- desc_all |>
   mutate(
     suppressed    = n < SUPPRESS_N,
-    n_disp        = if_else(suppressed, SUPPR, fmt_n(n)),
+    n_disp        = if_else(hidden, SUPPR, fmt_n(n)),
     pct_disp      = if_else(suppressed, SUPPR, fmt_pct(pct_high)),
     mean_disp     = if_else(suppressed, SUPPR, sprintf("%.2f", mean_score)),
     characteristic = if_else(row_number() == 1, characteristic, ""),
@@ -1337,7 +1513,7 @@ unadj_summary <- map_dfr(unadj, "summary") |>
          ord_p_bh = p.adjust(ord_p, method = "BH"))
 
 unadj_levels <- map_dfr(unadj, "levels") |>
-  left_join(desc_all |> select(variable, level, n, pct_high), by = c("variable", "level")) |>
+  left_join(desc_all |> select(variable, level, n, hidden, pct_high), by = c("variable", "level")) |>
   filter(n >= SUPPRESS_N)
 
 unadj_display <- unadj_levels |>
@@ -1350,8 +1526,8 @@ unadj_display <- unadj_levels |>
     characteristic = if_else(row_number() == 1, characteristic, ""),
     .by = variable
   ) |>
-  select(characteristic, level, n, pct_high, logit_or, logit_p, ord_or, ord_p) |>
-  mutate(n = fmt_n(n), pct_high = fmt_pct(pct_high))
+  mutate(n = if_else(hidden, SUPPR, fmt_n(n)), pct_high = fmt_pct(pct_high)) |>
+  select(characteristic, level, n, pct_high, logit_or, logit_p, ord_or, ord_p)
 
 unadj_display |>
   kable(col.names = c("Characteristic", "Group", "n", "% high", "Logistic OR (95% CI)", "p",
@@ -1442,7 +1618,7 @@ large_prog_tab <- analytic |>
 
 large_prog_tab |>
   mutate(large_program = if_else(large_program == "Yes", paste("Largest program:", paste(large_program_names, collapse = ", ")), "All other programs"),
-         n = if_else(n < SUPPRESS_N, SUPPR, fmt_n(n)), pct_high = fmt_pct(pct_high), share_of_not_high = fmt_pct(share_of_not_high)) |>
+         n = if_else(hide_counts(n), SUPPR, fmt_n(n)), pct_high = fmt_pct(pct_high), share_of_not_high = fmt_pct(share_of_not_high)) |>
   kable(col.names = c("Program group", "n", "% high satisfaction", "Share of all non-high ratings"))
 ```
 
@@ -1506,6 +1682,7 @@ model_or_table <- function(fit) {
     }
   })
   rows |>
+    mutate(hidden = hide_counts(n), .by = variable) |>
     left_join(cf |> select(variable, level, or, lcl, ucl, p.value), by = c("variable", "level")) |>
     mutate(characteristic = unname(ALL_LABELS[variable]))
 }
@@ -1581,7 +1758,8 @@ main_display <- main_tab |>
     characteristic = if_else(row_number() == 1, characteristic, ""),
     .by = variable
   ) |>
-  transmute(characteristic, term_p, level, n = fmt_n(n), obs = fmt_pct(obs_pct), adj = fmt_pct(adj_pct), or_disp, p_disp)
+  transmute(characteristic, term_p, level, n = if_else(hidden, SUPPR, fmt_n(n)), obs = fmt_pct(obs_pct),
+            adj = fmt_pct(adj_pct), or_disp, p_disp)
 
 main_display |>
   kable(col.names = c("Characteristic", "Overall p (joint Wald χ²)", "Group", "n", "Observed % high",
@@ -1709,7 +1887,7 @@ show_terms <- function(fit_name, vars) {
   model_or_table(fits[[fit_name]]) |>
     filter(variable %in% vars, n >= SUPPRESS_N) |>
     mutate(or = if_else(is_ref, "Ref.", coalesce(fmt_or(or, lcl, ucl), "Not estimable")),
-           p = if_else(is_ref, "", fmt_p(p.value)), n = fmt_n(n)) |>
+           p = if_else(is_ref, "", fmt_p(p.value)), n = if_else(hidden, SUPPR, fmt_n(n))) |>
     select(characteristic, level, n, or, p) |>
     kable(col.names = c("Characteristic", "Group", "n", "Adjusted OR (95% CI)", "p"),
           caption = sprintf("%s (n = %s; adjusted for all main-model factors)",
