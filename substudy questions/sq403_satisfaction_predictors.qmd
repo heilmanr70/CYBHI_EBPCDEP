@@ -18,8 +18,9 @@ execute:
   warning: false
   message: false
 params:
-  path_combined_all: "~/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/combined_satisfaction_clean_CDEP.csv"
-  path_all_data: "~/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean_CDEP.csv"
+  path_combined_all: "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/combined_satisfaction_clean.csv"         # all programs
+  path_all_data: "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv"             # all programs
+  path_all_data_subset: "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean_CDEP.csv" # CDEP-only client/service file
   path_grantee_lookup: ""
   output_dir: "output/sq403"
   data_through: ""
@@ -29,16 +30,15 @@ params:
   link_fallback_primary_client: true
   large_program_pattern: "give ?thx"
   shareable: true
-  modality_subset: "CDEP"      # "CDEP" for Study Question 4.03; blank for 4.02 (all programs)
-  modality_presubset: true     # true: the two data files already hold only modality_subset programs (no lookup needed)
-  modality_col: "modality" # column in the grantee lookup file that says EBP or CDEP (used only if a lookup is supplied)
+  modality_subset: "CDEP"      # name of the subset for Study Question 4.03; blank for 4.02 (all programs)
+  modality_col: "modality" # column in the grantee lookup file that says EBP or CDEP (used only when path_all_data_subset is blank)
 ---
 
 # Purpose and approach
 
 **Study question 4.03:** Within the grantees doing CDEPs, were there higher client satisfaction rates among specific target populations?
 
-This render uses the 4.02 methods on data files that were limited to CDEP programs before this script.
+This render uses the 4.02 methods. Surveys are linked to intervention episodes using data for all programs, and only surveys whose linked episode is a CDEP episode are analyzed.
 
 The interim report (January 30, 2026) answered this question with separate, unadjusted ordinal models for participant type, race, ethnicity, gender identity, and sexual orientation. It recommended that the final report add program context and geography, and move to adjusted models that account for participant characteristics, service exposure, and baseline severity. This analysis does that in five steps:
 
@@ -88,10 +88,12 @@ if (exists("params") && !is.null(params$modality_subset) && nzchar(params$modali
   cat(sprintf(paste0(
     "\n\n::: {.callout-important}\n## Study Question 4.03: %1$s programs only\n\n",
     "Within the grantees doing %1$ss, were there higher client satisfaction rates among specific target populations? ",
-    "This render uses the 4.02 methods, %2$s.\n\n:::\n\n"),
+    "This render uses the 4.02 methods. %2$s.\n\n:::\n\n"),
     params$modality_subset,
-    if (isTRUE(as.logical(params$modality_presubset))) "on data files that were limited to these programs before this script"
-    else "limited to surveys from programs with this modality"))
+    if (!is.null(params$path_all_data_subset) && nzchar(params$path_all_data_subset)) paste(
+      "Each survey is linked to its closest intervention episode using data for all programs, and is kept only if that",
+      "episode is in the subset client/service file. QA tables before the linkage step cover surveys from all programs. Baseline severity is standardized within the subset")
+    else "It is limited to surveys from programs with this modality"))
 }
 ```
 
@@ -122,8 +124,9 @@ Edit this section if eInsight category labels differ from the patterns below. Ev
 #| label: config
 # Defaults are used when running chunks interactively; YAML params take precedence when rendering.
 defaults <- list(
-  path_combined_all = "~/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/combined_satisfaction_clean_CDEP.csv",
-  path_all_data = "~/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean_CDEP.csv",
+  path_combined_all = "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/combined_satisfaction_clean.csv",
+  path_all_data = "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv",
+  path_all_data_subset = "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean_CDEP.csv",
   path_grantee_lookup = "",
   output_dir = "output/sq403",
   data_through = "",
@@ -134,7 +137,6 @@ defaults <- list(
   large_program_pattern = "give ?thx",
   shareable = FALSE,
   modality_subset = "CDEP",
-  modality_presubset = TRUE,
   modality_col = "modality"
 )
 cfg <- modifyList(defaults, if (exists("params")) as.list(params) else list())
@@ -144,10 +146,13 @@ SUPPR       <- "Suppr."
 # Shareable render: masks raw values seen fewer than SUPPRESS_N times and shows QA counts of
 # 1 to SUPPRESS_N - 1 as "<SUPPRESS_N". Results tables are suppressed in every render.
 SHAREABLE   <- isTRUE(as.logical(cfg$shareable))
-# Subset render (Study Question 4.03). PRESUBSET = the data files were limited to the subset upstream,
-# so nothing is filtered here; otherwise surveys are filtered on the grantee lookup's modality column.
+# Subset render (Study Question 4.03). When path_all_data_subset is set, surveys are linked to
+# episodes using all programs and kept only if the linked episode is in the subset file.
+# Otherwise surveys are filtered on the grantee lookup's modality column.
 SUBSET_LABEL <- cfg$modality_subset
-PRESUBSET    <- nzchar(SUBSET_LABEL) && isTRUE(as.logical(cfg$modality_presubset))
+if (nzchar(cfg$path_all_data_subset) && !nzchar(SUBSET_LABEL)) {
+  stop("path_all_data_subset is set; set modality_subset to the name of that subset (e.g., CDEP).", call. = FALSE)
+}
 MIN_MODEL_N <- 300   # minimum sample for subset (sensitivity) models
 LIKERT_LABELS <- c("Strongly disagree", "Disagree", "Undecided", "Agree", "Strongly agree")
 
@@ -501,6 +506,7 @@ read_any <- function(path) {
 # workspace by another script can never stand in for the subset files.
 combined_all   <- read_any(cfg$path_combined_all)
 all_data       <- read_any(cfg$path_all_data)
+all_data_subset <- read_any(cfg$path_all_data_subset)   # NULL when no subset file is set
 grantee_lookup <- read_any(cfg$path_grantee_lookup)
 
 check_cols <- function(df, cols, name) {
@@ -511,11 +517,13 @@ check_cols(combined_all, c("client_system_id", "provider_system_id"), "combined_
 check_cols(all_data, c("client_system_id", "provider_system_id", "intervention_name",
                        "intervention_start", "intervention_end", "reason_for_discharge"), "all_data")
 
-tibble(
-  dataset = c("combined_all (satisfaction surveys)", "all_data (client/service records)"),
-  rows    = fmt_n(c(nrow(combined_all), nrow(all_data))),
-  columns = c(ncol(combined_all), ncol(all_data))
-) |> kable()
+loaded <- list("combined_all (satisfaction surveys)" = combined_all, "all_data (client/service records)" = all_data)
+if (!is.null(all_data_subset)) {
+  check_cols(all_data_subset, c("client_system_id", "provider_system_id", "intervention_name", "intervention_start"),
+             "all_data_subset")
+  loaded[[paste0("all_data_subset (", SUBSET_LABEL, " client/service records)")]] <- all_data_subset
+}
+tibble(dataset = names(loaded), rows = fmt_n(map_int(loaded, nrow)), columns = map_int(loaded, ncol)) |> kable()
 ```
 
 # Prepare satisfaction data
@@ -697,15 +705,19 @@ Surveys whose answered items belong to a different version than their `source`: 
 
 ```{r}
 #| label: all-data-prep
-ad <- all_data |>
-  as_tibble() |>
-  mutate(
-    across(any_of(ID_COLS), id_chr),
-    intervention_name  = str_squish(as.character(intervention_name)),
-    intervention_start = to_date(intervention_start),
-    intervention_end   = to_date(intervention_end),
-    across(any_of("age_at_start_of_treatment_in_years"), \(v) suppressWarnings(as.numeric(v)))
-  )
+# Standardizes IDs, intervention names, and dates (applied identically to the full and subset files,
+# so episode keys match between them).
+prep_service_data <- function(df) {
+  df |>
+    as_tibble() |>
+    mutate(
+      across(any_of(ID_COLS), id_chr),
+      intervention_name  = str_squish(as.character(intervention_name)),
+      across(any_of(c("intervention_start", "intervention_end")), to_date),
+      across(any_of("age_at_start_of_treatment_in_years"), \(v) suppressWarnings(as.numeric(v)))
+    )
+}
+ad <- prep_service_data(all_data)
 for (dc in c("pre_completion_date", "post_completion_date")) {
   ad[[dc]] <- if (dc %in% names(ad)) to_date(ad[[dc]]) else as.Date(NA)
 }
@@ -733,6 +745,15 @@ interventions <- ad |>
   filter(!is.na(client_system_id), !is.na(intervention_name)) |>
   summarise(across(any_of(INTERVENTION_VARS), first_non_na), .by = all_of(KEYS))
 
+# Episodes in the subset file (Study Question 4.03); NULL when no subset file is set.
+subset_episodes <- NULL
+if (!is.null(all_data_subset)) {
+  subset_episodes <- prep_service_data(all_data_subset) |>
+    filter(!is.na(client_system_id), !is.na(intervention_name)) |>
+    distinct(across(all_of(KEYS)))
+  n_subset_unmatched <- nrow(anti_join(subset_episodes, interventions, by = KEYS))
+}
+
 # One row per client: demographics from the earliest record with a substantive value.
 clients <- ad |>
   filter(!is.na(client_system_id)) |>
@@ -758,11 +779,29 @@ demo_conflicts |>
 Test/demo records removed from `all_data`: **`r fmt_n_qa(n_ad_demo)`**.
 
 ```{r}
+#| label: qa-subset-episodes
+#| echo: false
+#| results: asis
+if (!is.null(subset_episodes)) {
+  cat(sprintf("%s episodes (client × provider × intervention × start date) in the subset file: **%s**. Not found in `all_data`: **%s**.\n\n",
+              SUBSET_LABEL, fmt_n_qa(nrow(subset_episodes)), fmt_n_qa(n_subset_unmatched)))
+  if (n_subset_unmatched > 0) {
+    cat("\n\n::: {.callout-important}\n## Subset episodes missing from the full file\n\n",
+        "Surveys can only be kept when their linked episode appears in both files with identical client ID, provider ID, ",
+        "intervention name, and start date. Check that both files come from the same export date and the same cleaning script ",
+        "(test/demo accounts are expected to be missing).\n\n:::\n\n", sep = "")
+  }
+}
+```
+
+```{r}
 #| label: baseline-outcomes
 # Baseline severity: pre-scores standardized within scale and signed so that higher = more severe.
+# In a subset render, scores are standardized against the subset's episodes only.
+severity_source <- if (is.null(subset_episodes)) ad else semi_join(ad, subset_episodes, by = KEYS)
 baseline <- NULL
 if (all(c("pre_score", SEVERITY_SCALE_VARS) %in% names(ad))) {
-  baseline <- ad |>
+  baseline <- severity_source |>
     mutate(pre_score = suppressWarnings(as.numeric(pre_score))) |>
     filter(!is.na(pre_score), if_all(all_of(SEVERITY_SCALE_VARS), \(v) !is.na(v))) |>
     arrange(pre_completion_date) |>
@@ -792,7 +831,7 @@ if (all(c("positive_outcomes", "post_score") %in% names(ad))) {
 # may combine subscales (e.g., NOMS domains). If so, add the name column to SEVERITY_SCALE_VARS.
 if (!is.null(baseline)) {
   name_col <- intersect(c("trimmed_pre_assessment_name", "pre_assessment_name"), names(ad))[1]
-  ad |>
+  severity_source |>
     mutate(pre_num = suppressWarnings(as.numeric(pre_score))) |>
     filter(!is.na(.data[[SEVERITY_SCALE_VARS[1]]]), !is.na(pre_num)) |>
     summarise(
@@ -814,7 +853,7 @@ if (!is.null(baseline)) {
 
 # Build the analytic sample
 
-Each survey is linked to a discharged intervention episode for the same client at the same provider. When a client has several discharged episodes, the survey is assigned to the episode whose end date is closest to the survey date. Surveys that do not link on the respondent's client ID are retried on `primary_client_system_id` (caregiver-completed surveys recorded under the family's primary client). Following the report's participant-level rule, one survey is retained per respondent per survey version: the one linked to their earliest intervention.
+Each survey is linked to a discharged intervention episode for the same client at the same provider. When a client has several discharged episodes, the survey is assigned to the episode whose end date is closest to the survey date. Surveys that do not link on the respondent's client ID are retried on `primary_client_system_id` (caregiver-completed surveys recorded under the family's primary client). Following the report's participant-level rule, one survey is retained per respondent per survey version: the one linked to their earliest intervention.`r if (!is.null(subset_episodes)) sprintf(" Linkage uses episodes from all programs, so a survey about a non-%1$s episode attaches to that episode and is then dropped; only surveys whose linked episode is in the %1$s file are kept, before the one-survey-per-respondent rule is applied.", SUBSET_LABEL)`
 
 ```{r}
 #| label: linkage
@@ -852,13 +891,20 @@ if (isTRUE(cfg$link_fallback_primary_client)) {
     mutate(link_method = "Primary (family) client ID")
 }
 
-analytic <- bind_rows(linked_1, linked_2) |>
+join_keys <- c(link_client_id = "client_system_id", "provider_system_id", "intervention_name", "intervention_start")
+
+# Study Question 4.03: keep surveys whose linked episode is in the subset file. This runs before the
+# one-survey-per-respondent rule, so a respondent's earlier survey from another program cannot displace
+# their subset survey.
+linked <- bind_rows(linked_1, linked_2)
+if (!is.null(subset_episodes)) linked <- linked |> semi_join(subset_episodes, by = join_keys)
+
+analytic <- linked |>
   mutate(respondent_key = coalesce(client_system_id, paste0("survey_", survey_id))) |>
   arrange(respondent_key, version, intervention_start, gap) |>
   distinct(respondent_key, version, .keep_all = TRUE) |>
   left_join(clients, by = c(link_client_id = "client_system_id"))
 
-join_keys <- c(link_client_id = "client_system_id", "provider_system_id", "intervention_name", "intervention_start")
 if (!is.null(baseline)) analytic <- analytic |> left_join(baseline, by = join_keys)
 if (!is.null(outcomes)) analytic <- analytic |> left_join(outcomes, by = join_keys)
 if (!is.null(grantee_lookup)) {
@@ -871,25 +917,16 @@ if (!is.null(grantee_lookup)) {
               by = "provider_system_id")
 }
 
-# Study Question 4.03. Pre-subsetted files are used as they are; if a grantee lookup is also
-# supplied, it is used only to confirm that no other modality is present. Otherwise surveys are
-# filtered to programs whose modality matches modality_subset.
+# Without a subset file, the subset is defined by the grantee lookup's modality column instead.
 n_before_subset <- nrow(analytic)
-if (nzchar(SUBSET_LABEL)) {
-  has_modality <- "modality" %in% names(analytic)
-  if (!PRESUBSET && !has_modality) {
-    stop("modality_subset is set, but no modality column was found. Set path_grantee_lookup to the file ",
-         "that flags ", SUBSET_LABEL, " programs and modality_col to its modality column, or set ",
-         "modality_presubset: true if the data files are already limited to ", SUBSET_LABEL, ".", call. = FALSE)
+BY_LOOKUP <- nzchar(SUBSET_LABEL) && is.null(subset_episodes)
+if (BY_LOOKUP) {
+  if (!"modality" %in% names(analytic)) {
+    stop("modality_subset is set, but there is no subset file and no modality column. Set path_all_data_subset to the ",
+         SUBSET_LABEL, "-only client/service file, or path_grantee_lookup and modality_col.", call. = FALSE)
   }
-  if (has_modality) {
-    in_subset <- str_detect(as.character(analytic$modality), regex(SUBSET_LABEL, ignore_case = TRUE))
-    if (PRESUBSET && any(!in_subset, na.rm = TRUE)) {
-      stop("modality_presubset is true, but ", sum(!in_subset, na.rm = TRUE), " linked surveys have a modality other than ",
-           SUBSET_LABEL, " in the grantee lookup. Check the data file paths.", call. = FALSE)
-    }
-    if (!PRESUBSET) analytic <- analytic |> filter(coalesce(in_subset, FALSE))
-  }
+  analytic <- analytic |>
+    filter(coalesce(str_detect(as.character(modality), regex(SUBSET_LABEL, ignore_case = TRUE)), FALSE))
 }
 
 for (v in setdiff(c(DEMO_VARS, "funding_round", "county", "reason_for_discharge"), names(analytic))) {
@@ -900,22 +937,22 @@ for (v in c("baseline_severity", "age_at_start_of_treatment_in_years")) {
 }
 if (!"clinical_improvement" %in% names(analytic)) analytic$clinical_improvement <- NA_character_
 
-flow <- tribble(
-  ~step, ~n,
-  "Survey records in combined_all", n_sat_file,
-  "After removing exact duplicate records", n_sat_distinct,
-  "Within data window", n_sat_window,
-  "Survey version identified", sum(!is.na(sat$version)),
-  "Valid (1–5) response on the overall satisfaction item", nrow(sat_valid),
-  "Linked to a discharged intervention on respondent client ID", nrow(linked_1),
-  "Linked on primary (family) client ID (fallback)", if (is.null(linked_2)) 0L else nrow(linked_2),
-  "Analytic sample (one survey per respondent per version)", n_before_subset
+all_programs <- if (nzchar(SUBSET_LABEL)) ", all programs" else ""
+flow <- bind_rows(
+  tribble(
+    ~step, ~n,
+    paste0("Survey records in combined_all", all_programs), n_sat_file,
+    "After removing exact duplicate records", n_sat_distinct,
+    "Within data window", n_sat_window,
+    "Survey version identified", sum(!is.na(sat$version)),
+    "Valid (1–5) response on the overall satisfaction item", nrow(sat_valid),
+    paste0("Linked to a discharged intervention on respondent client ID", all_programs), nrow(linked_1),
+    "Linked on primary (family) client ID (fallback)", if (is.null(linked_2)) 0L else nrow(linked_2)
+  ),
+  if (!is.null(subset_episodes)) tibble(step = sprintf("Linked intervention is a %s episode", SUBSET_LABEL), n = nrow(linked)),
+  tibble(step = "Analytic sample (one survey per respondent per version)", n = n_before_subset),
+  if (BY_LOOKUP) tibble(step = paste0("Limited to ", SUBSET_LABEL, " programs (4.03 analytic sample)"), n = nrow(analytic))
 )
-if (PRESUBSET) {
-  flow <- flow |> mutate(step = if_else(row_number() == 1, sprintf("%s (file pre-limited to %s programs)", step, SUBSET_LABEL), step))
-} else if (nzchar(SUBSET_LABEL)) {
-  flow <- add_row(flow, step = paste0("Limited to ", SUBSET_LABEL, " programs (4.03 analytic sample)"), n = nrow(analytic))
-}
 flow_display <- flow |> mutate(n = fmt_n_qa(n))
 flow_display |> kable(col.names = c("Step", "Surveys"))
 save_table(flow_display, "01_sample_flow")

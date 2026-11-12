@@ -22,7 +22,7 @@ params:
 #| echo: false
 #| results: asis
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
-if (exists("params") && isTRUE(as.logical(params$shareable))) {
+if (isTRUE(getOption("knitr.in.progress")) && isTRUE(as.logical(params$shareable))) {
   k0 <- if (!is.null(params$suppress_n)) as.integer(params$suppress_n) else 60L
   cat(sprintf(paste0(
     "\n\n::: {.callout-note}\n## Shareable render\n\n",
@@ -30,7 +30,8 @@ if (exists("params") && isTRUE(as.logical(params$shareable))) {
     "that would let a suppressed count be recovered by subtraction. Zeros are also hidden in any row ",
     "or column with fewer than %2$s clients, and a row whose total is suppressed shows counts without ",
     "percentages. Raw category values that are not in ",
-    "the codebook and were recorded for fewer than %2$s clients are masked, and data-quality counts below ",
+    "the codebook and were recorded for fewer than %2$s clients are masked (masked client types are ",
+    "counted as not reported), and data-quality counts below ",
     "%2$s are shown as \"<%2$s\". Render with `shareable: false` to see exact counts locally.\n:::\n\n"),
     k0 - 1L, k0))
 }
@@ -70,7 +71,7 @@ defaults <- list(
   suppress_n       = 60,
   shareable        = FALSE
 )
-cfg <- modifyList(defaults, if (exists("params")) as.list(params) else list())
+cfg <- modifyList(defaults, if (isTRUE(getOption("knitr.in.progress"))) as.list(params) else list())
 
 # Shareable render: counts of 1 to SUPPRESS_N - 1 are suppressed in every results table (with
 # complementary suppression), raw values outside the codebook seen for fewer than SUPPRESS_N clients
@@ -176,7 +177,10 @@ mask_rare_values <- function(x, id, known = character()) {
 #   (c) no suppressed count below k, and no sum of two suppressed counts that is below k, can be
 #       solved for exactly from all of the table's constraints taken together (checked by matrix rank).
 # Extra suppressions go to the entry with the lowest `weight` (by default, the smallest count).
-# An entry with weight Inf is never chosen, e.g. because another table already shows it.
+# An entry with weight Inf is never chosen, e.g. because another table already shows it. An entry
+# that can be read off a line whose other entries are all zero or shown elsewhere cannot be
+# protected, so it is never chosen either. If no entry can protect a hidden count, the render stops
+# rather than publish a count that could be recovered.
 pick_entry <- function(cand, weight) {
   cand <- cand[is.finite(weight[cand])]
   if (length(cand) == 0L) NA_integer_ else cand[which.min(weight[cand])]
@@ -211,7 +215,19 @@ recoverable_entries <- function(x, lines, s, k) {
 suppress_lines <- function(x, lines, k = SUPPRESS_N, init = NULL, weight = x) {
   s <- !is.na(x) & x > 0 & x < k
   if (!is.null(init)) s <- s | init
+  repeat {
+    pinned <- unlist(lapply(lines, function(ln) {
+      unknown <- ln[x[ln] > 0 & (is.finite(weight[ln]) | s[ln])]
+      if (length(unknown) == 1L && is.finite(weight[unknown])) unknown
+    }))
+    if (length(pinned) == 0L) break
+    weight[pinned] <- Inf
+  }
   open_entries <- function(idx) idx[!s[idx] & x[idx] > 0]
+  cannot_protect <- function() {
+    stop("Complementary suppression cannot protect a hidden count: every entry that could be ",
+         "hidden with it is zero or shown in another table.", call. = FALSE)
+  }
   repeat {
     j <- NA_integer_
     for (ln in lines) {
@@ -220,8 +236,8 @@ suppress_lines <- function(x, lines, k = SUPPRESS_N, init = NULL, weight = x) {
       small_sum <- !s[tot] && any(s[cells]) && sum(x[cells][s[cells]]) < k
       if (sum(s[ln]) == 1L || small_sum) {
         j <- pick_entry(open_entries(ln), weight)
-        if (is.na(j)) j <- pick_entry(open_entries(seq_along(x)), weight)
-        if (!is.na(j)) break
+        if (is.na(j)) cannot_protect()
+        break
       }
     }
     if (is.na(j)) {
@@ -230,12 +246,32 @@ suppress_lines <- function(x, lines, k = SUPPRESS_N, init = NULL, weight = x) {
         near <- unique(unlist(lines[vapply(lines, function(ln) any(rec %in% ln), logical(1))]))
         j <- pick_entry(open_entries(near), weight)
         if (is.na(j)) j <- pick_entry(open_entries(seq_along(x)), weight)
+        if (is.na(j)) cannot_protect()
       }
     }
     if (is.na(j)) break
     s[j] <- TRUE
   }
   s
+}
+
+# Suppression pattern for a matrix of counts with its totals attached: row totals in the last column
+# and column totals in the last row. Every row and column is a line. Extra suppressions go to inner
+# cells first, then to row totals, and to the grand total last, because hiding the grand total forces
+# a column total to be hidden too. `init` marks entries that start hidden and `fixed` marks entries
+# that are never hidden, usually because another table hides or shows the same number.
+suppress_table <- function(ext, init = FALSE, fixed = FALSE) {
+  R <- nrow(ext) - 1L
+  C <- ncol(ext) - 1L
+  idx <- matrix(seq_along(ext), nrow(ext))
+  lines <- c(lapply(seq_len(R + 1L), function(i) idx[i, ]),
+             lapply(seq_len(C + 1L), function(j) idx[, j]))
+  weight <- as.vector(ext)
+  weight[idx[seq_len(R), C + 1L]] <- weight[idx[seq_len(R), C + 1L]] + 1e9
+  weight[idx[R + 1L, C + 1L]] <- weight[idx[R + 1L, C + 1L]] + 2e9
+  weight[rep_len(as.vector(fixed), length(ext))] <- Inf
+  s <- suppress_lines(as.vector(ext), lines, init = rep_len(as.vector(init), length(ext)), weight = weight)
+  matrix(s, nrow(ext))
 }
 
 # One-way frequency table in the interim report's layout: N, % of all, and % excluding N/As.
@@ -289,17 +325,19 @@ tab_one_way <- function(x, label = "Category", order = character(), not_reported
   out <- rename(out, !!label := category)
   attr(out, "hidden") <- counts$category[sc]
   attr(out, "shown")  <- counts$category[!sc]
+  # A cross-tab of this variable leaves out missing values, so its grand total can be read from this
+  # table only when no total and no non-substantive count here is hidden.
+  attr(out, "total_hidden") <- any(s[c(which(!is_sub), i_sub, i_nr, i_tot)])
   out
 }
 
 # Two-way table with row percentages and counts, e.g. "45% (1,234)", plus a Total row and an N column.
-# Every row and column (including the Total row and N column) is a suppression line. Extra
-# suppressions go to inner cells first and to a row total only as a last resort. A row whose total is
-# hidden shows counts without percentages, because its percentages would reveal that total.
-# `like`: an earlier table of the same column variable (one-way or two-way). Its hidden categories
-# start hidden in this table's Total row, and categories it shows are never hidden here, so the two
-# tables cannot be combined to recover a suppressed count. When `like` is given, the grand total is
-# also treated as shown elsewhere and is never used as a complementary suppression.
+# Every row and column (including the Total row and N column) is a suppression line (see
+# `suppress_table()`). A row whose total is hidden shows counts without percentages, because its
+# percentages would reveal that total. Rows follow factor level order when `rows` is a factor.
+# `like`: an earlier table of the same column variable over the same clients (one-way or two-way).
+# Its hidden categories and grand total start hidden in this table's Total row, and the ones it shows
+# are never hidden here, so the two tables cannot be combined to recover a suppressed count.
 tab_two_way <- function(rows, cols, row_label = "Group", col_order = character(), digits = 0,
                         like = NULL) {
   if (length(rows) == 0L) return(tibble(!!row_label := "No records"))
@@ -315,24 +353,16 @@ tab_two_way <- function(rows, cols, row_label = "Group", col_order = character()
   m <- unclass(table(factor(rows, row_lv), factor(cols, col_lv)))
   R <- nrow(m); C <- ncol(m)
   ext <- rbind(cbind(m, rowSums(m)), c(colSums(m), sum(m)))
-  idx <- matrix(seq_along(ext), nrow(ext))
-  lines <- c(lapply(seq_len(nrow(ext)), function(i) idx[i, ]),
-             lapply(seq_len(ncol(ext)), function(j) idx[, j]))
-  x <- as.vector(ext)
 
-  s <- rep(FALSE, length(x))
+  s_mat <- matrix(FALSE, R + 1, C + 1)
   if (SHAREABLE) {
-    weight <- x
-    weight[idx[seq_len(R), C + 1]] <- x[idx[seq_len(R), C + 1]] + 1e9   # row totals: last resort
-    total_row <- idx[R + 1, seq_len(C)]
+    init <- fixed <- matrix(FALSE, R + 1, C + 1)
     if (!is.null(like)) {
-      s[total_row[col_lv %in% attr(like, "hidden")]] <- TRUE
-      weight[total_row[col_lv %in% attr(like, "shown")]] <- Inf
-      weight[idx[R + 1, C + 1]] <- Inf
+      init[R + 1, ]  <- c(col_lv %in% attr(like, "hidden"), isTRUE(attr(like, "total_hidden")))
+      fixed[R + 1, ] <- c(col_lv %in% attr(like, "shown"), !init[R + 1, C + 1])
     }
-    s <- suppress_lines(x, lines, init = s, weight = weight)
+    s_mat <- suppress_table(ext, init, fixed)
   }
-  s_mat <- matrix(s, nrow(ext))
   shown_s <- s_mat
   if (SHAREABLE) {
     # In a row or column whose total is below k, zeros are hidden too: otherwise they would show
@@ -352,6 +382,7 @@ tab_two_way <- function(rows, cols, row_label = "Group", col_order = character()
   out <- as_tibble(cell) |> mutate(!!row_label := c(row_lv, "Total"), .before = 1)
   attr(out, "hidden") <- union(attr(like, "hidden"), col_lv[s_mat[R + 1, seq_len(C)]])
   attr(out, "shown")  <- col_lv[!s_mat[R + 1, seq_len(C)]]
+  attr(out, "total_hidden") <- s_mat[R + 1, C + 1]
   out
 }
 
@@ -421,8 +452,9 @@ all_data_filtered <- all_data |>
     !is.na(intervention_name)
   )
 
-# Values each field is allowed to take without masking (client_type has no codebook, so any of its
-# values seen for fewer than SUPPRESS_N clients is masked in a shareable render).
+# Values each field is allowed to take without masking. client_type has no codebook, so in a shareable
+# render any of its values seen for fewer than SUPPRESS_N clients is masked and, carrying no usable
+# category, counted with missing client types rather than as a small row of its own.
 KNOWN_VALUES <- list(
   insurance_status_clean   = names(INSURANCE_CODES),
   sexual_orientation_clean = names(SEXUAL_ORIENTATION_CODES),
@@ -437,7 +469,10 @@ all_data_filtered <- all_data_filtered |>
   mutate(
     across(all_of(names(KNOWN_VALUES)),
            ~ mask_rare_values(.x, client_system_id, KNOWN_VALUES[[cur_column()]])),
-    client_type = mask_rare_values(as.character(client_type), client_system_id)
+    client_type = na_if(mask_rare_values(as.character(client_type), client_system_id), MASKED),
+    # As text, quarter labels sort alphabetically ("Q1 2025" before "Q2 2024"), so order them by date.
+    intervention_start_quarter = fct_reorder(as.character(intervention_start_quarter),
+                                             intervention_start, .fun = min)
   )
 
 clients <- all_data_filtered |> distinct(client_system_id, .keep_all = TRUE)
@@ -494,7 +529,7 @@ discharge_data_filtered |>
 t1 <- tab_one_way(clients$race_label, "Race", RACE_ORDER, not_reported = CODE_0_LABEL)
 show_table(t1, "race")
 
-d <- clients_with(!is.na(client_type), !is.na(race_label))
+d <- clients_with(!is.na(race_label))
 tab_two_way(d$client_type, d$race_label, "Client type", RACE_ORDER, like = t1) |>
   show_table("race_by_client_type")
 ```
@@ -540,7 +575,7 @@ tab_one_way(clients$ethn_label, "Ethnicity", ETHN_ORDER, not_reported = CODE_0_L
 t1 <- tab_one_way(clients$insurance_status_clean, "Insurance status", names(INSURANCE_CODES))
 show_table(t1, "insurance")
 
-d <- clients_with(!is.na(client_type), !is.na(insurance_status_clean))
+d <- clients_with(!is.na(insurance_status_clean))
 tab_two_way(d$client_type, d$insurance_status_clean, "Client type", names(INSURANCE_CODES), like = t1) |>
   show_table("insurance_by_client_type")
 ```
@@ -569,7 +604,7 @@ tab_two_way(d$client_type, d$insurance_status_clean, "Client type", names(INSURA
 t1 <- tab_one_way(clients$sexual_orientation_clean, "Sexual orientation", names(SEXUAL_ORIENTATION_CODES))
 show_table(t1, "sexual_orientation")
 
-d <- clients_with(!is.na(client_type), !is.na(sexual_orientation_clean))
+d <- clients_with(!is.na(sexual_orientation_clean))
 tab_two_way(d$client_type, d$sexual_orientation_clean, "Client type", names(SEXUAL_ORIENTATION_CODES),
             like = t1) |>
   show_table("sexual_orientation_by_client_type")
@@ -621,7 +656,7 @@ d <- clients_with(!is.na(preferred_language_clean))
 t1 <- tab_two_way(d$intervention_start_quarter, d$preferred_language_clean, "Start quarter", names(LANGUAGE_CODES))
 show_table(t1, "preferred_language_by_quarter")
 
-d <- clients_with(!is.na(client_type), !is.na(preferred_language_clean))
+d <- clients_with(!is.na(preferred_language_clean))
 tab_two_way(d$client_type, d$preferred_language_clean, "Client type", names(LANGUAGE_CODES), like = t1) |>
   show_table("preferred_language_by_client_type")
 ```
@@ -647,7 +682,7 @@ d <- clients_with(!is.na(primary_language_clean))
 t1 <- tab_two_way(d$intervention_start_quarter, d$primary_language_clean, "Start quarter", names(LANGUAGE_CODES))
 show_table(t1, "primary_language_by_quarter")
 
-d <- clients_with(!is.na(client_type), !is.na(primary_language_clean))
+d <- clients_with(!is.na(primary_language_clean))
 tab_two_way(d$client_type, d$primary_language_clean, "Client type", names(LANGUAGE_CODES), like = t1) |>
   show_table("primary_language_by_client_type")
 ```
@@ -673,7 +708,7 @@ d <- clients_with(!is.na(housing_status_clean))
 t1 <- tab_two_way(d$intervention_start_quarter, d$housing_status_clean, "Start quarter", names(HOUSING_CODES))
 show_table(t1, "housing_by_quarter")
 
-d <- clients_with(!is.na(client_type), !is.na(housing_status_clean))
+d <- clients_with(!is.na(housing_status_clean))
 tab_two_way(d$client_type, d$housing_status_clean, "Client type", names(HOUSING_CODES), like = t1) |>
   show_table("housing_by_client_type")
 ```
