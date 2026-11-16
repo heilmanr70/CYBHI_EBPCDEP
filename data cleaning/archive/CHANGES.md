@@ -1,3 +1,111 @@
+# Change Log — Satisfaction Script Rebuilt, Paths Updated (November 2, 2026)
+
+**`satisfaction_data_cleaning.qmd` rebuilt.** The October 8 reviewed version was lost; the archive copy was the version from before that review. The rebuild is the October 8 version, taken from that review's record, with three updates: the shared helpers `read_assessment_csv()` and `parse_einsight_date()` copied verbatim from the current scripts, `end_date` set to 2027-03-31 (D1), and the `Dropbox-CWS` paths.
+
+Compared with the archive copy, the rebuilt script:
+
+| Change | Why |
+|----|----|
+| Quick Checks no longer calls `filter()` without a data frame. | The archive copy stops the render at this chunk (confirmed on mock data). |
+| Rows with a missing `provider_id` are kept and counted. | The archive copy's DEMO filter dropped them silently. **This can raise row counts** in `combined_satisfaction_clean.csv` (D3 is still open). |
+| Paths and the window (`start_date`, `end_date`) are set once in Setup. | The archive copy repeated the input path in four places and hard-coded the window as 2024-01-01 to today. |
+| Dates are read with `parse_einsight_date()` (ISO or US format), after the `00`/`29` year-prefix fix. | `as.Date()` read only ISO dates; anything else became `NA` and was dropped. |
+| Counts are printed for DEMO rows removed, missing provider and client IDs, year prefixes corrected, and rows dropped by reason (no valid date, before start, after end). | The archive copy's "Missing dates" line ran after the filter, so it always printed 0. |
+| Provider IDs containing "demo" or "test" (any case) that the DEMO rule missed are listed. | Review only; they are not removed. |
+| YAML: `date: today` and `embed-resources`; removed `toc-float`. | Same YAML updates as the other scripts. |
+
+**CATS:** the self-report export stores the symptom answers as codes 0–3 (the same values as the Score column), not the form's labels, so the read found no symptom columns and stopped. The scales now accept the codes as well as the labels, as the SDQ script does. The No/Yes event and impairment questions and the Name question still drop out, and the name never reaches the outputs. Tested on mocks with the real self-report layout (codes) and with labels; scores matched hand scoring for all three versions. The two caregiver exports still need their first run (V17).
+
+**P-OQ:** the export is `POQ.xlsx`, an Excel file with a three-row header, not a CSV with one header row. The script now reads it with a new `read_assessment_xlsx()` and finds the 35 items by their answers, because only item 1 is numbered and the form also asks "Date Completed:" and "Relationship to child:". It scores from the answer text using the manual's two scales, so the `poq_export_has_form_scores` setting and its check are gone. eInsight's own Score column does not follow the manual for the positive items: it records every item as its answer position (Never 1 to Almost always 4), so eInsight's P-OQ totals count the seven positive items as problems. The first real run showed this (all 210 positive-item answers differed; all 840 problem-item answers agreed). The agreement check therefore compares the answer positions read from the text with eInsight's values. Any analysis that uses eInsight's own P-OQ scores should use `poq_paired_clean.csv` instead. Dates use `parse_excel_date()`. The header repeats each question on row 1 and Response or Score on rows 2 and 3 (no merged cells); a first version that assumed merged cells found no items on the real file and was corrected. Tested on a mock `POQ.xlsx` built like the real header: 35 items found, the stray answer listed, 0 of 8,494 answer positions differing from the Score column, and pairs matching hand scoring.
+
+**Date helper (report and P-OQ):** `parse_excel_date()` now also reads text dates that include a time ("2024-08-20 10:15:00"); before, they became `NA` with a warning. The report script's outputs on its mock data are unchanged.
+
+**Paths:** every script now uses `/Users/cristin/Dropbox-CWS/...` (the Dropbox folder was renamed). Only the `in_dir` / `out_dir` lines changed, plus `export_root` / `out_dir` in the report script; BASIS-24, NOMS and PSS already had the new path.
+
+**Testing:** the rebuilt script ran end to end on mock satisfaction exports covering DEMO and test-like provider IDs, missing provider and client IDs, `00`/`29` year prefixes, US-format and unreadable dates, and dates before 2024 or after the cutoff; every count matched the mock files. The archive copy failed at Quick Checks on the same files.
+
+**On your first run,** compare the row count of `combined_satisfaction_clean.csv` with your last one. Expect more rows from the kept missing-`provider_id` rows and any US-format dates the old script dropped.
+
+------------------------------------------------------------------------
+
+# Change Log — New Scripts for PSC-35, CATS, and P-OQ (October 29, 2026)
+
+N1: the interim report's measure list includes PSC-35 (SQ 3.13) and CATS-2 (SQ 3.15), and the P-OQ joins the Y-OQ for overall distress, but none had a cleaning script. These three scripts follow the same template as the others, with the shared helpers copied verbatim. They were tested on mock exports only. The real export layouts have not been seen, so each read checks its item columns and stops with a list if they don't match.
+
+| Script | Scoring source | Notes |
+|----|----|----|
+| `psc35_data_cleaning.qmd` | Scoring the PSC (MGH) | 35 items 0–2, total 0–70; 1–3 blank count as 0, invalid at 4 or more. Cutoff ≥ 28 (ages 6–17). The ages 3–5 score (31 items, cutoff ≥ 24) is kept alongside as `*_3_5` because the export has no age. |
+| `cats_data_cleaning.qmd` | Scoring pages on each form | CATS-2 7–17 (self and caregiver): 20 items 0–3 (items 9, 10, 15 at their highest sub-item), sum 0–60, bands < 15 / 15–20 / 21–24 / ≥ 25, positive screen ≥ 21. CATS 3–6 (caregiver): 16 items 0–3, total 0–48, clinical ≥ 12. 10% default for blanks, prorated. |
+| `poq_data_cleaning.qmd` | P-OQ Administration and Scoring Manual | 35 items; problem items 1–4, positive items 2 / 1 / −1 / −2; total 14–126. 1–2 blank take the rounded mean of the answered items; `NA` at 3 or more. RCI 7. Output columns match the YOQ outputs. |
+
+**Testing:** each script ran end to end on mock exports, and the paired scores matched an independent hand scoring of the raw files: PSC-35 (both versions), all three CATS versions, and the P-OQ with both export codings. The P-OQ read stopped as intended when its coding setting contradicted the data. The band and cutoff flags matched the forms.
+
+**Shared helpers:**
+
+- `score_total()` gains a `"zero"` method (blank items count as 0) for the PSC-35 rule. It was updated in all six scripts that already used it; their outputs on the mock data are unchanged.
+- New `scale_item_cols()` (CATS, PSC-35) finds the item columns by their answers, so the Yes/No and free-text questions on these forms drop out without positional assumptions.
+
+**To confirm on the first real run:**
+
+- the file names in each Setup chunk;
+- that the item columns are found (35 for PSC-35, 25 for each CATS-2 version, 16 for CATS 3–6, 35 `x` columns for the P-OQ), in form order;
+- empty unmatched-response tables;
+- for the P-OQ, whether the export holds the form's printed scores (the default) or answer positions (`poq_export_has_form_scores`). (Superseded November 2: the P-OQ is now scored from its answer text.)
+
+------------------------------------------------------------------------
+
+# Change Log — Final-Report Decisions and Scoring Guides (October 29, 2026)
+
+These changes apply the decisions recorded in the Action Items document (D0, D1, D2, D4, D5, D10, D11) and the published scoring guides now in the project files. All scripts were tested on synthetic mock files built like the eInsight exports; no real data were opened. Each script ran end to end. BASIS-24 and NOMS outputs were identical to the October 8 versions. For the other measures, rows and columns were unchanged, and the new totals matched an independent hand scoring of the raw mock files.
+
+------------------------------------------------------------------------
+
+## 1. Changes that can alter your numbers
+
+| Script | Change | Why |
+|----|----|----|
+| All 8 assessment scripts | `end_date` is fixed at 2027-03-31. | D1. On interim exports this filters nothing. |
+| CPSS-5 | 1–2 blank items are now prorated (sum × 20 ÷ answered, rounded); `NA` at 3 or more, as before. | D2 / D10: 10% default. |
+| CPSS-5 interviewer | Severity bands now use the interviewer ranges (0–4 / 5–10 / 11–22 / 23–42 / 43–80). | The self-report ranges were applied to both versions; the CTSA summary publishes separate ranges. |
+| GAD-7 | Complete forms only (any blank item → `NA`). Previously 1 blank was allowed and summed as 0. | D10: no published rule, and 10% of 7 items rounds down to 0. |
+| PHQ-9 | 1–2 blank items prorated (sum × 9 ÷ answered, rounded); `NA` at 3 or more. Previously `NA` at 2. | D10: APA adapted PHQ-9 rule. |
+| PSS | 1 blank item prorated (sum × 18 ÷ 17, rounded); `NA` at 2 or more, as before. | D10: 10% default. |
+| SDQ (all four) | Each 5-item subscale is prorated when at least 3 items are answered, otherwise `NA`. Total = the four difficulty subscales; externalizing = conduct + hyperactivity; each is `NA` if any of its subscales is. | D10: published SDQ rule. Previously 3+ blank items anywhere among 20 made the total `NA`, with no prorating. |
+| YOQ | Blank items take the rounded mean of the answered items; `NA` at 4 or more blank of 30. Previously `NA` at 3, with no fill-in. | D10: Y-OQ-30.2 manual. |
+| Report | Rows whose intervention started before `start_date` or after `end_date` are removed; rows with no start are kept. | D1 (window on intervention start) and D0 (no start date needed to count as enrolled). |
+| Report | A pair whose follow-up is after `end_date` is dropped when the same initial has a follow-up inside the window; otherwise the row is kept with its follow-up fields cleared. | D1: last follow-up before the cutoff; no pair if there is none, but the client stays enrolled. |
+| Report | Duplicate demographic records are resolved to one row per client: fields that agree are kept, conflicting fields become `NA`. Previously every row for a duplicated client was dropped. | D5. Resolution runs on the cleaned race and ethnicity text, and the codes are derived afterwards, so the cleaned and coded columns stay consistent. |
+| Report | Race and ethnicity nonresponse is kept: "Don't Know" = 97, "Prefer Not To Answer" = 98, "Not Applicable" = 99 in `code_num` / `ethn_num`, with standard labels in `cleaned_race` / `cleaned_ethn`. Nonresponse is still dropped when a race or ethnicity was also selected. `recoded_race` / `recoded_ethn` stay `NA` for nonresponse. | D11: follow the interim report. Re-run SQ 1.01, SQ 4.02, and the demographic tables (S3). |
+
+## 2. New output and checks
+
+- **Shared helpers** `score_total()`, `default_max_missing()`, and `round_half_up()` are byte-identical in the CPSS-5, GAD-7, PHQ-9, PSS, SDQ, and YOQ scripts. `score_total()` reports how many totals were filled in or set to `NA`, for the methods note (V1). GAD-7 and PHQ-9 no longer use `rowwise()`.
+- **Report, Section 3.2:** clients with an intervention before `start_date` or after `end_date` and clients removed entirely (the D1 count), rows changed by the follow-up cutoff, and the list of follow-up fields cleared. `intervention_start` is parsed for this filter only and left as exported until Q5 is answered; unreadable values are reported in a warning.
+- **Report, Section 2.4:** conflicting fields among duplicated clients, with counts, and the number of clients whose duplicate rows disagree on an ID column. Those clients' discharge rows cannot join; Section 5 counts them.
+- **Report, Section 3.5:** providers still without a funding round after the fix (to send to Rikke, D4/Q4).
+- **Report, Section 6:** "People with demographic data (de-duplicated)" and "People enrolled (intervention_name recorded)" replace the "served" and "outcomes" counts (D0).
+- **Report, Sections 2.5–2.6:** the values-without-a-code tables now also list combinations of different nonresponse options, which get no code.
+
+## 3. Documentation and cleanup
+
+- **BASIS-24:** the weights and the missing-item rule already match the 2021 Instruction Guide; documented, no change.
+- **NOMS:** the CYBHI NOMS Quick Guide confirms the Q3 coding (5 = None of the time), so higher = better for every item. Domain names and ranges now follow the guide. No change to the output.
+- **YOQ:** the 30.2 manual has no reverse-scored items, which answers the YOQ half of Q1.
+- **PSS:** removed the debugging lines that printed one client's raw rows (`client_system_id == 13175`) into the rendered HTML, and labeled the items-answered chunk.
+- **Report:** Section 2 is reordered to clean the race and ethnicity text (2.3), resolve duplicates (2.4), then recode race (2.5) and ethnicity (2.6). Section 3 gains 3.2 Apply the Data Window, so the later subsections shift by one. "No Funding Round Selected" is defined once. Open Issues updated.
+
+## 4. Still open
+
+- ~~**Satisfaction script:** not part of this update.~~ Done November 2 (rebuilt with `end_date` 2027-03-31; see the top of this file).
+- **GAD-7:** if complete-forms-only loses many forms, adopt the PHQ-9 rule (change the second argument of `score_total()` to `2`).
+- **CPSS-5 interviewer cutoff:** ≥ 31 is published for the self-report version only.
+- **Nonresponse code numbers:** 97–99 were chosen to sit outside both codebooks; confirm they suit the downstream scripts.
+- **Demographics and the window:** the demographics file has no intervention date, so the final export's "people with demographic data" will include anyone added after `end_date`.
+- ~~**Paths:** the scripts mixed two Dropbox folder names.~~ Done November 2: every script uses `/Users/cristin/Dropbox-CWS/...`.
+- D3, D6–D9, D12–D15 and Q1–Q6 are unchanged; see the Action Items document.
+
+------------------------------------------------------------------------
+
 # Change Log — Data Cleaning Review (October 8, 2026)
 
 All scripts were tested on synthetic mock files built to mimic the eInsight export layouts. No real data were opened. Each script was run end to end and rendered with Quarto / rmarkdown. Where logic was not meant to change, the new outputs matched the old ones cell for cell on the same mock inputs.

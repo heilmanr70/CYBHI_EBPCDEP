@@ -12,7 +12,7 @@ library(tidyverse)   # dplyr, readr, stringr, lubridate, purrr
 library(janitor)     # excel_numeric_to_date(), used by parse_excel_date()
 
 # ---- Configuration -------------------------------------------------------------
-out_dir           <- "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+out_dir           <- "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
 all_data_path     <- file.path(out_dir, "demographic_discharge_clean.csv")
 satisfaction_path <- file.path(out_dir, "combined_satisfaction_clean.csv")
 
