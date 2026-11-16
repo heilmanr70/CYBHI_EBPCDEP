@@ -78,7 +78,7 @@ openxlsx::write.xlsx(perc_successful_table,"/Users/cristin/CWS Dropbox/Cristin Y
 library(haven)
 
 # load in spss data
-spss <- haven::read_spss("/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Quant Team File/MasterGranteeSpreadsheet_forBHESQuantTeam_1-20-26_NEW!.sav") %>% 
+spss <- haven::read_spss("~/Dropbox-CWS/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Quant Team File/MasterGranteeSpreadsheet_forBHESQuantTeam_1-20-26_NEW!.sav") %>% 
   zap_missing() %>%
   mutate(across(where(is.labelled), as.character)) %>%
   mutate(across(where(is.character), ~ na_if(str_trim(.x), ""))) %>% 
