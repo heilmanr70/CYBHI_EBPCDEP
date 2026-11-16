@@ -18,8 +18,8 @@ execute:
   warning: false
   message: false
 params:
-  path_combined_all: "~/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/combined_satisfaction_clean.csv"
-  path_all_data: "~/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv"
+  path_combined_all: "Rebecca and Tristan and Cristin/EInsight Data/combined_satisfaction_clean.csv"
+  path_all_data: "Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv"
   path_grantee_lookup: ""
   output_dir: "output/sq402"
   data_through: ""
@@ -83,6 +83,7 @@ if (exists("params") && isTRUE(as.logical(params$shareable))) {
 suppressPackageStartupMessages({
   library(lme4)
   library(ordinal)
+  library(jsonlite)
   library(tidyverse)
   library(knitr)
 })
@@ -92,6 +93,16 @@ theme_set(
   theme_minimal(base_size = 12) +
     theme(panel.grid.minor = element_blank(), plot.title.position = "plot")
 )
+
+knitr::knit_hooks$set(time_it = local({
+  t0 <- NULL
+  function(before, options) {
+    if (before) t0 <<- Sys.time()
+    else message(sprintf("[%6.1fs] %s", as.numeric(difftime(Sys.time(), t0, units = "secs")), options$label))
+  }
+}))
+knitr::opts_chunk$set(time_it = TRUE)
+
 ```
 
 ## Configuration and recode rules
@@ -102,8 +113,8 @@ Edit this section if eInsight category labels differ from the patterns below. Ev
 #| label: config
 # Defaults are used when running chunks interactively; YAML params take precedence when rendering.
 defaults <- list(
-  path_combined_all = "~/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/combined_satisfaction_clean.csv",
-  path_all_data = "~/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv",
+  path_combined_all = "Rebecca and Tristan and Cristin/EInsight Data/combined_satisfaction_clean.csv",
+  path_all_data = "Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv",
   path_grantee_lookup = "",
   output_dir = "output/sq402",
   data_through = "",
@@ -115,6 +126,26 @@ defaults <- list(
   shareable = FALSE
 )
 cfg <- modifyList(defaults, if (exists("params")) as.list(params) else list())
+
+# Find the shared "CYBHI Project" folder in whichever Dropbox this machine has (personal or any
+# org's team Dropbox; Mac, Windows, or Linux). The folder chosen is the one containing the data file.
+find_cybhi_root <- function(rel_path, folder = "CYBHI Project") {
+  override <- Sys.getenv("CYBHI_DIR")   # optional manual override; not needed normally
+  if (nzchar(override)) return(normalizePath(override))
+  home <- unique(Filter(nzchar, c(path.expand("~"), Sys.getenv("USERPROFILE"))))
+  info <- c(file.path(home, ".dropbox", "info.json"),
+            file.path(Sys.getenv(c("APPDATA", "LOCALAPPDATA")), "Dropbox", "info.json"))
+  roots <- c(unlist(map(info[file.exists(info)], \(f) map(read_json(f), "path"))),
+             Sys.glob(outer(home, c("*Dropbox*", "Library/CloudStorage/Dropbox*"), file.path)))
+  hits <- unique(normalizePath(Sys.glob(c(file.path(roots, folder), file.path(roots, "*", folder)))))
+  hits <- hits[file.exists(file.path(hits, rel_path))]
+  if (!length(hits)) stop("Couldn't find '", folder, "' in Dropbox. Set CYBHI_DIR in ~/.Renviron to its location.", call. = FALSE)
+  hits[1]
+}
+
+CYBHI_ROOT <- find_cybhi_root(cfg$path_all_data)
+PATH_KEYS  <- c("path_combined_all", "path_all_data", "path_grantee_lookup")
+cfg[PATH_KEYS] <- map(cfg[PATH_KEYS], \(p) if (nzchar(p)) file.path(CYBHI_ROOT, p) else p)
 
 SUPPRESS_N  <- as.integer(cfg$suppress_n)
 SUPPR       <- "Suppr."
@@ -187,7 +218,7 @@ RE_TERMS    <- c("(1 | provider_system_id)", "(1 | intervention_name)")
 # nloptwrap without the post-fit derivative check is ~10x faster than the default with many
 # fixed effects. GLMER_NAGQ = 1 is the Laplace fit used for reporting; set to 0 for quick drafts
 # (fixed effects are then estimated in the PIRLS step; estimates are usually near-identical).
-GLMER_NAGQ  <- 1L
+GLMER_NAGQ  <- 0L
 GLMER_CTRL  <- glmerControl(optimizer = "nloptwrap", calc.derivs = FALSE)
 RUN_ORDINAL_MIXED <- TRUE   # clmm is the slowest model; set FALSE to skip the ordinal sensitivity model
 ```
@@ -359,6 +390,19 @@ first_non_na <- function(x) x[!is.na(x)][1]
 first_substantive <- function(x) {
   s <- x[!is.na(x) & !str_detect(as.character(x), NOT_REPORTED_PATTERN)]
   if (length(s)) s[1] else first_non_na(x)
+}
+
+# Fast equivalent of summarise(across(vars, first non-missing value), .by = keys): one vectorized
+# pass per column instead of an R call per group. Values where `prefer` is TRUE are taken first.
+summarise_first <- function(df, keys, vars, prefer = \(x) TRUE) {
+  g <- df |> group_by(across(all_of(keys))) |> group_indices()
+  k <- seq_len(max(g))
+  first_in_group <- \(rows) which(rows)[match(k, g[rows])]
+  pick <- function(x) {
+    ok <- !is.na(x)
+    x[coalesce(first_in_group(ok & prefer(x)), first_in_group(ok))]
+  }
+  bind_cols(df[match(k, g), keys], map(df[intersect(vars, names(df))], pick))
 }
 
 as_flag <- function(x) {
@@ -702,13 +746,14 @@ DEMO_VARS <- c("client_type", RACE_LABEL_COL, RACE_COUNT_COL, ETHN_LABEL_COL, ET
 # One row per client x provider x intervention episode.
 interventions <- ad |>
   filter(!is.na(client_system_id), !is.na(intervention_name)) |>
-  summarise(across(any_of(INTERVENTION_VARS), first_non_na), .by = all_of(KEYS))
+  summarise_first(KEYS, INTERVENTION_VARS)
 
 # One row per client: demographics from the earliest record with a substantive value.
 clients <- ad |>
   filter(!is.na(client_system_id)) |>
   arrange(client_system_id, intervention_start) |>
-  summarise(across(any_of(DEMO_VARS), first_substantive), .by = client_system_id)
+  summarise_first("client_system_id", DEMO_VARS,
+                  prefer = \(x) !str_detect(as.character(x), NOT_REPORTED_PATTERN))
 
 # QA: clients whose demographic values conflict across records.
 demo_conflicts <- ad |>
@@ -1619,45 +1664,38 @@ main_tab |>
 ```{r}
 #| label: sensitivity
 analytic_excl_large <- analytic |> filter(large_program == "No")
-
-fits <- list(main = fit_main)
-fits$no_re    <- fit_adjusted(analytic, "high_sat", ADJ_VARS, engine = "glm")
-if (RUN_ORDINAL_MIXED) {
-  fits$ordinal <- tryCatch(fit_adjusted(analytic, "sat_ord", ADJ_VARS, engine = "clmm"), error = \(e) NULL)
-}
-fits$gs       <- tryCatch(fit_adjusted(analytic, "gs_positive", ADJ_VARS, engine = "glmer"), error = \(e) NULL)
-if (nrow(analytic_excl_large) >= MIN_MODEL_N) {
-  fits$excl_large <- tryCatch(fit_adjusted(analytic_excl_large, "high_sat", ADJ_VARS, engine = "glmer"), error = \(e) NULL)
-}
-
-# Survey timing: drop surveys completed well before the recorded discharge (CPS is a discharge survey).
 timing_data <- analytic |> filter(!is.na(days_end_to_survey), days_end_to_survey >= -SURVEY_WINDOW_DAYS)
-if (nrow(timing_data) >= MIN_MODEL_N && nrow(timing_data) < nrow(analytic)) {
-  fits$timing <- tryCatch(fit_adjusted(timing_data, "high_sat", ADJ_VARS, engine = "glmer"), error = \(e) NULL)
-}
-
-# Service exposure and clinical course (subsets with assessment data).
-sev_data <- analytic |> filter(!is.na(baseline_severity))
-if (nrow(sev_data) >= MIN_MODEL_N) {
-  fits$severity <- tryCatch(fit_adjusted(sev_data, "high_sat", c(ADJ_VARS, "baseline_severity"), engine = "glmer"),
-                            error = \(e) NULL)
-}
-imp_data <- analytic |>
+sev_data    <- analytic |> filter(!is.na(baseline_severity))
+imp_data    <- analytic |>
   filter(!is.na(baseline_severity), !is.na(clinical_improvement)) |>
   mutate(clinical_improvement = factor(clinical_improvement,
                                        levels = c("Did not improve on most measures", "Improved on most measures")))
-if (nrow(imp_data) >= MIN_MODEL_N && is_reportable(imp_data$clinical_improvement)) {
-  fits$improvement <- tryCatch(fit_adjusted(imp_data, "high_sat", c(ADJ_VARS, "baseline_severity", "clinical_improvement"),
-                                            engine = "glmer"), error = \(e) NULL)
-}
+eth_data    <- analytic |> filter(ethnicity != "Not reported") |> mutate(ethnicity = fct_drop(ethnicity))
 
-# Ethnicity model: respondents with ethnicity recorded, ethnicity in place of race.
-eth_data <- analytic |> filter(ethnicity != "Not reported") |> mutate(ethnicity = fct_drop(ethnicity))
-if (nrow(eth_data) >= MIN_MODEL_N && is_reportable(eth_data$ethnicity)) {
-  fits$ethnicity <- tryCatch(fit_adjusted(eth_data, "high_sat", c(setdiff(ADJ_VARS, "race"), "ethnicity"), engine = "glmer"),
-                             error = \(e) NULL)
-}
-fits <- compact(fits)
+# One specification per model; a model is skipped when `ok` is FALSE.
+spec <- \(data, outcome, vars = ADJ_VARS, engine = "glmer", ok = nrow(data) >= MIN_MODEL_N)
+  if (isTRUE(ok)) list(data = data, outcome = outcome, vars = vars, engine = engine)
+
+sens_specs <- compact(list(
+  ordinal     = if (RUN_ORDINAL_MIXED) spec(analytic, "sat_ord", engine = "clmm"),
+  no_re       = spec(analytic, "high_sat", engine = "glm"),
+  gs          = spec(analytic, "gs_positive"),
+  excl_large  = spec(analytic_excl_large, "high_sat"),
+  timing      = spec(timing_data, "high_sat",
+                     ok = nrow(timing_data) >= MIN_MODEL_N && nrow(timing_data) < nrow(analytic)),
+  severity    = spec(sev_data, "high_sat", c(ADJ_VARS, "baseline_severity")),
+  improvement = spec(imp_data, "high_sat", c(ADJ_VARS, "baseline_severity", "clinical_improvement"),
+                     ok = nrow(imp_data) >= MIN_MODEL_N && is_reportable(imp_data$clinical_improvement)),
+  ethnicity   = spec(eth_data, "high_sat", c(setdiff(ADJ_VARS, "race"), "ethnicity"),
+                     ok = nrow(eth_data) >= MIN_MODEL_N && is_reportable(eth_data$ethnicity))
+))
+
+# The models are independent, so they are fitted in parallel (forked processes on Mac/Linux;
+# one at a time on Windows, which cannot fork). A model that fails is dropped, as before.
+N_CORES <- if (.Platform$OS.type == "windows") 1L else max(1L, parallel::detectCores() - 1L)
+sens_fits <- parallel::mclapply(sens_specs, \(s) tryCatch(do.call(fit_adjusted, s), error = \(e) NULL),
+                                mc.cores = N_CORES, mc.preschedule = FALSE)
+fits <- compact(c(list(main = fit_main), sens_fits))
 
 MODEL_LABELS <- c(
   main        = "Main: mixed logistic",
