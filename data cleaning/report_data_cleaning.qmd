@@ -21,6 +21,8 @@ This notebook prepares **CYBHI EBP/CDEP** program data for analysis and reportin
 - **Discharge Report** — One row per client assessment pair (pre/post). Contains intervention dates, pre/post measure names, and funding round.
 - **Client Demographics** — One row per client (ideally). Contains race, ethnicity, language, age, provider, and other client characteristics.
 
+**Other input:** the funding-round workbook returned by Rikke (`funding_round_path` in Setup), which lists each provider's grants and their rounds (Section 3.5).
+
 **Outputs** (when `data_subset` is set, e.g., to "CDEP", the input and output file names get `_CDEP` added before the extension):
 
 | File | Contents |
@@ -40,6 +42,9 @@ This notebook prepares **CYBHI EBP/CDEP** program data for analysis and reportin
 - [x] ~~`nrow(dup_clients_diff_time) + nrow(dup_clients_same_time)` should equal `nrow(dup_clients)` but does not.~~ Explained in Section 4.4: the same-time count was counting client × date rows rather than clients, the categories overlap, and a third pattern (one initial paired with several follow-ups) fits neither. Section 4.4 classifies every client.
 - [ ] Clients with the same `client_system_id` but different `assessment_date` values need special handling (see `client_system_id == 3664` as an example). Clarify whether mismatched dates reflect linked assessment + intervention records, or data entry errors.
 - [x] Provider 573 is reassigned to Round 2 **regardless of its recorded round** (the other four providers are only reassigned when the round is "No Funding Round Selected"). Confirmed (D4). Section 3.5 shows what 573's rows had before the fix and lists providers still without a round.
+- [x] ~~Send Rikke the providers with unassigned funding rounds (D4/Q4).~~ Her answers (workbook dated 2026-11-02) are applied in Section 3.5.
+- [ ] Check the Section 3.5 tables on the first run with real data: the list of rows still without a round shows any recorded intervention that matched none of the provider's grants, and the location wording for providers 152, 295 and 821 is taken from Rikke's notes and has not been checked against the `location` values.
+- [ ] Provider 165 has rows recorded as Round 4, which is not one of its grants (Rounds 1, 2, 5). Rikke's notes do not mention them; they are reassigned by intervention like the other off-grant rounds. Confirm with Rikke.
 - [x] ~~Race and ethnicity nonresponse stripped.~~ Kept as categories with separate codes (D11): 97 Don't Know, 98 Prefer Not To Answer, 99 Not Applicable. Confirm these code numbers suit the downstream codebooks.
 - [x] ~~Demographic duplicates dropped.~~ Resolved field by field (D5, Section 2.4). Clients whose duplicate rows disagree on an ID column still have no demographics in the joined file; Sections 2.4 and 5 count them.
 - [ ] `intervention_start` / `intervention_end` are left as exported until their format is confirmed (Q5). Section 3.2 parses `intervention_start` for the window filter only and warns about values it cannot read.
@@ -77,6 +82,9 @@ demographic_path <- file.path(export_root, "Admin Report Exports",
                               paste0(export_date, "-client_demographics", file_suffix, ".xlsx"))
 
 out_dir <- "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+
+# Funding rounds by provider and grant, returned by Rikke (Section 3.5)
+funding_round_path <- file.path(out_dir, "2026-11-02-providers_unassigned_funding_round_RA11-1-26.xlsx")
 out_path <- function(name) file.path(out_dir, paste0(name, file_suffix, ".csv"))
 
 cat("Dataset:", if (nzchar(data_subset)) data_subset else "all programs",
@@ -210,6 +218,35 @@ recode_value <- function(cleaned, codebook) {
 collapse_agreeing <- function(x) {
   values <- unique(x[!is.na(x)])
   if (length(values) == 1) values else x[NA_integer_]
+}
+
+# TRUE when every word of `label` (ignoring anything from an opening
+# parenthesis on) starts a word in `recorded`, in any order and any case.
+# "Parents as teacher" matches "PAT (Parents as Teachers)", and "TIP" matches
+# "TIP (Transition to Independence Process) Model".
+words_match <- function(recorded, label) {
+  words <- str_split(str_squish(str_remove(label, "\\(.*")), " ")
+  map2_lgl(recorded, words, \(r, w) all(str_detect(r, regex(paste0("\\b", str_escape(w)), ignore_case = TRUE))))
+}
+
+# Funding round identified by a text field (Section 3.5). Pairs each provider's
+# distinct values of `field` with that provider's `rules` (provider_id, pattern,
+# correct_round) and keeps the pairs where words_match() is TRUE. Returns one
+# row per provider and value, with the round in `<field>_round`. Stops if a
+# value matches more than one round.
+round_from_text <- function(data, field, rules) {
+  out <- data |>
+    distinct(provider_id, value = .data[[field]]) |>
+    filter(!is.na(value)) |>
+    inner_join(rules, by = "provider_id", relationship = "many-to-many") |>
+    filter(words_match(value, pattern)) |>
+    distinct(provider_id, value, correct_round)
+  ambiguous <- out |> filter(n() > 1, .by = c(provider_id, value))
+  if (nrow(ambiguous) > 0) {
+    stop(field, " value(s) matching more than one funding round: ",
+         paste(unique(paste(ambiguous$provider_id, ambiguous$value)), collapse = "; "), call. = FALSE)
+  }
+  rename(out, "{field}" := value, "{field}_round" := correct_round)
 }
 
 # Standardizes extracted time points to "Initial" / "Follow Up N".
@@ -559,9 +596,11 @@ discharge_data_filtered |>
   filter(trimmed_match == FALSE)
 ```
 
-## 3.5 Fix Missing Funding Rounds
+## 3.5 Fix Funding Rounds
 
-Some providers did not select a funding round in eInsight ("No Funding Round Selected"). Based on program records, we manually assign the correct round for known providers.
+Some providers did not select a funding round in eInsight ("No Funding Round Selected"), and some rows carry a round the provider has no grant in. Two sources give the correct rounds.
+
+**Earlier assignments from program records.** These fill rows with no round, except for provider 573, where every row is reassigned.
 
 | Provider ID | Organization                   | Correct Round |
 |-------------|--------------------------------|---------------|
@@ -571,35 +610,120 @@ Some providers did not select a funding round in eInsight ("No Funding Round Sel
 | 573         | Homeless Children's Network    | 2 (all rows; confirmed, D4) |
 | 709         | Placer County Office of Education | 1          |
 
+**Rikke's workbook (2026-11-02).** One row per provider and one "Correct Funding Round" column per grant, written as "Round N" or "Round N: intervention". The workbook is read directly, so corrections belong in the workbook. It lists all of a provider's grants, which gives these rules:
+
+1. **One round** (one grant, or several grants in the same round): every row for the provider gets that round, including rows recorded under another round.
+2. **More than one round:** rows with no round, and rows recorded under a round the provider has no grant in, get the round of the grant whose intervention matches `intervention_name`. A grant matches when every word of its label, ignoring anything in parentheses, starts a word in `intervention_name` (so "TF-CBT" matches "TF-CBT (Trauma Focused - Cognitive Behavioral Therapy)"). Rows recorded under one of the provider's own rounds are left as they are.
+3. **Location:** for providers 152, 295 and 821, Rikke's notes say the location identifies the grant when the intervention does not. These rules sit in `location_rules` and apply only to rows that rule 2 could not assign.
+4. Rows that still cannot be assigned are set to "No Funding Round Selected", including rows recorded under a round the provider has no grant in. Rows with no `intervention_name` are already left out of enrollment counts (D0), as Rikke's notes ask.
+
 ```{r}
 #| label: fix-funding-rounds
 no_round <- "No Funding Round Selected"
 
-# Recorded rounds for these providers before the fix
-discharge_data_filtered |>
-  filter(provider_id %in% c("604", "508", "607", "573", "709")) |>
-  count(provider_id, funding_round_before_fix = funding_round)
+# Earlier assignments from program records. grants_complete = FALSE fills only
+# rows with no round; TRUE also replaces rounds the provider has no grant in.
+earlier_rounds <- tribble(
+  ~provider_id, ~correct_round, ~grants_complete,
+  "604",        "2",            FALSE,
+  "508",        "2",            FALSE,
+  "607",        "1",            FALSE,
+  "573",        "2",            TRUE,   # all rows (confirmed, D4)
+  "709",        "1",            FALSE
+)
 
-discharge_data_filtered_clean <- discharge_data_filtered |>
+# Rikke's workbook: a title row, then one row per provider. Each "Correct
+# Funding Round" cell is one grant; a cell in any other format stops the render.
+rikke_rounds <- read_xlsx(funding_round_path, skip = 1, .name_repair = "unique_quiet") |>
+  janitor::clean_names() |>
+  pivot_longer(starts_with("correct_funding_round"), names_to = NULL, values_to = "grant",
+               values_drop_na = TRUE, values_transform = as.character) |>
+  separate_wider_regex(grant, c("(?i)\\s*round\\s*", correct_round = "\\d+",
+                                "\\s*:?\\s*", grant_intervention = ".*")) |>
+  transmute(provider_id = id_to_chr(provider_id), correct_round,
+            grant_intervention = na_if(str_squish(grant_intervention), ""),
+            grants_complete = TRUE)
+
+# Locations that identify the grant, from the Notes column of Rikke's workbook
+# (matched with words_match(), like the interventions)
+location_rules <- tribble(
+  ~provider_id, ~pattern,           ~correct_round,
+  "152",        "Maple Elementary", "3",   # Parents as Teachers
+  "152",        "Taft Union",       "5",   # CIFFTA
+  "295",        "Mariposa",         "1",   # Therapeutic Supervised Visitation
+  "821",        "Project Hope",     "5"
+)
+
+grant_rounds <- bind_rows(earlier_rounds, rikke_rounds)
+
+provider_rounds <- grant_rounds |>
+  summarise(
+    grants_complete = all(grants_complete),
+    single_round    = if (n_distinct(correct_round) == 1) first(correct_round) else NA_character_,
+    unlabeled_grant = anyNA(grant_intervention),
+    grants          = paste0("Round ", correct_round, coalesce(paste0(": ", grant_intervention), ""), collapse = "; "),
+    .by = provider_id
+  )
+
+stopifnot(
+  "A provider is in both the earlier assignments and Rikke's workbook" =
+    !any(earlier_rounds$provider_id %in% rikke_rounds$provider_id),
+  "A provider with more than one round has a grant with no intervention named" =
+    !any(is.na(provider_rounds$single_round) & provider_rounds$unlabeled_grant),
+  "A location rule names a round its provider has no grant in" =
+    nrow(anti_join(location_rules, grant_rounds, by = c("provider_id", "correct_round"))) == 0
+)
+
+intervention_rounds <- grant_rounds |>
+  filter(!is.na(grant_intervention)) |>
+  rename(pattern = grant_intervention) |>
+  round_from_text(data = discharge_data_filtered, field = "intervention_name")
+location_rounds <- round_from_text(discharge_data_filtered, "location", location_rules)
+
+round_fix <- discharge_data_filtered |>
+  left_join(provider_rounds,     by = "provider_id",                        relationship = "many-to-one") |>
+  left_join(intervention_rounds, by = c("provider_id", "intervention_name"), relationship = "many-to-one") |>
+  left_join(location_rounds,     by = c("provider_id", "location"),          relationship = "many-to-one") |>
   mutate(
-    funding_round = case_when(
-      provider_id == "604" & funding_round == no_round ~ "2",
-      provider_id == "508" & funding_round == no_round ~ "2",
-      provider_id == "607" & funding_round == no_round ~ "1",
-      provider_id == "573"                              ~ "2",  # all rows (confirmed, D4)
-      provider_id == "709" & funding_round == no_round ~ "1",
-      TRUE ~ funding_round
+    recorded_round = str_extract(funding_round, "\\d+"),
+    # recorded under a round the provider has no grant in
+    off_grant      = coalesce(grants_complete, FALSE) & !is.na(recorded_round) &
+                       !paste(provider_id, recorded_round) %in% paste(grant_rounds$provider_id, grant_rounds$correct_round),
+    needs_round    = !is.na(grants_complete) & (is.na(recorded_round) | off_grant),
+    new_round      = coalesce(single_round, intervention_name_round, location_round),
+    funding_round_before_fix = funding_round,
+    funding_round  = case_when(
+      needs_round & !is.na(new_round) ~ new_round,
+      off_grant                       ~ no_round,
+      TRUE                            ~ funding_round
     )
   )
+
+# Every change made, by provider
+round_fix |>
+  filter(coalesce(funding_round != funding_round_before_fix, !is.na(funding_round))) |>
+  summarise(n_rows = n(), n_clients = n_distinct(client_system_id),
+            .by = c(provider_id, funding_round_before_fix, funding_round)) |>
+  arrange(provider_id, funding_round_before_fix)
+
+discharge_data_filtered_clean <- round_fix |>
+  select(all_of(names(discharge_data_filtered)))
 
 # Funding round values after the fix (check labels are consistent, e.g., "2" vs "Round 2")
 discharge_data_filtered_clean |>
   count(funding_round)
 
-# Providers still without a funding round after the fix (send to Rikke, D4/Q4)
-discharge_data_filtered_clean |>
+# Rows still without a funding round after the fix. `grants` is blank for
+# providers not yet in either source (send to Rikke, D4/Q4). Where it is filled
+# and intervention_name is not blank, the intervention matched none of the
+# provider's grants: check the wording against `grants` and correct the workbook.
+still_unassigned <- round_fix |>
   filter(is.na(funding_round) | funding_round == no_round) |>
-  count(across(any_of(c("provider_id", "provider"))), name = "n_rows")
+  count(across(any_of(c("provider_id", "provider"))), grants, intervention_name, location, name = "n_rows")
+
+still_unassigned
+
+write_csv(still_unassigned, out_path("unassigned_rounds_still"))
 ```
 
 ---

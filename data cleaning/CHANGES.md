@@ -1,3 +1,72 @@
+# Change Log — Funding Rounds from Rikke's Workbook (November 15, 2026)
+
+**`report_data_cleaning.qmd`, Section 3.5.** Rikke returned the list of providers with unassigned funding rounds (D4/Q4) with each provider's grants and their rounds (`2026-11-02-providers_unassigned_funding_round_RA11-1-26.xlsx`, 29 providers). The script now reads that workbook directly (`funding_round_path` in Setup), so corrections belong in the workbook. Each "Correct Funding Round" cell is one grant, written as "Round N" or "Round N: intervention"; a cell in any other format stops the render. The five earlier assignments (604, 508, 607, 573, 709) moved from a `case_when()` into a small table and behave as before.
+
+## 1. Changes that can alter your numbers
+
+| Change | Why |
+|----|----|
+| A provider with one round in the workbook gets that round on **every** row, including rows recorded under another round. | "Only 1 grant" in Rikke's notes; she asks for this reassignment for 190, 475 and 947. For the other one-round providers the recorded rounds already agree. |
+| For a provider with more than one round, rows with no round, or with a round the provider has no grant in, get the round of the grant whose intervention matches `intervention_name`. Rows recorded under one of the provider's own rounds are left as they are. | Rikke's notes for 93, 124, 356, 663, 821, 868 and 919. Provider 165's Round 4 rows are handled the same way, although her notes do not mention them (to confirm). |
+| For providers 152, 295 and 821, rows the intervention cannot assign are assigned by `location`: "Maple Elementary" → Round 3 and "Taft Union" → Round 5 (152), "Mariposa" → Round 1 (295), "Project Hope" → Round 5 (821). | Rikke's notes. The 821 wording is a guess; her notes give none. |
+| Rows that still cannot be assigned are set to "No Funding Round Selected", **including rows recorded under a round the provider has no grant in**. | Her notes say those recorded rounds are wrong (e.g., 93 has no Round 3 grant). Rows with no `intervention_name` are already outside the enrollment count (D0), as her notes ask. |
+
+Round-level counts change in every downstream table that uses `funding_round`, including SQ 4.03. The cleaned files keep the same columns, and assigned rounds are written as bare numbers ("2"), as before.
+
+## 2. New output and checks
+
+- **Every change by provider:** round before, round after, rows and clients. This replaces the before-fix table for the five earlier providers.
+- **Rows still without a round** now show the provider's grants, `intervention_name`, and `location`. A blank `grants` means the provider is in neither source (send to Rikke). A filled `grants` with an `intervention_name` means the intervention matched none of the provider's grants.
+- **Render stops** if a provider is in both sources, if a provider with more than one round has a grant with no intervention named, if a location rule names a round its provider has no grant in, or if an intervention or location matches more than one round.
+- **New helpers** (report script only): `words_match()` is TRUE when every word of a grant's label, ignoring anything in parentheses, starts a word in the recorded text, in any case ("Parents as teacher" matches "PAT (Parents as Teachers)"). `round_from_text()` applies it to `intervention_name` and `location`.
+
+## 3. Documentation
+
+- **README:** the report section now covers the November 11 changes as well (the `.qmd` name and the `data_subset` parameter for the CDEP exports), which it had not picked up.
+- **Open Issues** in the script and the README list the first-run checks and the two questions for Rikke.
+
+**Testing:** the script ran end to end on mock discharge and demographic exports together with Rikke's workbook (a provider list; no client data were opened). The 27 mock rows covered each rule, the five earlier providers, a provider in neither source, and a missing `provider_id`; every row received the expected round, and the output columns were unchanged. The real `intervention_name` and `location` values have not been seen.
+
+**On your first run:**
+
+- set `funding_round_path` if the workbook is not in the EInsight Data output folder;
+- check the list of rows still without a round, and correct any grant label in the workbook that does not match the recorded intervention;
+- check the `location` wording for 152, 295 and 821 against the real values;
+- check the funding-round table shows one label per round ("2", not also "Round 2").
+
+**To confirm with Rikke:** provider 165's Round 4 rows, and whether "No Funding Round Selected" is right for rows recorded under a round the provider has no grant in when nothing identifies the correct one.
+
+------------------------------------------------------------------------
+
+# Change Log — Report Script Converted to Quarto, CDEP Option Added (November 11, 2026)
+
+**`report_data_cleaning.Rmd` is now `report_data_cleaning.qmd`.** The cleaning rules are unchanged. Move the old `.Rmd` to `archive/` so only one version is active.
+
+**New `data_subset` parameter (YAML header).** Blank cleans the exports for all programs, as before. Setting it to a subset tag such as `"CDEP"` cleans that subset's exports with the same rules: `_<tag>` is added to the two input file names and the four output file names (e.g., `demographic_discharge_clean_CDEP.csv`, the file the SQ 4.03 script reads). One script with a switch replaces a separate CDEP copy of about 500 lines of cleaning rules that would have to be kept in sync by hand.
+
+| Change | Why |
+|----|----|
+| YAML is the Quarto form: one self-contained HTML with the table of contents on the left, plus the `params` block. | Conversion to `.qmd`. |
+| Chunk labels are written as `#| label:` lines. | Quarto style. |
+| Output paths are built by `out_path()`, set once in Setup. | Adds the subset tag to every output name in one place. |
+| Setup prints the dataset and the two input file names. | Confirms which exports a render picked up. |
+
+A normal render gives the same file names and contents as the `.Rmd` did. For the CDEP version, run this in the R console and pick the `.qmd` when the file dialog opens:
+
+```r
+quarto::quarto_render(file.choose(), execute_params = list(data_subset = "CDEP"),
+                      output_file = "report_data_cleaning_CDEP.html")
+```
+
+**Testing:** not run or rendered when delivered (no R was available). The script's code ran end to end on mock exports on November 15 with `data_subset` blank; the CDEP setting has not been run.
+
+**To confirm:**
+
+- the CDEP export file names, assumed to be `<export_date>-discharge_report_CDEP.xlsx` and `<export_date>-client_demographics_CDEP.xlsx` in the same folders as the full exports;
+- the first Quarto render on your machine, for both settings.
+
+------------------------------------------------------------------------
+
 # Change Log — Satisfaction Script Rebuilt, Paths Updated (November 2, 2026)
 
 **`satisfaction_data_cleaning.qmd` rebuilt.** The October 8 reviewed version was lost; the archive copy was the version from before that review. The rebuild is the October 8 version, taken from that review's record, with three updates: the shared helpers `read_assessment_csv()` and `parse_einsight_date()` copied verbatim from the current scripts, `end_date` set to 2027-03-31 (D1), and the `Dropbox-CWS` paths.

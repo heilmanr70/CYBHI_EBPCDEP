@@ -2,7 +2,7 @@
 
 This folder contains all data cleaning scripts for the CYBHI Evidence-Based Practice / Community Development Education Program (EBP/CDEP) project. Each script reads raw exports from the eInsight clinical management platform, scores assessments, pairs initial and follow-up records, and writes clean CSV files for downstream analysis and reporting.
 
-See `CHANGES.md` for the October 2026 reviews (the October 8 bug fixes and new checks; the October 29 changes that apply the final-report decisions and the published scoring guides) and the November 2 rebuild of the satisfaction script.
+See `CHANGES.md` for the October 2026 reviews (the October 8 bug fixes and new checks; the October 29 changes that apply the final-report decisions and the published scoring guides), the November 2 rebuild of the satisfaction script, the November 11 conversion of the report script to Quarto with its CDEP option, and the November 15 funding-round update to the report script.
 
 ------------------------------------------------------------------------
 
@@ -181,11 +181,12 @@ Cleans satisfaction survey data from four respondent groups and combines them in
 
 ------------------------------------------------------------------------
 
-### `report_data_cleaning.Rmd`
+### `report_data_cleaning.qmd`
 
 Master cleaning script for program-level demographic and discharge/outcome data.
 
-- **Inputs:** `<export_date>-discharge_report.xlsx` (one row per pre/post assessment pair) and `<export_date>-client_demographics.xlsx` (one row per client). Set `export_date` in the Setup chunk (currently `2026-10-08`).
+- **Inputs:** `<export_date>-discharge_report.xlsx` (one row per pre/post assessment pair) and `<export_date>-client_demographics.xlsx` (one row per client). Set `export_date` in the Setup chunk (currently `2026-10-08`). Also reads the funding-round workbook returned by Rikke (`funding_round_path` in Setup; currently `2026-11-02-providers_unassigned_funding_round_RA11-1-26.xlsx`), which lists each provider's grants and their rounds.
+- **Subset:** the `data_subset` parameter (blank = all programs; `"CDEP"` = the CDEP-only exports) adds `_<subset>` to the input and output file names. Render once for each; `CHANGES.md` (November 11) has the render command for the CDEP version.
 - **Cleaning steps:**
   - Converts all ID columns to text (no scientific notation) so they compare and join consistently.
   - Removes DEMO accounts and rows with no `client_system_id`; keeps and counts rows with a missing `provider_id`.
@@ -194,7 +195,12 @@ Master cleaning script for program-level demographic and discharge/outcome data.
   - Applies the data window to intervention start (rows with no start are kept) and cuts follow-ups after `end_date` back to the last follow-up before it (D1). Prints how many clients the window removes.
   - Converts pre and post completion dates from Excel serial numbers or text dates; fixes 2-digit year errors.
   - Parses measure name strings (e.g., "Follow Up 1 PHQ-9", "Follow-Up 1 PHQ-9") into standardized time-point ("Initial" / "Follow Up N"), `post_follow_up_number`, and assessment-name columns.
-  - Applies manual corrections for providers with missing funding round assignments and lists providers still without a round.
+  - Fixes funding rounds (D4) from two sources: the five earlier assignments from program records, and Rikke's workbook, which is read directly (corrections belong in the workbook):
+    - A provider with one round gets that round on every row, including rows recorded under another round.
+    - A provider with more than one round has its rows with no round, or with a round it has no grant in, assigned by matching `intervention_name` to the grant's intervention (`words_match()`: every word of the grant's label, ignoring anything in parentheses, starts a word in the recorded name). Rows recorded under one of the provider's own rounds are left as they are.
+    - For providers 152, 295 and 821, the `location` text identifies the grant when the intervention does not (`location_rules`).
+    - Rows that still cannot be assigned are set to "No Funding Round Selected". Those with no `intervention_name` are already outside the enrollment count (D0).
+    - Prints every change by provider, and lists the rows still without a round with the provider's grants, `intervention_name`, and `location`.
   - Classifies clients with more than one complete pre–post pair (concurrent, sequential, multiple follow-ups).
   - Left-joins discharge data onto demographics (checked many-to-one) and reports unmatched rows.
   - Reports "people with demographic data" (de-duplicated demographics) and "people enrolled" (an `intervention_name` in the discharge file) (D0).
@@ -233,6 +239,9 @@ Columns added in the October 2026 review are appended after the existing columns
 - **Duplicate client records with conflicting IDs:** clients whose duplicate demographic rows disagree on an ID column get `NA` for that ID, so their discharge rows do not join. The report script counts them.
 - **Demographics and the data window:** the demographics file has no intervention date, so on the final export "people with demographic data" includes anyone added after `end_date`.
 - **Multiple interventions:** Some clients have concurrent or sequential interventions, or several follow-ups for one initial. A clear rule for the final outcome calculation is pending (`post_follow_up_number` supports a "last follow-up" rule).
+- **CDEP export file names:** the report script assumes `<export_date>-discharge_report_CDEP.xlsx` and `<export_date>-client_demographics_CDEP.xlsx`; confirm on the first CDEP render.
+- **Funding rounds, first real run:** the intervention matching and the location wording for providers 152, 295 and 821 ("Project Hope" for 821 is a guess) were tested on mock data only. Check the Section 3.5 list of rows still without a round; where an intervention matched none of the provider's grants, correct the label in the workbook.
+- **Funding rounds, to confirm with Rikke:** provider 165 has rows recorded as Round 4, which is not one of its grants (Rounds 1, 2, 5) and is not mentioned in her notes; they are reassigned by intervention. Rows recorded under a round the provider has no grant in, with no usable intervention or location, are set to "No Funding Round Selected".
 - **Missing `provider_id`:** Rows with a missing provider ID are now kept (satisfaction and report scripts) instead of being dropped silently. Confirm.
 - **PSC-35, CATS, P-OQ export layouts:** built from the paper forms and the other eInsight exports before any real export was seen. The first real run confirms the file names and the item columns (each read stops if the count is wrong).
 - **PSC-35 age version:** choose the 35-item or 31-item score by age at intervention start.
