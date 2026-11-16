@@ -1,0 +1,755 @@
+---
+title: "Study Question 1.03: Study Population Compared with the Underlying Population, by County"
+subtitle: "CYBHI Scaling EBPs/CDEPs Workstream — Final Evaluation Report"
+author: "Cristin Young"
+date: today
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-depth: 3
+    code-tools: false
+execute:
+  echo: false
+  warning: false   # warning text can quote raw data values, so it stays off in every render
+  message: false
+params:
+  shareable: true
+  suppress_n: 60
+---
+
+```{r}
+#| label: shareable-banner
+#| echo: false
+#| results: asis
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+if (isTRUE(getOption("knitr.in.progress")) && isTRUE(as.logical(params$shareable))) {
+  k0 <- if (!is.null(params$suppress_n)) as.integer(params$suppress_n) else 60L
+  cat(sprintf(paste0(
+    "\n\n::: {.callout-note}\n## Shareable render\n\n",
+    "Counts from 1 to %1$s are shown as \"Suppr.\", along with any other cell, total, percentage, rate, ",
+    "or ratio that would let a suppressed count be recovered. Zeros are also hidden in any row or column ",
+    "with fewer than %2$s clients. Counties with a suppressed value are grey on the maps. Raw race values ",
+    "that are not in the codebook and were recorded for fewer than %2$s clients are masked, county values ",
+    "that do not match a census county are not listed, and data-quality counts below %2$s are shown as ",
+    "\"<%2$s\". Census figures are public and are never suppressed. Render with `shareable: false` to see ",
+    "exact counts locally.\n:::\n\n"),
+    k0 - 1L, k0))
+}
+```
+
+# 1. Did the EBP/CDEP Workstream increase access to services for targeted populations?
+
+## 1.03 How does the study population compare with the underlying population, by county?
+
+Spatial comparison of the clients served with the census population of the counties they live in.
+
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated timeframe (as in 1.01), set against the number and race/ethnicity of residents under age 25 in each California county.
+
+**Calculation:** Clients are counted once (first record per `client_system_id`) and assigned to the county on that record. County populations come from the 2020 Census Demographic and Housing Characteristics File (tables P12H to P12O: sex by age, for Hispanic or Latino residents and for each race among residents who are not Hispanic or Latino). These eight groups do not overlap and add up to the whole population, which is why they are used here instead of American Community Survey tables, whose race-by-age tables count Hispanic residents twice. Three measures are reported:
+
+1.  **Reach:** clients served per 10,000 residents under 25, by county.
+2.  **Statewide representation:** each race/ethnicity group's share of clients (among clients with race reported) next to its share of residents under 25.
+3.  **County representation ratio:** a group's share of a county's clients divided by its share of that county's residents under 25. A ratio of 1 means the group is served in proportion to its share of the population; above 1, more than its share; below 1, less.
+
+**Assumptions:** Clients had to have an intervention start (on or after the start date) and an intervention name. The census has no Middle Eastern or North African category and counts those residents as White, so the two study categories are combined for the comparison. The census counts a Hispanic or Latino resident as Hispanic or Latino whatever their race, whereas a client who selected Hispanic or Latino and another race is recorded as "2+ races selected", so the Hispanic or Latino and 2+ races rows are not exactly like for like. Clients of every age and client type (including caregivers) are in the numerator, while the denominator is residents under 25: the reach figure scales client counts to the size of the target-age population and is not a service penetration rate. The census counts are from April 2020.
+
+```{r}
+#| label: setup
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(sf)
+  library(tidycensus)
+  library(tigris)
+  library(knitr)
+})
+options(dplyr.summarise.inform = FALSE, knitr.kable.NA = "", scipen = 999)
+```
+
+```{r}
+#| label: config
+# Defaults are used when running chunks interactively; YAML params take precedence when rendering.
+defaults <- list(
+  path_demographic = "~/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv",
+  output_dir       = "output/sq103",
+  census_dir       = "output/sq103/census",   # public census tables and county boundaries, saved on first run
+  start_date       = "2024-01-01",
+  state            = "CA",
+  census_year      = 2020,
+  census_sumfile   = "dhc",
+  age_max          = 24,      # oldest age counted in the census population (the census age bands break at 24/25)
+  rate_per         = 10000,
+  ratio_cap        = 4,       # map colours stop at this ratio (and at 1 / this ratio)
+  suppress_n       = 60,
+  shareable        = FALSE
+)
+cfg <- modifyList(defaults, if (isTRUE(getOption("knitr.in.progress"))) as.list(params) else list())
+
+# Shareable render: counts of 1 to SUPPRESS_N - 1 are suppressed in every results table and map (with
+# complementary suppression), raw values outside the codebook seen for fewer than SUPPRESS_N clients
+# are masked, and QA counts of 1 to SUPPRESS_N - 1 display as "<SUPPRESS_N". The default (internal)
+# render shows exact counts and raw values and must not be shared.
+SUPPRESS_N <- as.integer(cfg$suppress_n)
+SHAREABLE  <- isTRUE(as.logical(cfg$shareable))
+RUN_MODE   <- if (SHAREABLE) "SHAREABLE" else "INTERNAL"
+SUPPR      <- "Suppr."
+MASKED     <- "Unrecognized value (masked)"
+NOT_REPORTED <- "Not reported / missing"
+TOTAL      <- "Total"
+COUNTY_UNMATCHED <- "County not matched to a census county"
+
+# A representation ratio is shown only for counties with at least this many clients with race reported,
+# in every render: below that, one or two clients move the ratio a long way.
+MIN_RATIO_N <- SUPPRESS_N
+
+# Race arrives as a numeric code (code_num), set in the `recode-race` chunk of report_data_cleaning.qmd:
+# the codebook code for one race, 88 for two or more races, 97 to 99 for a non-response, NA for blank.
+RACE_LABELS <- c(
+  "1" = "Asian", "2" = "Black or African American", "3" = "Hispanic or Latino",
+  "4" = "Middle Eastern or North African", "5" = "Native American/American Indian or Alaska Native",
+  "6" = "Native Hawaiian or Pacific Islander", "7" = "White", "88" = "2+ races selected"
+)
+RACE_NR_LABELS <- c("97" = "Don't Know", "98" = "Prefer Not To Answer", "99" = "Not Applicable")
+RACE_CODEBOOK  <- c(RACE_LABELS, RACE_NR_LABELS)
+RACE_ORDER     <- unname(RACE_CODEBOOK)
+
+# ---- Crosswalk between study race categories and census tables ----
+# Study categories listed here are combined into a comparison group; every other category is its own
+# group. The census has no Middle Eastern or North African category (those residents are counted as White).
+STUDY_TO_GROUP <- c(
+  "White" = "White or Middle Eastern/North African",
+  "Middle Eastern or North African" = "White or Middle Eastern/North African"
+)
+# Census table (2020 DHC, sex by age) = comparison group. Each race table covers residents who are not
+# Hispanic or Latino, so the groups do not overlap. A group with no study category is shown as census-only.
+CENSUS_GROUPS <- c(
+  P12H = "Hispanic or Latino",
+  P12I = "White or Middle Eastern/North African",
+  P12J = "Black or African American",
+  P12K = "Native American/American Indian or Alaska Native",
+  P12L = "Asian",
+  P12M = "Native Hawaiian or Pacific Islander",
+  P12N = "Some other race (census only)",
+  P12O = "2+ races selected"
+)
+race_to_group <- function(label) {
+  if_else(label %in% c(RACE_NR_LABELS, NOT_REPORTED), NOT_REPORTED,
+          coalesce(unname(STUDY_TO_GROUP[label]), label))
+}
+STUDY_GROUPS <- unique(race_to_group(unname(RACE_LABELS)))
+GROUP_ORDER  <- union(STUDY_GROUPS, unname(CENSUS_GROUPS))
+stopifnot(
+  "STUDY_TO_GROUP names must be study race labels" = all(names(STUDY_TO_GROUP) %in% RACE_LABELS),
+  "Every study group needs a census table in CENSUS_GROUPS" = all(STUDY_GROUPS %in% CENSUS_GROUPS)
+)
+
+# Patterns in census labels: county names ("Alameda County, California") and age bands
+# ("Under 5 years", "22 to 24 years", "85 years and over").
+COUNTY_SUFFIX <- regex("\\s+county$", ignore_case = TRUE)
+AGE_UNDER     <- regex("^under", ignore_case = TRUE)
+AGE_OVER      <- regex("and over$", ignore_case = TRUE)
+
+AGE_TEXT <- paste("under", cfg$age_max + 1)
+POP_COL  <- paste("Residents", AGE_TEXT)
+RATE_COL <- paste("Clients per", formatC(cfg$rate_per, format = "d", big.mark = ","), "residents", AGE_TEXT)
+
+census_tag <- paste(cfg$state, cfg$census_year, cfg$census_sumfile, sep = "_")
+path_census_pop <- file.path(cfg$census_dir, paste0("county_pop_", census_tag, "_age0to", cfg$age_max, ".csv"))
+path_census_geo <- file.path(cfg$census_dir, paste0("county_boundaries_", census_tag, ".gpkg"))
+
+dir.create(cfg$output_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(cfg$census_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+```{r}
+#| label: helpers
+# ---- Helpers copied from the 1.01 script (unchanged except `code_to_label`, which no longer has a
+# special case for code 0: non-response codes are now codebook entries) ----
+fmt_n <- function(n) formatC(as.numeric(n), format = "f", digits = 0, big.mark = ",")
+fmt_n_qa <- function(n) {
+  ifelse(SHAREABLE & !is.na(n) & n > 0 & n < SUPPRESS_N, paste0("<", SUPPRESS_N), fmt_n(n))
+}
+fmt_pct <- function(p, digits = 1) {
+  ifelse(is.na(p) | is.nan(p), "", sprintf(paste0("%.", digits, "f%%"), 100 * p))
+}
+
+code_to_label <- function(code, labels) {
+  code_chr <- str_squish(as.character(code))
+  case_when(
+    is.na(code_chr) | code_chr == "" ~ NA_character_,
+    code_chr %in% names(labels)      ~ unname(labels[code_chr]),
+    TRUE                             ~ paste0("Code ", code_chr, " (not in codebook)")
+  )
+}
+
+# Shareable render only: a value outside `known` that fewer than SUPPRESS_N distinct clients carry is
+# the most likely to be free text, so it is replaced with MASKED. Counting clients (not rows) keeps a
+# single client's repeated rows from pushing a free-text value over the threshold.
+mask_rare_values <- function(x, id, known = character()) {
+  if (!SHAREABLE) return(x)
+  unknown <- !is.na(x) & !(x %in% known)
+  if (!any(unknown)) return(x)
+  n_clients <- tapply(id[unknown], x[unknown], n_distinct)
+  rare <- names(n_clients)[n_clients < SUPPRESS_N]
+  if_else(x %in% rare, MASKED, x)
+}
+
+# ---- Primary and complementary suppression ----
+# `x` holds every published or derivable number in a table (cells and totals). Each element of `lines`
+# indexes entries tied by one additive constraint, with the total LAST (a row's cells, then its total).
+# Counts of 1 to k - 1 are suppressed, then more entries are suppressed until:
+#   (a) no line has exactly one suppressed entry, which subtraction would recover;
+#   (b) in a line whose total is shown, the suppressed cells add up to at least k, so their combined
+#       count (total minus the shown cells) is not itself a small count; and
+#   (c) no suppressed count below k, and no sum of two suppressed counts that is below k, can be
+#       solved for exactly from all of the table's constraints taken together (checked by matrix rank).
+# Extra suppressions go to the entry with the lowest `weight` (by default, the smallest count).
+# An entry with weight Inf is never chosen, e.g. because another table already shows it. An entry
+# that can be read off a line whose other entries are all zero or shown elsewhere cannot be
+# protected, so it is never chosen either. If no entry can protect a hidden count, the render stops
+# rather than publish a count that could be recovered.
+pick_entry <- function(cand, weight) {
+  cand <- cand[is.finite(weight[cand])]
+  if (length(cand) == 0L) NA_integer_ else cand[which.min(weight[cand])]
+}
+
+recoverable_entries <- function(x, lines, s, k) {
+  sup <- which(s)
+  if (length(sup) == 0L) return(integer())
+  A <- do.call(rbind, lapply(lines, function(ln) {
+    row <- numeric(length(x))
+    row[ln] <- c(rep(1, length(ln) - 1L), -1)
+    row[sup]
+  }))
+  A <- A[rowSums(A != 0) > 0, , drop = FALSE]
+  if (nrow(A) == 0L) return(integer())
+  r <- qr(A)$rank
+  solvable <- function(v) qr(rbind(A, v))$rank == r
+  unit <- function(j) as.numeric(seq_along(sup) == j)
+  small <- which(x[sup] < k)
+  hits <- sup[small[vapply(small, function(j) solvable(unit(j)), logical(1))]]
+  if (length(hits) == 0L && length(small) > 1L) {
+    for (pr in combn(small, 2, simplify = FALSE)) {
+      if (sum(x[sup[pr]]) < k && solvable(unit(pr[1]) + unit(pr[2]))) {
+        hits <- sup[pr]
+        break
+      }
+    }
+  }
+  hits
+}
+
+suppress_lines <- function(x, lines, k = SUPPRESS_N, init = NULL, weight = x) {
+  s <- !is.na(x) & x > 0 & x < k
+  if (!is.null(init)) s <- s | init
+  repeat {
+    pinned <- unlist(lapply(lines, function(ln) {
+      unknown <- ln[x[ln] > 0 & (is.finite(weight[ln]) | s[ln])]
+      if (length(unknown) == 1L && is.finite(weight[unknown])) unknown
+    }))
+    if (length(pinned) == 0L) break
+    weight[pinned] <- Inf
+  }
+  open_entries <- function(idx) idx[!s[idx] & x[idx] > 0]
+  cannot_protect <- function() {
+    stop("Complementary suppression cannot protect a hidden count: every entry that could be ",
+         "hidden with it is zero or shown in another table.", call. = FALSE)
+  }
+  repeat {
+    j <- NA_integer_
+    for (ln in lines) {
+      tot <- ln[length(ln)]
+      cells <- ln[-length(ln)]
+      small_sum <- !s[tot] && any(s[cells]) && sum(x[cells][s[cells]]) < k
+      if (sum(s[ln]) == 1L || small_sum) {
+        j <- pick_entry(open_entries(ln), weight)
+        if (is.na(j)) cannot_protect()
+        break
+      }
+    }
+    if (is.na(j)) {
+      rec <- recoverable_entries(x, lines, s, k)
+      if (length(rec) > 0L) {
+        near <- unique(unlist(lines[vapply(lines, function(ln) any(rec %in% ln), logical(1))]))
+        j <- pick_entry(open_entries(near), weight)
+        if (is.na(j)) j <- pick_entry(open_entries(seq_along(x)), weight)
+        if (is.na(j)) cannot_protect()
+      }
+    }
+    if (is.na(j)) break
+    s[j] <- TRUE
+  }
+  s
+}
+
+# Suppression pattern for a matrix of counts with its totals attached: row totals in the last column
+# and column totals in the last row. Every row and column is a line. Extra suppressions go to inner
+# cells first, then to row totals, and to the grand total last, because hiding the grand total forces
+# a column total to be hidden too. `init` marks entries that start hidden and `fixed` marks entries
+# that are never hidden, usually because another table hides or shows the same number.
+suppress_table <- function(ext, init = FALSE, fixed = FALSE) {
+  R <- nrow(ext) - 1L
+  C <- ncol(ext) - 1L
+  idx <- matrix(seq_along(ext), nrow(ext))
+  lines <- c(lapply(seq_len(R + 1L), function(i) idx[i, ]),
+             lapply(seq_len(C + 1L), function(j) idx[, j]))
+  weight <- as.vector(ext)
+  weight[idx[seq_len(R), C + 1L]] <- weight[idx[seq_len(R), C + 1L]] + 1e9
+  weight[idx[R + 1L, C + 1L]] <- weight[idx[R + 1L, C + 1L]] + 2e9
+  weight[rep_len(as.vector(fixed), length(ext))] <- Inf
+  s <- suppress_lines(as.vector(ext), lines, init = rep_len(as.vector(init), length(ext)), weight = weight)
+  matrix(s, nrow(ext))
+}
+
+# One-way frequency table in the interim report's layout: N, % of all, and % excluding N/As.
+# `not_reported` lists labels (besides NA) that count as non-substantive. The result carries the
+# categories it shows and hides, so a cross-tab of the same variable can match them (see `like`).
+tab_one_way <- function(x, label = "Category", order = character(), not_reported = character(),
+                        show_valid = TRUE, digits = 1) {
+  if (length(x) == 0L) return(tibble(!!label := "No records"))
+  x <- if_else(is.na(x), NOT_REPORTED, as.character(x))
+  nr_labels <- c(not_reported, NOT_REPORTED)
+  counts <- count(tibble(category = x), category)
+  present <- counts$category
+  lv <- c(intersect(setdiff(order, nr_labels), present),
+          sort(setdiff(present, c(order, nr_labels))),
+          intersect(nr_labels, present))
+  counts <- counts[match(lv, counts$category), ]
+
+  n <- counts$n
+  is_sub <- !(counts$category %in% nr_labels)
+  m <- length(n)
+  i_sub <- m + 1L; i_nr <- m + 2L; i_tot <- m + 3L
+  x_all <- c(n, sum(n[is_sub]), sum(n[!is_sub]), sum(n))
+  lines <- list(c(which(is_sub), i_sub), c(which(!is_sub), i_nr), c(i_sub, i_nr, i_tot))
+  s <- if (SHAREABLE) suppress_lines(x_all, lines) else rep(FALSE, length(x_all))
+  sc <- s[seq_len(m)]
+
+  body <- tibble(
+    category = counts$category,
+    N = if_else(sc, SUPPR, fmt_n(n)),
+    `%` = if_else(sc | s[i_tot], SUPPR, fmt_pct(n / x_all[i_tot], digits)),
+    `% (excluding N/As)` = case_when(
+      !is_sub         ~ "N/A",
+      sc | s[i_sub]   ~ SUPPR,
+      TRUE            ~ fmt_pct(n / x_all[i_sub], digits)
+    )
+  )
+  subtotal <- tibble(
+    category = "Subtotal: substantive responses",
+    N = if_else(s[i_sub], SUPPR, fmt_n(x_all[i_sub])),
+    `%` = if_else(s[i_sub] | s[i_tot], SUPPR, fmt_pct(x_all[i_sub] / x_all[i_tot], digits)),
+    `% (excluding N/As)` = if_else(s[i_sub], SUPPR, "100.0%")
+  )
+  total <- tibble(category = "Total", N = if_else(s[i_tot], SUPPR, fmt_n(x_all[i_tot])),
+                  `%` = if_else(s[i_tot], SUPPR, "100.0%"), `% (excluding N/As)` = "")
+
+  out <- if (show_valid) {
+    bind_rows(body[is_sub, ], subtotal, body[!is_sub, ], total)
+  } else {
+    bind_rows(body, total) |> select(-`% (excluding N/As)`)
+  }
+  out <- rename(out, !!label := category)
+  attr(out, "hidden") <- counts$category[sc]
+  attr(out, "shown")  <- counts$category[!sc]
+  # A cross-tab of this variable leaves out missing values, so its grand total can be read from this
+  # table only when no total and no non-substantive count here is hidden.
+  attr(out, "total_hidden") <- any(s[c(which(!is_sub), i_sub, i_nr, i_tot)])
+  out
+}
+
+# Show a table and keep a copy for the CSV export at the end.
+EXPORT <- list()
+show_table <- function(tbl, id, caption = NULL) {
+  EXPORT[[id]] <<- tbl
+  kable(tbl, caption = caption, align = c("l", rep("r", ncol(tbl) - 1)))
+}
+
+# Join keys compared as trimmed, lower-case text, so a number stored as text in one file and as a
+# number in the other, or a stray space or capital, does not stop a provider from matching.
+join_key <- function(x) str_to_lower(str_squish(as.character(x)))
+
+# ---- Helpers new to 1.03 ----
+fmt_num <- function(x, digits = 1) formatC(as.numeric(x), format = "f", digits = digits, big.mark = ",")
+sup <- function(hidden, text) if_else(hidden, SUPPR, text)
+
+# Run `pull()` and save its result the first time; read the saved copy on every later run, so a
+# render repeats exactly and needs no internet connection or Census API key after the first one.
+cached <- function(path, pull, write, read) {
+  if (!file.exists(path)) write(pull(), path)
+  read(path)
+}
+
+# County names compared without the state ("Alameda County, California") or the word "County".
+county_key <- function(x) join_key(x) |> str_remove(",.*$") |> str_remove(COUNTY_SUFFIX) |> na_if("")
+
+# Youngest and oldest age covered by a census age band label.
+age_bounds <- function(label) {
+  first <- as.numeric(str_extract(label, "\\d+"))
+  last  <- as.numeric(str_extract(label, "\\d+(?=\\D*$)"))
+  under <- str_detect(label, AGE_UNDER)
+  tibble(age_lo = if_else(under, 0, first),
+         age_hi = case_when(under ~ first - 1, str_detect(label, AGE_OVER) ~ Inf, TRUE ~ last))
+}
+
+# County population aged 0 to cfg$age_max for each table in CENSUS_GROUPS. The age bands to add up are
+# read from the census variable labels, not listed by variable number.
+pull_census_population <- function() {
+  vars <- load_variables(cfg$census_year, cfg$census_sumfile) |>
+    mutate(table = str_remove(name, "_.*$"), depth = str_count(label, "!!")) |>
+    filter(table %in% names(CENSUS_GROUPS)) |>
+    filter(depth == max(depth)) |>                       # sex-by-age cells, not their subtotals
+    mutate(age_bounds(str_remove(label, "^.*!!")))
+  stopifnot(
+    "A table in CENSUS_GROUPS was not found in the census variable list" =
+      setequal(vars$table, names(CENSUS_GROUPS)),
+    "cfg$age_max falls inside a census age band; choose an age at which a band ends" =
+      !any(vars$age_lo <= cfg$age_max & vars$age_hi > cfg$age_max)
+  )
+  names(CENSUS_GROUPS) |>
+    map(\(tbl) get_decennial(geography = "county", table = tbl, year = cfg$census_year,
+                             sumfile = cfg$census_sumfile, state = cfg$state)) |>
+    list_rbind() |>
+    inner_join(vars |> filter(age_hi <= cfg$age_max) |> select(variable = name, table), by = "variable") |>
+    summarise(pop = sum(value), .by = c(GEOID, NAME, table))
+}
+
+pull_county_boundaries <- function() {
+  counties(state = cfg$state, cb = TRUE, year = cfg$census_year, progress_bar = FALSE) |> select(GEOID)
+}
+
+# Counts of `rows` by `cols` with both margins (labelled TOTAL), in long form, with a `hidden` flag for
+# each count. Suppression follows `tab_two_way()` in the 1.01 script: every row and column is a
+# suppression line, and zeros are hidden in a row or column with fewer than SUPPRESS_N clients.
+# `col_hidden` names the columns whose totals another table hides, and `total_hidden` says whether it
+# hides the grand total: those start hidden in the Total row, and the other column totals, which that
+# table shows, are never hidden there. Missing values are kept as NOT_REPORTED, so the row totals
+# count every client.
+count_long <- function(rows, cols, col_hidden = character(), total_hidden = FALSE) {
+  rows <- coalesce(as.character(rows), NOT_REPORTED)
+  cols <- coalesce(as.character(cols), NOT_REPORTED)
+  row_lv <- sort(unique(rows))
+  col_lv <- sort(unique(cols))
+  m <- unclass(table(factor(rows, row_lv), factor(cols, col_lv)))
+  R <- nrow(m); C <- ncol(m)
+  ext <- rbind(cbind(m, rowSums(m)), c(colSums(m), sum(m)))
+  hidden <- matrix(FALSE, R + 1, C + 1)
+  if (SHAREABLE) {
+    init <- fixed <- hidden
+    init[R + 1, ]  <- c(col_lv %in% col_hidden, total_hidden)
+    fixed[R + 1, ] <- !init[R + 1, ]
+    small_row <- ext[, C + 1] > 0 & ext[, C + 1] < SUPPRESS_N
+    small_col <- ext[R + 1, ] > 0 & ext[R + 1, ] < SUPPRESS_N
+    hidden <- suppress_table(ext, init, fixed) |
+      (ext == 0 & (outer(small_row, rep(TRUE, C + 1)) | outer(rep(TRUE, R + 1), small_col)))
+  }
+  tibble(row = rep(c(row_lv, TOTAL), times = C + 1), col = rep(c(col_lv, TOTAL), each = R + 1),
+         n = as.vector(ext), hidden = as.vector(hidden))
+}
+
+# County map of `fill`, saved to the output folder and shown. Counties with no value are grey.
+show_map <- function(data, fill, legend, id, scale, facet = NULL, width = 7, height = 7.5) {
+  p <- ggplot(data) +
+    geom_sf(aes(fill = .data[[fill]]), colour = "white", linewidth = 0.15) +
+    scale +
+    labs(fill = legend) +
+    guides(fill = guide_colourbar(title.position = "top")) +
+    theme_void() +
+    theme(legend.position = "bottom", legend.key.width = unit(1.5, "cm"))
+  if (!is.null(facet)) p <- p + facet_wrap(vars(.data[[facet]]), labeller = label_wrap_gen(28))
+  ggsave(file.path(cfg$output_dir, paste0("sq103_", id, "_", RUN_MODE, ".png")), p,
+         width = width, height = height, dpi = 300, bg = "white")
+  p
+}
+```
+
+```{r}
+#| label: load_data
+all_data <- read_csv(cfg$path_demographic, show_col_types = FALSE, progress = FALSE)
+
+# Public census data. The first run downloads it (this needs a free Census API key, see the note in
+# the data quality section) and saves it in cfg$census_dir; later runs read the saved files. No client
+# data is sent anywhere: the request names only the state, the tables, and the year.
+county_pop <- cached(path_census_pop, pull_census_population, write_csv,
+                     \(p) read_csv(p, col_types = cols(GEOID = col_character()), progress = FALSE)) |>
+  mutate(county = str_remove(NAME, ",.*$"), group = unname(CENSUS_GROUPS[table]))
+if (!setequal(county_pop$table, names(CENSUS_GROUPS))) {
+  stop("The saved census file does not match CENSUS_GROUPS. Delete ", path_census_pop, " and run again.")
+}
+counties_sf <- cached(path_census_geo, pull_county_boundaries,
+                      \(x, p) st_write(x, p, quiet = TRUE), \(p) st_read(p, quiet = TRUE))
+
+qa_flow <- tibble(step = "Demographic file: rows read", n = nrow(all_data))
+```
+
+```{r}
+#| label: prep_data
+county_lookup <- county_pop |> distinct(GEOID, county) |> mutate(county_key = county_key(county))
+
+# Base filtered dataset: start date onward, with intervention start and name (as in 1.01)
+all_data_filtered <- all_data |>
+  filter(
+    intervention_start >= cfg$start_date,
+    !is.na(intervention_start),
+    !is.na(intervention_name)
+  ) |>
+  mutate(
+    race_label = code_to_label(code_num, RACE_CODEBOOK) |>
+      mask_rare_values(client_system_id, RACE_ORDER),
+    county_key = county_key(county)
+  ) |>
+  left_join(county_lookup, by = "county_key", suffix = c("_raw", ""), na_matches = "never",
+            relationship = "many-to-one") |>
+  mutate(county_label = case_when(!is.na(GEOID) ~ county, !is.na(county_key) ~ COUNTY_UNMATCHED))
+
+clients <- all_data_filtered |> distinct(client_system_id, .keep_all = TRUE)
+
+# ---- Client counts: county by race, with both margins and one suppression pattern for the script ----
+# `t_race` is the statewide race table published in 1.01, laid out as: substantive categories, their
+# subtotal, non-response categories, Total. A comparison group starts hidden here only if 1.01 does
+# not already give its count, so nothing hidden in 1.01 can be recovered from this script:
+#   - a group of substantive categories is hidden if any of its categories is hidden in 1.01, unless
+#     it is the only such group and 1.01 shows the subtotal (its count is the subtotal minus the rest);
+#   - the not-reported group is the Total minus the subtotal, so it is hidden if either of those is.
+t_race <- tab_one_way(clients$race_label, "Race", RACE_ORDER, not_reported = unname(RACE_NR_LABELS))
+race_categories      <- c(attr(t_race, "hidden"), attr(t_race, "shown"))
+race_subtotal_hidden <- t_race$N[sum(race_to_group(race_categories) != NOT_REPORTED) + 1] == SUPPR
+race_total_hidden    <- last(t_race$N) == SUPPR
+groups_hidden <- setdiff(unique(race_to_group(attr(t_race, "hidden"))), NOT_REPORTED)
+if (length(groups_hidden) == 1 && !race_subtotal_hidden) groups_hidden <- character()
+if (race_subtotal_hidden || race_total_hidden) groups_hidden <- c(groups_hidden, NOT_REPORTED)
+cells <- count_long(clients$county_label, race_to_group(coalesce(clients$race_label, NOT_REPORTED)),
+                    col_hidden = groups_hidden, total_hidden = race_total_hidden)
+
+# All clients per county (and statewide, in the TOTAL row)
+county_n <- cells |>
+  filter(col == TOTAL) |>
+  select(county = row, n_all = n, all_hidden = hidden)
+
+# Clients per county and comparison group (non-response codes and blanks form one group). `n_rep` is
+# the county's clients with race reported: it can
+# be worked out from the county total and its not-reported count, so it is hidden if either one is.
+by_group <- cells |>
+  filter(col != TOTAL) |>
+  select(county = row, group = col, n, hidden)
+county_n <- county_n |>
+  left_join(by_group |> filter(group == NOT_REPORTED) |> select(county, n_nr = n, nr_hidden = hidden),
+            by = "county") |>
+  mutate(n_nr = coalesce(n_nr, 0), nr_hidden = coalesce(nr_hidden, FALSE),
+         n_rep = n_all - n_nr, rep_hidden = all_hidden | nr_hidden)
+
+# ---- Census population by county and group, with a statewide TOTAL row ----
+census_pop <- bind_rows(county_pop |> select(GEOID, county, group, pop),
+                        county_pop |> summarise(pop = sum(pop), county = TOTAL, .by = group)) |>
+  mutate(pop_all = sum(pop), .by = county)
+state_pop <- sum(county_pop$pop)
+
+# ---- Comparison: one row per census county (plus TOTAL) and group ----
+# A ratio is shown when no count behind it is hidden, the county has at least MIN_RATIO_N clients with
+# race reported, and the group has residents in the county.
+comparison <- by_group |>
+  filter(group != NOT_REPORTED) |>
+  full_join(census_pop, by = c("county", "group")) |>
+  filter(county %in% census_pop$county) |>
+  left_join(county_n, by = "county") |>
+  mutate(
+    across(c(n, n_all, n_nr, n_rep), \(x) coalesce(x, 0)),
+    across(c(hidden, all_hidden, nr_hidden, rep_hidden), \(x) coalesce(x, FALSE)),
+    share_clients = n / n_rep,
+    share_pop     = pop / pop_all,
+    ratio         = share_clients / share_pop,
+    too_few       = n_rep < MIN_RATIO_N,
+    ratio_shown   = !hidden & !rep_hidden & !too_few & !is.na(pop) & pop > 0
+  )
+
+qa_flow <- bind_rows(
+  qa_flow,
+  tibble(step = paste0("Demographic file: rows with intervention start and name, from ", cfg$start_date),
+         n = nrow(all_data_filtered)),
+  tibble(step = "Demographic file: unique clients (client_system_id)", n = nrow(clients)),
+  tibble(step = "Unique clients whose county matched a census county", n = sum(!is.na(clients$GEOID))),
+  tibble(step = "Unique clients with a county value that matched no census county",
+         n = sum(clients$county_label %in% COUNTY_UNMATCHED)),
+  tibble(step = "Unique clients with no county recorded", n = sum(is.na(clients$county_label)))
+)
+```
+
+### Reach: clients served per `r formatC(cfg$rate_per, format = "d", big.mark = ",")` residents `r AGE_TEXT`, by county
+
+Each county's clients served, its share of all clients, its share of the state's residents `r AGE_TEXT`, and clients served for every `r formatC(cfg$rate_per, format = "d", big.mark = ",")` residents `r AGE_TEXT`. The Total row counts every client, including those whose county is missing or did not match a census county.
+
+```{r}
+#| label: reach
+state_n <- filter(county_n, county == TOTAL)
+reach <- census_pop |>
+  distinct(GEOID, county, pop = pop_all) |>
+  full_join(county_n, by = "county") |>
+  mutate(n_all = coalesce(n_all, 0), all_hidden = coalesce(all_hidden, FALSE),
+         rate = cfg$rate_per * n_all / pop) |>
+  arrange(county == TOTAL, is.na(pop), county)
+
+reach |>
+  transmute(
+    County = county,
+    `Clients served (N)` = sup(all_hidden, fmt_n(n_all)),
+    `% of clients`       = sup(all_hidden | state_n$all_hidden, fmt_pct(n_all / state_n$n_all)),
+    !!POP_COL            := if_else(is.na(pop), "", fmt_n(pop)),
+    `% of residents`     = fmt_pct(pop / state_pop),
+    !!RATE_COL           := if_else(is.na(pop), "", sup(all_hidden, fmt_num(rate)))
+  ) |>
+  show_table("reach_by_county")
+```
+
+```{r}
+#| label: reach_map
+#| fig-width: 7
+#| fig-height: 7.5
+#| fig-cap: "Clients served per resident in the target age range, by county. Grey counties have a suppressed count."
+counties_sf |>
+  left_join(reach, by = "GEOID") |>
+  mutate(rate = if_else(all_hidden, NA, rate)) |>
+  show_map("rate", RATE_COL, "reach_map", scale_fill_viridis_c(na.value = "grey85", direction = -1))
+```
+
+### Race and ethnicity: clients compared with residents `r AGE_TEXT`, statewide
+
+Percentages of clients are among clients with race reported. The representation ratio is the group's percentage of clients divided by its percentage of residents.
+
+```{r}
+#| label: race_statewide
+fmt_ratio <- function(d) {
+  with(d, case_when(ratio_shown ~ fmt_num(ratio, 2), hidden | rep_hidden ~ SUPPR, is.na(pop) ~ "",
+                    too_few ~ paste0("n<", MIN_RATIO_N), TRUE ~ ""))
+}
+# Shared columns of the statewide table and the county detail export. A census group with no study
+# category has no client count, and a study value with no census group has no resident count.
+fmt_comparison <- function(d) {
+  has_clients <- d$group %in% STUDY_GROUPS | d$n > 0
+  d |>
+    transmute(
+      `Race/ethnicity group` = group,
+      `Clients (N)`          = if_else(has_clients, sup(hidden, fmt_n(n)), "N/A"),
+      `% of clients`         = if_else(has_clients, sup(hidden | rep_hidden, fmt_pct(share_clients)), "N/A"),
+      !!POP_COL              := if_else(is.na(pop), "N/A", fmt_n(pop)),
+      `% of residents`       = if_else(is.na(pop), "N/A", fmt_pct(share_pop)),
+      `Representation ratio` = if_else(has_clients, fmt_ratio(d), "N/A")
+    )
+}
+
+statewide <- comparison |> filter(county == TOTAL) |> arrange(match(group, GROUP_ORDER), group)
+bind_rows(
+  fmt_comparison(statewide),
+  state_n |>
+    transmute(`Race/ethnicity group` = "Total with race reported",
+              `Clients (N)` = sup(rep_hidden, fmt_n(n_rep)), `% of clients` = sup(rep_hidden, fmt_pct(1)),
+              !!POP_COL := fmt_n(state_pop), `% of residents` = fmt_pct(1)),
+  state_n |>
+    transmute(`Race/ethnicity group` = NOT_REPORTED, `Clients (N)` = sup(nr_hidden, fmt_n(n_nr)))
+) |>
+  show_table("race_statewide_vs_census")
+```
+
+### Race and ethnicity: representation ratio by county
+
+A group's share of the county's clients (among those with race reported) divided by its share of the county's residents `r AGE_TEXT`. Ratios are shown only for counties with at least `r MIN_RATIO_N` clients with race reported ("n<`r MIN_RATIO_N`" otherwise). The map colours stop at `r cfg$ratio_cap` and 1/`r cfg$ratio_cap`; the table has the exact ratios. Where a group is a small share of a county's residents, a few clients move its ratio a long way, so read the ratios next to the counts in the exported detail table.
+
+```{r}
+#| label: race_by_county
+by_county <- comparison |>
+  filter(county != TOTAL, group %in% STUDY_GROUPS) |>
+  mutate(group = factor(group, STUDY_GROUPS)) |>
+  arrange(county, group)
+
+by_county |>
+  mutate(cell = fmt_ratio(by_county)) |>
+  pivot_wider(id_cols = c(county, n_rep, rep_hidden), names_from = group, values_from = cell) |>
+  transmute(County = county, `Clients with race reported (N)` = sup(rep_hidden, fmt_n(n_rep)),
+            across(all_of(STUDY_GROUPS))) |>
+  show_table("race_ratio_by_county")
+
+# Counts and percentages behind every ratio, for the CSV export only (one row per county and group).
+EXPORT[["race_by_county_detail"]] <- bind_cols(County = by_county$county, fmt_comparison(by_county))
+```
+
+```{r}
+#| label: race_ratio_map
+#| fig-width: 9
+#| fig-height: 11
+#| fig-cap: "Representation ratio by county and race/ethnicity group (1 = served in proportion to share of residents). Grey counties have too few clients with race reported or a suppressed count."
+ratio_breaks <- cfg$ratio_cap^c(-1, -0.5, 0, 0.5, 1)
+counties_sf |>
+  inner_join(by_county, by = "GEOID") |>
+  mutate(log_ratio = if_else(ratio_shown, log2(pmin(pmax(ratio, 1 / cfg$ratio_cap), cfg$ratio_cap)), NA)) |>
+  show_map("log_ratio", "Representation ratio", "race_ratio_map", facet = "group", width = 9, height = 11,
+           scale = scale_fill_distiller(palette = "PuOr", direction = 1, na.value = "grey85",
+                                        limits = log2(range(ratio_breaks)), breaks = log2(ratio_breaks),
+                                        labels = fmt_num(ratio_breaks, 2)))
+```
+
+# Data quality checks
+
+These counts are for review, not reporting.
+
+```{r}
+#| label: qa
+#| results: asis
+qa_flow |>
+  mutate(n = fmt_n_qa(n)) |>
+  rename(Step = step, N = n) |>
+  show_table("qa_sample_flow", caption = "Sample flow")
+
+tibble(
+  Item  = c("Census source", "State", "Counties", "Ages counted", "Tables", "Population file", "Boundary file",
+            "Downloaded"),
+  Value = c(paste(cfg$census_year, "decennial census, summary file", cfg$census_sumfile), cfg$state,
+            nrow(county_lookup), paste0("0 to ", cfg$age_max), str_flatten_comma(names(CENSUS_GROUPS)),
+            path_census_pop, path_census_geo, format(file.mtime(path_census_pop), "%Y-%m-%d"))
+) |>
+  show_table("qa_census_source", caption = "Census data used")
+
+# County values with no census match are listed in the internal render only (they can be free text);
+# the shareable render carries their client count in the sample flow.
+unmatched <- all_data_filtered |>
+  filter(county_label %in% COUNTY_UNMATCHED) |>
+  summarise(Clients = n_distinct(client_system_id), Records = n(), .by = county_raw) |>
+  rename(`County value` = county_raw) |>
+  arrange(desc(Clients))
+if (!SHAREABLE && nrow(unmatched) > 0) {
+  unmatched |>
+    mutate(across(c(Clients, Records), fmt_n)) |>
+    show_table("qa_unmatched_county_values", caption = "County values that matched no census county") |>
+    print()
+}
+
+unrecognized <- all_data_filtered |>
+  filter(!is.na(race_label), !(race_label %in% RACE_ORDER)) |>
+  summarise(clients = n_distinct(client_system_id), records = n(), .by = race_label)
+if (nrow(unrecognized) == 0) {
+  cat("Every non-missing race code matched the codebook.\n")
+} else {
+  unrecognized |>
+    arrange(desc(clients)) |>
+    mutate(clients = fmt_n_qa(clients), records = fmt_n_qa(records)) |>
+    rename(`Race value (not in codebook)` = race_label, Clients = clients, Records = records) |>
+    show_table("qa_unrecognized_values",
+               caption = "Race values kept as their own category because no codebook entry matched them")
+}
+```
+
+**Census API key.** The first run downloads the census tables with the `tidycensus` package, which needs a free key from <https://api.census.gov/data/key_signup.html>. Save it once with `tidycensus::census_api_key("YOUR_KEY", install = TRUE)` and restart R. Later runs read the saved files in the census folder and need neither the key nor a connection. To refresh the census data or change the year, age range, or state, change the setting (or delete the saved files) and run again.
+
+```{r}
+#| label: export
+export_long <- imap_dfr(EXPORT, function(tbl, id) {
+  first <- names(tbl)[1]
+  tbl |>
+    mutate(across(everything(), as.character), row_order = row_number()) |>
+    rename(row = all_of(first)) |>
+    pivot_longer(-c(row, row_order), names_to = "column", values_to = "value") |>
+    mutate(table = id, row_header = first, .before = 1)
+}) |>
+  mutate(render_mode = RUN_MODE, suppress_n = SUPPRESS_N, .before = 1)
+
+export_path <- file.path(cfg$output_dir, paste0("sq103_tables_", RUN_MODE, ".csv"))
+write_csv(export_long, export_path, na = "")
+```

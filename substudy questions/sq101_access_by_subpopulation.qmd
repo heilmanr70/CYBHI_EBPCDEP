@@ -1,5 +1,6 @@
 ---
-title: "Final Report Data Analysis: Study Questions 1.01 and 1.02"
+title: "Study Questions 1.01 and 1.02: Access to Services by Subpopulation and Grant Track"
+subtitle: "CYBHI Scaling EBPs/CDEPs Workstream — Final Evaluation Report"
 author: "Cristin Young"
 date: today
 format:
@@ -55,6 +56,8 @@ Total number of clients served and by demographics
 #| label: setup
 suppressPackageStartupMessages({
   library(tidyverse)
+  library(haven)
+  library(janitor)
   library(knitr)
 })
 options(dplyr.summarise.inform = FALSE, knitr.kable.NA = "", scipen = 999)
@@ -64,8 +67,9 @@ options(dplyr.summarise.inform = FALSE, knitr.kable.NA = "", scipen = 999)
 #| label: config
 # Defaults are used when running chunks interactively; YAML params take precedence when rendering.
 defaults <- list(
-  path_discharge   = "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv",
-  path_demographic = "/Users/cristin/CWS Dropbox/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv",
+  path_discharge   = "~/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/discharge_data_clean.csv",
+  path_demographic = "~/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv",
+  path_grantee     = "~/Dropbox-CWS/Cristin Young/CYBHI Project/Data/MASTER Grantee Files/Quant Team File/MasterGranteeSpreadsheet_forBHESQuantTeam_1-20-26_NEW!.sav",
   output_dir       = "output/sq101",
   start_date       = "2024-01-01",
   suppress_n       = 60,
@@ -83,6 +87,12 @@ RUN_MODE   <- if (SHAREABLE) "SHAREABLE" else "INTERNAL"
 SUPPR      <- "Suppr."
 MASKED     <- "Unrecognized value (masked)"
 NOT_REPORTED <- "Not reported / missing"
+
+# Grantee file columns (names as they stand after the cleaning in `load_data`), renamed on read to the
+# names on the left. `provider` and `provider_id` are the join keys to the demographic file.
+GRANTEE_COLS <- c(provider = "1a_grantee_provider_name", provider_id = "2grantee_provider_id",
+                  grant_track = "7a_grant_track")
+GRANTEE_KEYS <- c("provider", "provider_id")
 
 # ---- Codebooks (label = code). The *_num columns and the "known value" lists both come from here. ----
 INSURANCE_CODES <- c(
@@ -393,6 +403,10 @@ show_table <- function(tbl, id, caption = NULL) {
   kable(tbl, caption = caption, align = c("l", rep("r", ncol(tbl) - 1)))
 }
 
+# Join keys compared as trimmed, lower-case text, so a number stored as text in one file and as a
+# number in the other, or a stray space or capital, does not stop a provider from matching.
+join_key <- function(x) str_to_lower(str_squish(as.character(x)))
+
 # Unique clients (first row per client) among rows that pass the given filters.
 clients_with <- function(...) {
   all_data_filtered |> filter(...) |> distinct(client_system_id, .keep_all = TRUE)
@@ -403,6 +417,16 @@ clients_with <- function(...) {
 #| label: load_data
 discharge_data_filtered <- read_csv(cfg$path_discharge, show_col_types = FALSE, progress = FALSE)
 all_data <- read_csv(cfg$path_demographic, show_col_types = FALSE, progress = FALSE)
+
+# Master grantee file (SPSS): provider name, provider ID, and grant track (start-up or expansion).
+grantee_file <- read_spss(cfg$path_grantee) |>
+  zap_missing() |>
+  rename_with(~ gsub("^@", "", .x)) |>
+  clean_names() |>
+  rename_with(~ gsub("^x", "", .x)) |>
+  select(all_of(GRANTEE_COLS)) |>
+  mutate(grant_track = as_factor(grant_track),          # value labels, where the column has them
+         across(everything(), ~ na_if(str_squish(as.character(.x)), "")))
 
 qa_flow <- tibble(step = "Discharge file: rows read", n = nrow(discharge_data_filtered))
 qa_flow <- bind_rows(qa_flow, tibble(step = "Demographic file: rows read", n = nrow(all_data)))
@@ -418,8 +442,19 @@ discharge_data_filtered <- discharge_data_filtered |>
     !is.na(intervention_name)
   )
 
+# One grant track per provider. A provider listed under more than one track gets a combined label,
+# because its clients cannot be assigned to a single track from the provider alone.
+grantee_tracks <- grantee_file |>
+  filter(!is.na(grant_track)) |>
+  mutate(across(all_of(GRANTEE_KEYS), join_key)) |>
+  distinct() |>
+  summarise(n_tracks = n(), grant_track = str_flatten(sort(grant_track), " and "), .by = all_of(GRANTEE_KEYS))
+
 # Clean all demographic variables in one pass
 all_data <- all_data |>
+  mutate(across(all_of(GRANTEE_KEYS), join_key, .names = "{.col}_key")) |>
+  left_join(select(grantee_tracks, -n_tracks), by = set_names(GRANTEE_KEYS, paste0(GRANTEE_KEYS, "_key")),
+            na_matches = "never", relationship = "many-to-one") |>
   mutate(
     insurance_status_clean   = clean_category(insurance_status, NR_INSURANCE),
     insurance_num            = unname(INSURANCE_CODES[insurance_status_clean]),
@@ -483,7 +518,14 @@ qa_flow <- bind_rows(
          n = sum(discharge_data_filtered$intervention_start >= cfg$start_date)),
   tibble(step = paste0("Demographic file: rows with intervention start and name, from ", cfg$start_date),
          n = nrow(all_data_filtered)),
-  tibble(step = "Demographic file: unique clients (client_system_id)", n = nrow(clients))
+  tibble(step = "Demographic file: unique clients (client_system_id)", n = nrow(clients)),
+  tibble(step = "Grantee file: providers with a grant track", n = nrow(grantee_tracks)),
+  tibble(step = "Grantee file: providers listed under more than one grant track", n = sum(grantee_tracks$n_tracks > 1)),
+  tibble(step = "Demographic file: rows whose provider has no grant track", n = sum(is.na(all_data_filtered$grant_track))),
+  tibble(step = "Demographic file: unique clients whose first record has no grant track", n = sum(is.na(clients$grant_track))),
+  tibble(step = "Demographic file: unique clients with records under more than one grant track",
+         n = all_data_filtered |> filter(!is.na(grant_track)) |>
+           summarise(n = n_distinct(grant_track), .by = client_system_id) |> filter(n > 1) |> nrow())
 )
 
 RACE_ORDER <- c(unname(RACE_LABELS), CODE_0_LABEL)
@@ -717,11 +759,47 @@ tab_two_way(d$client_type, d$housing_status_clean, "Client type", names(HOUSING_
 
 Cross-tab of demographics and grant types: Total number of clients served and by demographic, and by whether grant was start up or expansion
 
+**Definition:** The number of new clients served by grantees within the primary evaluation in the designated time frame, where "served" means that a client had a new intervention, grouped by the grant track (start-up or expansion) of the provider that served them.
+
+**Calculation:** Grant track comes from the master grantee file and is joined to client records by provider name and provider ID. Each table shows, for every grant track, the percentage and number of clients in each demographic group (row percentages).
+
+**Assumptions:** Clients had to have an intervention start, an intervention name, and the characteristic in the table reported (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients), so a client served under more than one grant track is counted under the track of their first record. Clients whose provider did not match a grant track in the grantee file are shown as "Not reported / missing" rather than dropped, so each table's Total row matches the corresponding 1.01 table. A provider listed under more than one grant track in the grantee file is shown under a combined label.
+
 ```{r}
 #| label: q102
-# Placeholder. Once the start-up vs. expansion column is available, the same helpers apply, e.g.:
-# d <- clients_with(!is.na(grant_type), !is.na(race_label))
-# tab_two_way(d$grant_type, d$race_label, "Grant type", RACE_ORDER) |> show_table("race_by_grant_type")
+#| results: asis
+# `like` is the id of the 1.01 table whose totals each cross-tab must stay consistent with.
+TRACK_VARS <- tribble(
+  ~var,                       ~title,               ~order,                          ~like,
+  "race_label",               "Race",               RACE_ORDER,                      "race",
+  "ethn_label",               "Ethnicity",          ETHN_ORDER,                      "ethnicity",
+  "insurance_status_clean",   "Insurance status",   names(INSURANCE_CODES),          "insurance",
+  "sexual_orientation_clean", "Sexual orientation", names(SEXUAL_ORIENTATION_CODES), "sexual_orientation",
+  "gender_identity_clean",    "Gender identity",    names(GENDER_IDENTITY_CODES),    "gender_identity",
+  "preferred_language_clean", "Preferred language", names(LANGUAGE_CODES),           "preferred_language_by_quarter",
+  "primary_language_clean",   "Primary language",   names(LANGUAGE_CODES),           "primary_language_by_quarter",
+  "housing_status_clean",     "Housing status",     names(HOUSING_CODES),            "housing_by_quarter"
+)
+
+# A track's total minus a cross-tab's N for that track is the number of its clients with that
+# characteristic missing. A shareable render shows the totals only if none of those counts is below
+# SUPPRESS_N.
+missing_by_track <- unlist(map(TRACK_VARS$var, \(v) count(filter(clients, is.na(.data[[v]])), grant_track)$n))
+cat("\n\n### Total clients served by grant track\n\n")
+if (SHAREABLE && any(missing_by_track < SUPPRESS_N)) {
+  cat("Not shown in this shareable render: combined with the tables below, the totals would reveal a count below ",
+      SUPPRESS_N, ".\n", sep = "")
+} else {
+  tab_one_way(clients$grant_track, "Grant track") |> show_table("grant_track") |> print()
+}
+
+pwalk(TRACK_VARS, function(var, title, order, like) {
+  d <- clients_with(!is.na(.data[[var]]))
+  cat("\n\n### ", title, " by grant track\n\n", sep = "")
+  tab_two_way(d$grant_track, d[[var]], "Grant track", order, like = EXPORT[[like]]) |>
+    show_table(paste0(var, "_by_grant_track")) |>
+    print()
+})
 ```
 
 # Data quality checks
@@ -741,6 +819,20 @@ unrecognized <- map_dfr(names(KNOWN_VALUES), function(f) {
     filter(!is.na(value), !(value %in% KNOWN_VALUES[[f]])) |>
     summarise(clients = n_distinct(id), records = n(), .by = c(field, value))
 })
+
+# Providers in the demographic file with no grant track in the grantee file. Provider names are
+# listed in the internal render only; the shareable render carries the counts in the sample flow.
+unmatched <- all_data_filtered |>
+  filter(is.na(grant_track)) |>
+  summarise(Clients = n_distinct(client_system_id), Records = n(), .by = all_of(GRANTEE_KEYS)) |>
+  arrange(desc(Clients))
+if (!SHAREABLE && nrow(unmatched) > 0) {
+  unmatched |>
+    mutate(across(c(Clients, Records), fmt_n)) |>
+    show_table("qa_providers_without_grant_track",
+               caption = "Providers with no grant track match in the grantee file") |>
+    print()
+}
 
 if (nrow(unrecognized) == 0) {
   cat("Every non-missing value matched the codebook.\n")
