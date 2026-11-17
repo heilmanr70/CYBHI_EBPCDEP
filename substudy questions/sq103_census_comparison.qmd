@@ -14,7 +14,7 @@ execute:
   warning: false   # warning text can quote raw data values, so it stays off in every render
   message: false
 params:
-  shareable: true
+  shareable: false
   suppress_n: 60
 ---
 
