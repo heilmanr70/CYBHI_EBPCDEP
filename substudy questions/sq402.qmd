@@ -28,7 +28,7 @@ params:
   link_by_provider: true
   link_fallback_primary_client: true
   large_program_pattern: "give ?thx"
-  shareable: true
+  shareable: false
 ---
 
 # Purpose and approach

@@ -1,0 +1,754 @@
+---
+title: "Study Questions 3.03 to 3.16: Clinical and Functional Outcomes (Combined Tables)"
+subtitle: "CYBHI Scaling EBPs/CDEPs Workstream — Final Evaluation Report"
+author: "Cristin Young"
+date: today
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-depth: 3
+    code-tools: false
+execute:
+  echo: false
+  warning: false   # warning text can quote raw data values, so it stays off in every render
+  message: false
+params:
+  shareable: true
+  suppress_n: 60
+---
+
+```{r}
+#| label: shareable-banner
+#| echo: false
+#| results: asis
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+if (isTRUE(getOption("knitr.in.progress")) && isTRUE(as.logical(params$shareable))) {
+  k0 <- if (!is.null(params$suppress_n)) as.integer(params$suppress_n) else 60L
+  cat(sprintf(paste0(
+    "\n\n::: {.callout-note}\n## Shareable render\n\n",
+    "Counts from 1 to %1$s are shown as \"Suppr.\", along with any other cell, total, or percentage ",
+    "that would let a suppressed count be recovered by subtraction. Zeros are also hidden in any row ",
+    "or column with fewer than %2$s clients, and a row whose total is suppressed shows counts without ",
+    "percentages. Score statistics and test results for fewer than %2$s clients are suppressed, and figures that ",
+    "draw counts or individual clients are left out. Data-quality counts below ",
+    "%2$s are shown as \"<%2$s\". Render with `shareable: false` to see exact counts locally.\n:::\n\n"),
+    k0 - 1L, k0))
+}
+```
+
+# 3. Did EBP/CDEP services impact clinical and functional outcomes for clients who participated?
+
+This script puts the outcome tables for study questions 3.03 to 3.12, 3.15, and 3.16 in one document. It runs the same code as the individual scripts for those questions; set `SHOW_FIGURES` to `TRUE` in the config chunk to add their figures.
+
+**Inclusion criteria:** 1. must have initial time point data (i.e., be enrolled in an intervention), and 2. must have a valid assessment collected at both intake and discharge time points.
+
+**Scoring:** For NOMS (3.03 to 3.10), an **increase** in score is a positive outcome. For SDQ (3.11, 3.16), PSS (3.12), and CPSS-5 (3.15), a **decrease** is a positive outcome.
+
+**Assumptions:** The cleaned files already exclude dates before 2024-01-01 and after the run date, exclude follow-ups within 3 days of the initial assessment, and pair each initial assessment to the LAST follow-up. Rows with no outcome recorded are left out before percentages are computed.
+
+```{r}
+#| label: setup
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(ggridges)
+  library(patchwork)
+  library(knitr)
+})
+options(dplyr.summarise.inform = FALSE, knitr.kable.NA = "", scipen = 999)
+```
+
+```{r}
+#| label: config
+# Defaults are used when running chunks interactively; YAML params take precedence when rendering.
+defaults <- list(
+  data_dir   = "~/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data",
+  output_dir = "output/sq303_316",
+  suppress_n = 60,
+  shareable  = FALSE
+)
+cfg <- modifyList(defaults, if (isTRUE(getOption("knitr.in.progress"))) as.list(params) else list())
+
+# Shareable render: counts of 1 to SUPPRESS_N - 1 are suppressed in every results table (with
+# complementary suppression), statistics for fewer than SUPPRESS_N clients are suppressed, figures that
+# draw counts or individual clients are left out, and QA counts of 1 to SUPPRESS_N - 1 display as
+# "<SUPPRESS_N". The default (internal) render shows exact counts and must not be shared.
+SUPPRESS_N <- as.integer(cfg$suppress_n)
+SHAREABLE  <- isTRUE(as.logical(cfg$shareable))
+RUN_MODE   <- if (SHAREABLE) "SHAREABLE" else "INTERNAL"
+SUPPR      <- "Suppr."
+NOT_REPORTED <- "Not reported / missing"
+FILE_TAG   <- "sq303_316"            # prefix of every file this script writes
+SHOW_FIGURES <- FALSE
+
+# Paired scores: column names in the cleaned files, and how the two time points are labelled and drawn.
+SCORE_COLS <- c("initial_score", "follow_up_score")
+TIMEPOINTS <- c("Initial", "Follow-up")
+TIMEPOINT_COLOURS <- set_names(c("#8A8C8E", "#BBDB49"), TIMEPOINTS)
+
+# NOMS files, one per respondent group (produced by data cleaning/noms_data_cleaning.qmd). The first
+# row is the caregiver-rated child version and the second the self-report version.
+RESPONDENTS <- tribble(
+  ~id,     ~respondent,  ~file,
+  "child", "Child",      "noms_child_pairs_clean.csv",
+  "self",  "Self",       "noms_self_pairs_clean.csv"
+)
+# NOMS items are rated from ITEM_RANGE[1] to ITEM_RANGE[2]. The benchmark is a rating of HIGH_RATING
+# on every item of a domain (4 on the single mental health item; 28 on a seven-item domain).
+ITEM_RANGE  <- c(1, 5)
+HIGH_RATING <- 4
+# Domains: the study questions they answer (child version, self version) and the pattern that picks
+# the domain's item scores out of the `question` column.
+DOMAINS <- tribble(
+  ~sq_child, ~sq_self, ~domain,                 ~short, ~item_pattern,
+  "3.03", "3.04", "Mental health", "Q1", "^q1_.*_score$",
+  "3.05", "3.06", "Daily life functioning", "Q2", "^x2.*_score$",
+  "3.07", "3.08", "Well-being", "Q3", "^x3.*_score$",
+  "3.09", "3.10", "Social connectedness", "Q4", "^x4.*_score$"
+)
+# Direction of change, in the order worse, same, better (an increase is a positive outcome).
+DIRECTION <- c("Worsened", "No change", "Improved")
+DIRECTION_COLOURS <- set_names(c("firebrick", "gray50", "forestgreen"), DIRECTION)
+
+# SDQ versions (produced by data cleaning/sdq_data_cleaning.qmd).
+SDQ_VERSIONS <- tribble(
+  ~id,     ~version,             ~file,
+  "p24",   "SDQ Parent (2-4)",   "sdq_p24_pairs_clean.csv",
+  "p410",  "SDQ Parent (4-10)",  "sdq_p410_pairs_clean.csv",
+  "p1117", "SDQ Parent (11-17)", "sdq_p1117_pairs_clean.csv",
+  "s1117", "SDQ Self (11-17)",   "sdq_s1117_pairs_clean.csv"
+)
+# The two SDQ scores reported, the study question each answers, and their columns in the cleaned files.
+SDQ_SCORES <- tribble(
+  ~score,  ~sq,    ~title,                     ~initial,        ~follow_up,        ~outcome,
+  "ext",   "3.11", "Externalizing score",      "initial_ext",   "follow_up_ext",   "positive_outcome_ext",
+  "total", "3.16", "Total difficulties score", "initial_total", "follow_up_total", "positive_outcome_total"
+)
+BY_QUARTER <- FALSE               # also show each outcome by follow-up quarter
+
+# Measures scored in the cleaning scripts: one row per client with initial_score, follow_up_score, and
+# positive_outcome. `wilcoxon` adds a paired signed-rank test of follow-up against initial scores.
+MEASURES <- tribble(
+  ~id, ~heading, ~label, ~file, ~x_label, ~wilcoxon,
+  "pss", "## 3.12 PSS: reduction in parent-related stress", "PSS", "pss_paired_clean.csv", "PSS score (18-90)", FALSE,
+  "cpss_i", "## 3.15 CPSS-5 Interviewer version: reductions in PTSD symptoms", "CPSS-5 Interviewer", "cpss_i_paired_clean.csv", "CPSS-5 score (0-80)", FALSE,
+  "cpss_s", "## 3.15 CPSS-5 Self-report version: reductions in PTSD symptoms", "CPSS-5 Self-report", "cpss_s_paired_clean.csv", "CPSS-5 score (0-80)", TRUE
+)
+
+dir.create(cfg$output_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+```{r}
+#| label: helpers
+# Formatting, suppression, and table helpers are copied verbatim from the 1.01 script; keep them in sync.
+fmt_n <- function(n) formatC(as.numeric(n), format = "f", digits = 0, big.mark = ",")
+fmt_n_qa <- function(n) {
+  ifelse(SHAREABLE & !is.na(n) & n > 0 & n < SUPPRESS_N, paste0("<", SUPPRESS_N), fmt_n(n))
+}
+fmt_pct <- function(p, digits = 1) {
+  ifelse(is.na(p) | is.nan(p), "", sprintf(paste0("%.", digits, "f%%"), 100 * p))
+}
+fmt_p   <- function(p) case_when(is.na(p) ~ NA_character_, p < 0.001 ~ "<0.001", TRUE ~ sprintf("%.3f", p))
+
+# ---- Primary and complementary suppression ----
+# `x` holds every published or derivable number in a table (cells and totals). Each element of `lines`
+# indexes entries tied by one additive constraint, with the total LAST (a row's cells, then its total).
+# Counts of 1 to k - 1 are suppressed, then more entries are suppressed until:
+#   (a) no line has exactly one suppressed entry, which subtraction would recover;
+#   (b) in a line whose total is shown, the suppressed cells add up to at least k, so their combined
+#       count (total minus the shown cells) is not itself a small count; and
+#   (c) no suppressed count below k, and no sum of two suppressed counts that is below k, can be
+#       solved for exactly from all of the table's constraints taken together (checked by matrix rank).
+# Extra suppressions go to the entry with the lowest `weight` (by default, the smallest count).
+# An entry with weight Inf is never chosen, e.g. because another table already shows it. An entry
+# that can be read off a line whose other entries are all zero or shown elsewhere cannot be
+# protected, so it is never chosen either. If no entry can protect a hidden count, the render stops
+# rather than publish a count that could be recovered.
+pick_entry <- function(cand, weight) {
+  cand <- cand[is.finite(weight[cand])]
+  if (length(cand) == 0L) NA_integer_ else cand[which.min(weight[cand])]
+}
+
+recoverable_entries <- function(x, lines, s, k) {
+  sup <- which(s)
+  if (length(sup) == 0L) return(integer())
+  A <- do.call(rbind, lapply(lines, function(ln) {
+    row <- numeric(length(x))
+    row[ln] <- c(rep(1, length(ln) - 1L), -1)
+    row[sup]
+  }))
+  A <- A[rowSums(A != 0) > 0, , drop = FALSE]
+  if (nrow(A) == 0L) return(integer())
+  r <- qr(A)$rank
+  solvable <- function(v) qr(rbind(A, v))$rank == r
+  unit <- function(j) as.numeric(seq_along(sup) == j)
+  small <- which(x[sup] < k)
+  hits <- sup[small[vapply(small, function(j) solvable(unit(j)), logical(1))]]
+  if (length(hits) == 0L && length(small) > 1L) {
+    for (pr in combn(small, 2, simplify = FALSE)) {
+      if (sum(x[sup[pr]]) < k && solvable(unit(pr[1]) + unit(pr[2]))) {
+        hits <- sup[pr]
+        break
+      }
+    }
+  }
+  hits
+}
+
+suppress_lines <- function(x, lines, k = SUPPRESS_N, init = NULL, weight = x) {
+  s <- !is.na(x) & x > 0 & x < k
+  if (!is.null(init)) s <- s | init
+  repeat {
+    pinned <- unlist(lapply(lines, function(ln) {
+      unknown <- ln[x[ln] > 0 & (is.finite(weight[ln]) | s[ln])]
+      if (length(unknown) == 1L && is.finite(weight[unknown])) unknown
+    }))
+    if (length(pinned) == 0L) break
+    weight[pinned] <- Inf
+  }
+  open_entries <- function(idx) idx[!s[idx] & x[idx] > 0]
+  cannot_protect <- function() {
+    stop("Complementary suppression cannot protect a hidden count: every entry that could be ",
+         "hidden with it is zero or shown in another table.", call. = FALSE)
+  }
+  repeat {
+    j <- NA_integer_
+    for (ln in lines) {
+      tot <- ln[length(ln)]
+      cells <- ln[-length(ln)]
+      small_sum <- !s[tot] && any(s[cells]) && sum(x[cells][s[cells]]) < k
+      if (sum(s[ln]) == 1L || small_sum) {
+        j <- pick_entry(open_entries(ln), weight)
+        if (is.na(j)) cannot_protect()
+        break
+      }
+    }
+    if (is.na(j)) {
+      rec <- recoverable_entries(x, lines, s, k)
+      if (length(rec) > 0L) {
+        near <- unique(unlist(lines[vapply(lines, function(ln) any(rec %in% ln), logical(1))]))
+        j <- pick_entry(open_entries(near), weight)
+        if (is.na(j)) j <- pick_entry(open_entries(seq_along(x)), weight)
+        if (is.na(j)) cannot_protect()
+      }
+    }
+    if (is.na(j)) break
+    s[j] <- TRUE
+  }
+  s
+}
+
+# Suppression pattern for a matrix of counts with its totals attached: row totals in the last column
+# and column totals in the last row. Every row and column is a line. Extra suppressions go to inner
+# cells first, then to row totals, and to the grand total last, because hiding the grand total forces
+# a column total to be hidden too. `init` marks entries that start hidden and `fixed` marks entries
+# that are never hidden, usually because another table hides or shows the same number.
+suppress_table <- function(ext, init = FALSE, fixed = FALSE) {
+  R <- nrow(ext) - 1L
+  C <- ncol(ext) - 1L
+  idx <- matrix(seq_along(ext), nrow(ext))
+  lines <- c(lapply(seq_len(R + 1L), function(i) idx[i, ]),
+             lapply(seq_len(C + 1L), function(j) idx[, j]))
+  weight <- as.vector(ext)
+  weight[idx[seq_len(R), C + 1L]] <- weight[idx[seq_len(R), C + 1L]] + 1e9
+  weight[idx[R + 1L, C + 1L]] <- weight[idx[R + 1L, C + 1L]] + 2e9
+  weight[rep_len(as.vector(fixed), length(ext))] <- Inf
+  s <- suppress_lines(as.vector(ext), lines, init = rep_len(as.vector(init), length(ext)), weight = weight)
+  matrix(s, nrow(ext))
+}
+
+# One-way frequency table in the interim report's layout: N, % of all, and % excluding N/As.
+# `not_reported` lists labels (besides NA) that count as non-substantive. The result carries the
+# categories it shows and hides, so a cross-tab of the same variable can match them (see `like`).
+tab_one_way <- function(x, label = "Category", order = character(), not_reported = character(),
+                        show_valid = TRUE, digits = 1) {
+  if (length(x) == 0L) return(tibble(!!label := "No records"))
+  x <- if_else(is.na(x), NOT_REPORTED, as.character(x))
+  nr_labels <- c(not_reported, NOT_REPORTED)
+  counts <- count(tibble(category = x), category)
+  present <- counts$category
+  lv <- c(intersect(setdiff(order, nr_labels), present),
+          sort(setdiff(present, c(order, nr_labels))),
+          intersect(nr_labels, present))
+  counts <- counts[match(lv, counts$category), ]
+
+  n <- counts$n
+  is_sub <- !(counts$category %in% nr_labels)
+  m <- length(n)
+  i_sub <- m + 1L; i_nr <- m + 2L; i_tot <- m + 3L
+  x_all <- c(n, sum(n[is_sub]), sum(n[!is_sub]), sum(n))
+  lines <- list(c(which(is_sub), i_sub), c(which(!is_sub), i_nr), c(i_sub, i_nr, i_tot))
+  s <- if (SHAREABLE) suppress_lines(x_all, lines) else rep(FALSE, length(x_all))
+  sc <- s[seq_len(m)]
+
+  body <- tibble(
+    category = counts$category,
+    N = if_else(sc, SUPPR, fmt_n(n)),
+    `%` = if_else(sc | s[i_tot], SUPPR, fmt_pct(n / x_all[i_tot], digits)),
+    `% (excluding N/As)` = case_when(
+      !is_sub         ~ "N/A",
+      sc | s[i_sub]   ~ SUPPR,
+      TRUE            ~ fmt_pct(n / x_all[i_sub], digits)
+    )
+  )
+  subtotal <- tibble(
+    category = "Subtotal: substantive responses",
+    N = if_else(s[i_sub], SUPPR, fmt_n(x_all[i_sub])),
+    `%` = if_else(s[i_sub] | s[i_tot], SUPPR, fmt_pct(x_all[i_sub] / x_all[i_tot], digits)),
+    `% (excluding N/As)` = if_else(s[i_sub], SUPPR, "100.0%")
+  )
+  total <- tibble(category = "Total", N = if_else(s[i_tot], SUPPR, fmt_n(x_all[i_tot])),
+                  `%` = if_else(s[i_tot], SUPPR, "100.0%"), `% (excluding N/As)` = "")
+
+  out <- if (show_valid) {
+    bind_rows(body[is_sub, ], subtotal, body[!is_sub, ], total)
+  } else {
+    bind_rows(body, total) |> select(-`% (excluding N/As)`)
+  }
+  out <- rename(out, !!label := category)
+  attr(out, "hidden") <- counts$category[sc]
+  attr(out, "shown")  <- counts$category[!sc]
+  # A cross-tab of this variable leaves out missing values, so its grand total can be read from this
+  # table only when no total and no non-substantive count here is hidden.
+  attr(out, "total_hidden") <- any(s[c(which(!is_sub), i_sub, i_nr, i_tot)])
+  out
+}
+
+# Two-way table with row percentages and counts, e.g. "45% (1,234)", plus a Total row and an N column.
+# Every row and column (including the Total row and N column) is a suppression line (see
+# `suppress_table()`). A row whose total is hidden shows counts without percentages, because its
+# percentages would reveal that total. Rows follow factor level order when `rows` is a factor.
+# `like`: an earlier table of the same column variable over the same clients (one-way or two-way).
+# Its hidden categories and grand total start hidden in this table's Total row, and the ones it shows
+# are never hidden here, so the two tables cannot be combined to recover a suppressed count.
+tab_two_way <- function(rows, cols, row_label = "Group", col_order = character(), digits = 0,
+                        like = NULL) {
+  if (length(rows) == 0L) return(tibble(!!row_label := "No records"))
+  row_lv <- as.character(sort(unique(rows[!is.na(rows)])))
+  rows <- if_else(is.na(rows), NOT_REPORTED, as.character(rows))
+  cols <- if_else(is.na(cols), NOT_REPORTED, as.character(cols))
+  if (any(rows == NOT_REPORTED)) row_lv <- c(row_lv, NOT_REPORTED)
+  present <- unique(cols)
+  col_lv <- c(intersect(setdiff(col_order, NOT_REPORTED), present),
+              sort(setdiff(present, c(col_order, NOT_REPORTED))),
+              intersect(NOT_REPORTED, present))
+
+  m <- unclass(table(factor(rows, row_lv), factor(cols, col_lv)))
+  R <- nrow(m); C <- ncol(m)
+  ext <- rbind(cbind(m, rowSums(m)), c(colSums(m), sum(m)))
+
+  s_mat <- matrix(FALSE, R + 1, C + 1)
+  if (SHAREABLE) {
+    init <- fixed <- matrix(FALSE, R + 1, C + 1)
+    if (!is.null(like)) {
+      init[R + 1, ]  <- c(col_lv %in% attr(like, "hidden"), isTRUE(attr(like, "total_hidden")))
+      fixed[R + 1, ] <- c(col_lv %in% attr(like, "shown"), !init[R + 1, C + 1])
+    }
+    s_mat <- suppress_table(ext, init, fixed)
+  }
+  shown_s <- s_mat
+  if (SHAREABLE) {
+    # In a row or column whose total is below k, zeros are hidden too: otherwise they would show
+    # which categories the small group falls into (e.g., a row that is zero everywhere but one cell).
+    small_row <- ext[, C + 1] > 0 & ext[, C + 1] < SUPPRESS_N
+    small_col <- ext[R + 1, ] > 0 & ext[R + 1, ] < SUPPRESS_N
+    shown_s <- s_mat | (ext == 0 & (outer(small_row, rep(TRUE, C + 1)) | outer(rep(TRUE, R + 1), small_col)))
+  }
+
+  pct <- ext / ext[, C + 1]
+  cell <- matrix(paste0(fmt_pct(pct, digits), " (", fmt_n(ext), ")"), nrow(ext))
+  no_pct <- s_mat[, C + 1]                      # rows (including Total) whose total is hidden
+  cell[no_pct, ] <- matrix(fmt_n(ext[no_pct, , drop = FALSE]), sum(no_pct))
+  cell[shown_s] <- SUPPR
+  cell[, C + 1] <- ifelse(s_mat[, C + 1], SUPPR, fmt_n(ext[, C + 1]))
+  colnames(cell) <- c(col_lv, "N")
+  out <- as_tibble(cell) |> mutate(!!row_label := c(row_lv, "Total"), .before = 1)
+  attr(out, "hidden") <- union(attr(like, "hidden"), col_lv[s_mat[R + 1, seq_len(C)]])
+  attr(out, "shown")  <- col_lv[!s_mat[R + 1, seq_len(C)]]
+  attr(out, "total_hidden") <- s_mat[R + 1, C + 1]
+  out
+}
+
+# Show a table and keep a copy for the CSV export at the end.
+EXPORT <- list()
+show_table <- function(tbl, id, caption = NULL) {
+  EXPORT[[id]] <<- tbl
+  kable(tbl, caption = caption, align = c("l", rep("r", ncol(tbl) - 1)))
+}
+```
+
+```{r}
+#| label: outcome-helpers
+# ---- Helpers shared by the 3.03 to 3.16 outcome scripts; keep them in sync ----
+fmt_num <- function(x, digits = 2) formatC(as.numeric(x), format = "f", digits = digits, big.mark = ",")
+
+data_path <- function(file) file.path(cfg$data_dir, file)
+read_pairs <- function(file) read_csv(data_path(file), show_col_types = FALSE, progress = FALSE)
+
+qa_flow <- tibble(step = character(), n = integer())
+qa_add <- function(step, n) qa_flow <<- bind_rows(qa_flow, tibble(step = step, n = as.integer(n)))
+is_small <- function(n) SHAREABLE & n > 0 & n < SUPPRESS_N
+
+# Complete pairs in long form: one row per client and time point. `cols` names the initial and
+# follow-up score columns, in that order.
+scores_long <- function(d, cols = SCORE_COLS) {
+  d |>
+    ungroup() |>
+    filter(!is.na(client_system_id), if_all(all_of(cols), ~ !is.na(.x))) |>
+    select(client_system_id, all_of(cols)) |>
+    pivot_longer(all_of(cols), names_to = "score_type", values_to = "score_value") |>
+    mutate(score_type = factor(TIMEPOINTS[match(score_type, cols)], levels = TIMEPOINTS))
+}
+
+# Mean, median, and SD at each time point (within each level of `by`, if given).
+score_stats <- function(long, by = NULL) {
+  long |>
+    summarise(n = n(), mean = mean(score_value), median = median(score_value), sd = sd(score_value),
+              .by = all_of(c(by, "score_type"))) |>
+    arrange(across(all_of(c(by, "score_type"))))
+}
+
+# Shareable render: statistics for 1 to SUPPRESS_N - 1 clients are suppressed.
+fmt_score_stats <- function(stats) {
+  hide <- is_small(stats$n)
+  stats |>
+    mutate(across(c(mean, median, sd), ~ if_else(hide, SUPPR, fmt_num(.x))),
+           n = if_else(hide, SUPPR, fmt_n(n))) |>
+    rename(`Time point` = score_type, N = n, Mean = mean, Median = median, SD = sd)
+}
+
+# Clients by outcome, among clients with an outcome recorded.
+tab_outcome <- function(x, label = "Outcome", order = character()) {
+  tab_one_way(x[!is.na(x)], label, order, show_valid = FALSE)
+}
+
+# Clients scoring at or above `cut` at each time point. Shareable render: the count at or above, the
+# count below, and the total are one suppression line, so a percentage is hidden with its count.
+at_or_above <- function(long, cut) {
+  long |>
+    summarise(n = n(), n_at = sum(score_value >= cut), .by = score_type) |>
+    mutate(s = map2(n_at, n, \(a, t) if (SHAREABLE) suppress_lines(c(a, t - a, t), list(1:3)) else rep(FALSE, 3)),
+           hide_pct = map_lgl(s, \(s) any(s[1:2])), hide_n = map_lgl(s, 3), pct = n_at / n) |>
+    select(-s)
+}
+fmt_at_or_above <- function(x, cut) {
+  x |>
+    transmute(`Time point` = score_type, N = if_else(hide_n, SUPPR, fmt_n(n)),
+              !!paste0("% scoring ", cut, " or higher") := if_else(hide_pct, SUPPR, fmt_pct(pct)))
+}
+
+# ---- Figures ----
+theme_scores <- function() {
+  theme_minimal() +
+    theme(axis.title = element_text(size = 9), axis.text = element_text(size = 9),
+          panel.grid.major = element_blank(), panel.grid.minor.x = element_blank(),
+          axis.line.x = element_line(color = "lightgrey", linewidth = 0.5),
+          legend.title = element_blank(), legend.text = element_text(size = 8),
+          plot.title = element_text(size = 11), plot.margin = margin(5, 5, 5, 5))
+}
+
+# Print a figure and save a copy. A figure that draws counts or one mark per client could reveal a
+# small count, so it is `internal_only` and a shareable render leaves it out. `make` is a function,
+# so nothing is drawn in that case.
+show_plot <- function(make, id, internal_only = FALSE, width = 7, height = 4.5) {
+  if (!SHOW_FIGURES) return(invisible())
+  if (internal_only && SHAREABLE) {
+    cat("\n\n*Figure not shown in this shareable render: it could reveal a count below ", SUPPRESS_N, ".*\n\n", sep = "")
+    return(invisible())
+  }
+  p <- make()
+  ggsave(file.path(cfg$output_dir, paste0(FILE_TAG, "_", id, "_", RUN_MODE, ".png")), p,
+         width = width, height = height, dpi = 300, bg = "white")
+  print(p)
+  cat("\n\n")
+}
+
+plot_score_bars <- function(long, x_label, title) {
+  ggplot(long, aes(score_value, fill = score_type)) +
+    geom_bar(position = position_dodge2(preserve = "single", padding = 0.01), width = 0.8, alpha = 0.8) +
+    scale_fill_manual(values = TIMEPOINT_COLOURS) +
+    scale_y_continuous(expand = c(0, 0)) +
+    labs(x = x_label, y = "Count", title = title) +
+    theme_scores()
+}
+
+# Score distributions at the two time points, with a dotted line at each median.
+plot_score_density <- function(long, x_label, title) {
+  medians <- score_stats(long)
+  ggplot(long, aes(score_value, fill = score_type, colour = score_type)) +
+    geom_density(alpha = 0.7) +
+    geom_vline(aes(xintercept = median, colour = score_type), medians, linetype = "dotted", show.legend = FALSE) +
+    scale_fill_manual(values = TIMEPOINT_COLOURS, aesthetics = c("fill", "colour"),
+                      labels = paste0(TIMEPOINTS, " (median = ", fmt_num(medians$median, 1), ")")) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+    labs(x = x_label, y = NULL, title = title) +
+    theme_scores() +
+    theme(axis.text.y = element_blank(), legend.position = "top", legend.justification = "left")
+}
+# A shareable render draws score distributions only when every group has at least SUPPRESS_N clients.
+any_small <- function(long, by = NULL) any(is_small(score_stats(long, by)$n))
+```
+
+```{r}
+#| label: noms-helpers
+# ---- NOMS scoring and reporting ----
+# One row per client for one NOMS domain: the sum of the domain's item scores at each time point,
+# over the items answered at both. Totals outside the possible range of the full item set are dropped.
+noms_scores <- function(pairs, item_pattern, tag) {
+  items <- filter(pairs, str_detect(question, item_pattern))
+  n_items <- n_distinct(items$question)
+  totals <- items |>
+    filter(!is.na(client_system_id), !is.na(initial_score), !is.na(follow_up_score)) |>
+    summarise(initial_score = sum(initial_score), follow_up_score = sum(follow_up_score), n_answered = n(),
+              .by = client_system_id)
+  in_range <- \(x) between(x, n_items * ITEM_RANGE[1], n_items * ITEM_RANGE[2])
+  scores <- totals |>
+    filter(in_range(initial_score), in_range(follow_up_score)) |>
+    mutate(outcome = factor(DIRECTION[sign(follow_up_score - initial_score) + 2L], levels = DIRECTION))
+  qa_add(paste0(tag, ": items in the domain"), n_items)
+  qa_add(paste0(tag, ": clients with at least one item scored at both time points"), nrow(totals))
+  qa_add(paste0(tag, ": clients dropped because a total is outside the possible range"), nrow(totals) - nrow(scores))
+  qa_add(paste0(tag, ": clients in the analysis"), nrow(scores))
+  qa_add(paste0(tag, ": clients in the analysis with fewer item pairs than items"), sum(scores$n_answered < n_items))
+  qa_add(paste0(tag, ": clients in the analysis with more item pairs than items"), sum(scores$n_answered > n_items))
+  list(scores = scores, range = n_items * ITEM_RANGE, cut = n_items * HIGH_RATING)
+}
+
+# Arrow from each client's initial score to their follow-up score, for clients whose score changed.
+plot_client_change <- function(scores, title) {
+  scores |>
+    filter(outcome != DIRECTION[2]) |>
+    mutate(client = factor(client_system_id)) |>
+    ggplot(aes(y = client)) +
+    geom_segment(aes(x = initial_score, xend = follow_up_score, yend = client, colour = outcome),
+                 arrow = arrow(length = unit(0.2, "cm"))) +
+    geom_point(aes(x = initial_score), size = 1, colour = "grey30") +
+    geom_point(aes(x = follow_up_score), size = 1, colour = "grey30") +
+    scale_colour_manual(values = DIRECTION_COLOURS) +
+    labs(x = "Score", y = "Client", title = title) +
+    theme_scores() +
+    theme(axis.text.y = element_blank())
+}
+
+# Percentage at or above the benchmark at each time point, one arrow per respondent group.
+plot_benchmark_change <- function(bench, title) {
+  bench |>
+    select(respondent, score_type, pct) |>
+    pivot_wider(names_from = score_type, values_from = pct) |>
+    ggplot(aes(y = respondent)) +
+    geom_segment(aes(x = .data[[TIMEPOINTS[1]]], xend = .data[[TIMEPOINTS[2]]], yend = respondent),
+                 arrow = arrow(length = unit(0.2, "cm")), colour = "gray40", linewidth = 0.8) +
+    map(TIMEPOINTS, \(tp) list(
+      geom_point(aes(x = .data[[tp]], colour = tp), size = 12),
+      geom_text(aes(x = .data[[tp]], label = fmt_pct(.data[[tp]], 0)), size = 3.5, colour = "grey20"))) +
+    scale_x_continuous(limits = c(0, 1), labels = scales::label_percent()) +
+    scale_colour_manual(values = TIMEPOINT_COLOURS, breaks = TIMEPOINTS) +
+    labs(x = "Clients at or above the benchmark", y = NULL, title = title) +
+    theme_scores()
+}
+
+# Tables and figures for one NOMS domain: a section per respondent group, then the benchmark figure.
+noms_domain <- function(sq_child, sq_self, domain, short, item_pattern, question) {
+  bench <- pmap_dfr(RESPONDENTS, function(id, respondent, file) {
+    sq <- if (id == RESPONDENTS$id[1]) sq_child else sq_self
+    tag <- paste(sq, "NOMS", respondent, short)
+    key <- paste0("noms_", id, "_", str_to_lower(short))
+    res <- noms_scores(noms[[id]], item_pattern, tag)
+    long <- scores_long(res$scores)
+    span <- paste0(" (", res$range[1], "-", res$range[2], ")")
+    b <- at_or_above(long, res$cut)
+
+    cat("\n\n## ", sq, " NOMS ", respondent, " ", short, ": ", str_to_lower(domain), "\n\n", sep = "")
+    cat("Score range: ", res$range[1], " to ", res$range[2], ". An increase is a positive outcome.\n\n", sep = "")
+    tab_outcome(res$scores$outcome, "Change in score", DIRECTION) |>
+      show_table(paste0(key, "_outcome"), caption = "Clients by change from initial to follow-up score") |> print()
+    fmt_score_stats(score_stats(long)) |>
+      show_table(paste0(key, "_stats"), caption = "Scores at each time point") |> print()
+    fmt_at_or_above(b, res$cut) |>
+      show_table(paste0(key, "_benchmark"),
+                 caption = paste0("Clients at or above the benchmark (a rating of ", HIGH_RATING, " on every item)")) |> print()
+
+    show_plot(\() plot_score_bars(long, paste0(domain, " score", span),
+                                  paste("Distribution of initial and follow-up scores, NOMS", respondent, short)),
+              paste0(key, "_bars"), internal_only = TRUE)
+    show_plot(\() plot_score_density(long, paste0(domain, " score", span),
+                                 paste("Distribution of initial and follow-up scores, NOMS", respondent, short)),
+              paste0(key, "_density"), internal_only = any_small(long))
+    show_plot(\() plot_client_change(res$scores, paste0("Direction of change in ", short, " score: ", respondent)),
+              paste0(key, "_client_change"), internal_only = TRUE)
+    mutate(b, respondent = respondent)
+  })
+  # Respondent groups with a suppressed percentage at either time point are left off the figure.
+  shown <- filter(bench, !any(hide_pct), .by = respondent)
+  if (SHOW_FIGURES) cat("\n\n### ", short, " benchmark, initial to follow-up\n\n", sep = "")
+  show_plot(\() plot_benchmark_change(shown, paste0("Clients at or above the NOMS ", short, " benchmark, by respondent")),
+            paste0("noms_", str_to_lower(short), "_benchmark_change"), internal_only = nrow(shown) == 0, height = 3)
+}
+```
+
+```{r}
+#| label: sdq-helpers
+# ---- SDQ ----
+# Quarter labels ("Q1 2025") as a factor in date order; as text they would sort alphabetically.
+quarter_factor <- function(x) {
+  x <- as.character(x)
+  lv <- unique(x[!is.na(x)])
+  key <- str_match(lv, "Q(\\d)\\D+(\\d{4})")
+  factor(x, levels = lv[order(as.integer(key[, 3]), as.integer(key[, 2]), lv)])
+}
+
+# Ridgelines by SDQ version (with a line at each median), beside the mean change (follow-up minus initial) for each version.
+plot_sdq <- function(long, x_label, title) {
+  long <- mutate(long, version = fct_drop(version))
+  diffs <- score_stats(long, "version") |>
+    select(version, score_type, mean) |>
+    pivot_wider(names_from = score_type, values_from = mean) |>
+    mutate(difference = .data[[TIMEPOINTS[2]]] - .data[[TIMEPOINTS[1]]])
+  gap <- ggplot(diffs, aes(1, version)) +
+    geom_text(aes(label = fmt_num(difference)), size = 3, hjust = 0) +
+    scale_y_discrete(expand = expansion(add = c(0.15, 1.2))) +
+    labs(title = "Mean difference\n(follow-up - initial);\na decrease is a\npositive outcome") +
+    theme_void() +
+    theme(plot.title = element_text(size = 8))
+  ridges <- ggplot(long, aes(score_value, version, fill = score_type, colour = score_type)) +
+    geom_density_ridges(alpha = 0.7, scale = 1.2, rel_min_height = 0.01, quantile_lines = TRUE, quantiles = 2) +
+    scale_fill_manual(values = TIMEPOINT_COLOURS, aesthetics = c("fill", "colour")) +
+    scale_y_discrete(expand = expansion(add = c(0.15, 1.2))) +
+    labs(x = x_label, y = NULL, title = title) +
+    theme_scores() +
+    theme(legend.position = "top", legend.justification = "left")
+  (ridges | gap) + plot_layout(widths = c(5, 1))
+}
+
+# One SDQ score (externalizing or total difficulties): outcome tables for each version, then the
+# score statistics and distributions for all versions together.
+sdq_score <- function(score, sq, title, initial, follow_up, outcome) {
+  cat("\n\n## ", sq, " SDQ ", str_to_lower(title), "\n\n", sep = "")
+  long <- pmap_dfr(SDQ_VERSIONS, function(id, version, file) {
+    d <- sdq[[id]]
+    key <- paste0("sdq_", id, "_", score)
+    version_long <- scores_long(d, c(initial, follow_up))
+    qa_add(paste0("SDQ ", version, ", ", str_to_lower(title), ": clients with both scores"),
+           n_distinct(version_long$client_system_id))
+    qa_add(paste0("SDQ ", version, ", ", str_to_lower(title), ": rows with no outcome recorded"), sum(is.na(d[[outcome]])))
+
+    cat("\n\n### ", version, "\n\n", sep = "")
+    overall <- tab_outcome(d[[outcome]], "Positive outcome")
+    show_table(overall, paste0(key, "_outcome"),
+               caption = "Clients by outcome (a lower follow-up score is a positive outcome)") |> print()
+    if (BY_QUARTER) {
+      dq <- filter(d, !is.na(.data[[outcome]]))
+      tab_two_way(quarter_factor(dq$follow_up_quarter), dq[[outcome]], "Follow-up quarter", like = overall) |>
+        show_table(paste0(key, "_outcome_by_quarter"), caption = "Outcome by follow-up quarter") |> print()
+    }
+    mutate(version_long, version = factor(version, SDQ_VERSIONS$version))
+  })
+
+  cat("\n\n### Scores at each time point, by version\n\n")
+  fmt_score_stats(score_stats(long, "version")) |>
+    rename(Version = version) |>
+    show_table(paste0("sdq_", score, "_stats")) |> print()
+  show_plot(\() plot_sdq(long, paste("SDQ", str_to_lower(title)),
+                         paste0("Distribution of initial and follow-up scores by version, SDQ ", str_to_lower(title))),
+            paste0("sdq_", score, "_ridgeline"), internal_only = any_small(long, "version"), width = 9, height = 6)
+}
+```
+
+```{r}
+#| label: paired-helpers
+# ---- Measures scored in the cleaning scripts (one row per client, with `positive_outcome`) ----
+# Paired Wilcoxon signed-rank test of follow-up against initial scores.
+wilcoxon_table <- function(d) {
+  d <- filter(d, !is.na(initial_score), !is.na(follow_up_score))
+  w <- wilcox.test(d$follow_up_score, d$initial_score, paired = TRUE, exact = FALSE)
+  hide <- is_small(nrow(d))
+  tibble(Test = "Paired Wilcoxon signed-rank (follow-up vs. initial)",
+         `N pairs` = if_else(hide, SUPPR, fmt_n(nrow(d))),
+         V = if_else(hide, SUPPR, fmt_num(w$statistic, 1)),
+         `p-value` = if_else(hide, SUPPR, fmt_p(w$p.value)))
+}
+
+paired_measure <- function(id, heading, label, file, x_label, wilcoxon = FALSE) {
+  d <- read_pairs(file)
+  long <- scores_long(d)
+  qa_add(paste0(label, ": rows read"), nrow(d))
+  qa_add(paste0(label, ": unique clients"), n_distinct(d$client_system_id))
+  qa_add(paste0(label, ": clients with both scores"), n_distinct(long$client_system_id))
+  qa_add(paste0(label, ": rows with no outcome recorded"), sum(is.na(d$positive_outcome)))
+
+  cat("\n\n", heading, "\n\n", sep = "")
+  tab_outcome(d$positive_outcome, "Positive outcome") |>
+    show_table(paste0(id, "_outcome"), caption = "Clients by outcome (a lower follow-up score is a positive outcome)") |> print()
+  fmt_score_stats(score_stats(long)) |>
+    show_table(paste0(id, "_stats"), caption = "Scores at each time point") |> print()
+  if (wilcoxon) wilcoxon_table(d) |> show_table(paste0(id, "_wilcoxon")) |> print()
+
+  show_plot(\() plot_score_bars(long, x_label, paste("Distribution of initial and follow-up scores,", label)),
+            paste0(id, "_bars"), internal_only = TRUE)
+  show_plot(\() plot_score_density(long, x_label, paste0("Distribution of initial and follow-up scores, ", label,
+                                                     " (lower is better)")),
+            paste0(id, "_density"), internal_only = any_small(long))
+}
+```
+
+```{r}
+#| label: load_data
+noms <- map(set_names(RESPONDENTS$file, RESPONDENTS$id), read_pairs)
+iwalk(noms, \(d, id) qa_add(paste0("NOMS ", id, " file: rows read"), nrow(d)))
+```
+
+```{r}
+#| label: noms
+#| results: asis
+#| fig-width: 7
+#| fig-height: 4.5
+pwalk(DOMAINS, noms_domain)
+```
+
+```{r}
+#| label: load_sdq
+sdq <- map(set_names(SDQ_VERSIONS$file, SDQ_VERSIONS$id), read_pairs)
+iwalk(sdq, \(d, id) qa_add(paste0("SDQ ", id, " file: rows read"), nrow(d)))
+```
+
+```{r}
+#| label: sdq
+#| results: asis
+#| fig-width: 9
+#| fig-height: 6
+pwalk(SDQ_SCORES, sdq_score)
+```
+
+```{r}
+#| label: measures
+#| results: asis
+pwalk(MEASURES, paired_measure)
+```
+
+# Data quality checks
+
+These counts are for review, not reporting.
+
+```{r}
+#| label: qa
+qa_flow |>
+  mutate(n = fmt_n_qa(n)) |>
+  rename(Step = step, N = n) |>
+  show_table("qa_sample_flow", caption = "Sample flow")
+```
+
+```{r}
+#| label: export
+export_long <- imap_dfr(EXPORT, function(tbl, id) {
+  first <- names(tbl)[1]
+  tbl |>
+    mutate(across(everything(), as.character), row_order = row_number()) |>
+    rename(row = all_of(first)) |>
+    pivot_longer(-c(row, row_order), names_to = "column", values_to = "value") |>
+    mutate(table = id, row_header = first, .before = 1)
+}) |>
+  mutate(render_mode = RUN_MODE, suppress_n = SUPPRESS_N, .before = 1)
+
+export_path <- file.path(cfg$output_dir, paste0(FILE_TAG, "_tables_", RUN_MODE, ".csv"))
+write_csv(export_long, export_path, na = "")
+```

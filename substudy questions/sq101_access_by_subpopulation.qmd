@@ -110,12 +110,16 @@ GENDER_IDENTITY_CODES <- c(
 LANGUAGE_CODES <- c("English" = 1L, "Spanish" = 2L, "Other" = 3L)
 HOUSING_CODES  <- c("Housed" = 1L, "Unhoused" = 2L, "Other (i.e. treatment facility)" = 3L)
 
-# Race and ethnicity arrive as numeric codes (code_num, ethn_num). Code 0 is a non-response.
+# Race and ethnicity arrive as numeric codes (code_num, ethn_num). Race is coded in the `recode-race`
+# chunk of report_data_cleaning.qmd: the codebook code for one race, 88 for two or more races, 97 to 99
+# for a non-response, NA for blank. Ethnicity uses the same 88 and 97 to 99 codes.
 RACE_LABELS <- c(
   "1" = "Asian", "2" = "Black or African American", "3" = "Hispanic or Latino",
   "4" = "Middle Eastern or North African", "5" = "Native American/American Indian or Alaska Native",
-  "6" = "Native Hawaiian or Pacific Islander", "7" = "White", "8" = "2+ races selected"
+  "6" = "Native Hawaiian or Pacific Islander", "7" = "White", "88" = "2+ races selected"
 )
+# Non-response codes shared by race and ethnicity (`codebook_nonresponse` in report_data_cleaning.qmd).
+NR_CODE_LABELS <- c("97" = "Don't Know", "98" = "Prefer Not To Answer", "99" = "Not Applicable")
 ETHN_LABELS <- c(
   "1" = "Chinese", "2" = "Asian Indian", "3" = "Filipino", "4" = "Vietnamese", "5" = "Korean",
   "6" = "Japanese", "7" = "African American", "8" = "Jamaican", "9" = "Haitian", "10" = "Nigerian",
@@ -124,7 +128,8 @@ ETHN_LABELS <- c(
   "21" = "English", "22" = "German", "23" = "Irish", "24" = "Italian", "25" = "Polish",
   "26" = "Scottish", "88" = "2+ ethnicities selected"
 )
-CODE_0_LABEL <- "Not reported (code 0)"
+RACE_CODEBOOK <- c(RACE_LABELS, NR_CODE_LABELS)
+ETHN_CODEBOOK <- c(ETHN_LABELS, NR_CODE_LABELS)
 
 # ---- Non-substantive responses, recoded to NA ----
 NR_BASE <- c("Don't Know", "Prefer Not To Answer", "Not Applicable")
@@ -159,7 +164,6 @@ code_to_label <- function(code, labels) {
   code_chr <- str_squish(as.character(code))
   case_when(
     is.na(code_chr) | code_chr == "" ~ NA_character_,
-    code_chr == "0"                  ~ CODE_0_LABEL,
     code_chr %in% names(labels)      ~ unname(labels[code_chr]),
     TRUE                             ~ paste0("Code ", code_chr, " (not in codebook)")
   )
@@ -475,8 +479,8 @@ all_data <- all_data |>
                                               "Other (i.e. treatment facility)"),
     housing_status_num       = unname(HOUSING_CODES[housing_status_clean]),
 
-    race_label = code_to_label(code_num, RACE_LABELS),
-    ethn_label = code_to_label(ethn_num, ETHN_LABELS)
+    race_label = code_to_label(code_num, RACE_CODEBOOK),
+    ethn_label = code_to_label(ethn_num, ETHN_CODEBOOK)
   )
 
 # Base filtered dataset: start date onward, with intervention start and name
@@ -497,8 +501,8 @@ KNOWN_VALUES <- list(
   preferred_language_clean = names(LANGUAGE_CODES),
   primary_language_clean   = names(LANGUAGE_CODES),
   housing_status_clean     = names(HOUSING_CODES),
-  race_label               = c(unname(RACE_LABELS), CODE_0_LABEL),
-  ethn_label               = c(unname(ETHN_LABELS), CODE_0_LABEL)
+  race_label               = unname(RACE_CODEBOOK),
+  ethn_label               = unname(ETHN_CODEBOOK)
 )
 all_data_filtered <- all_data_filtered |>
   mutate(
@@ -528,8 +532,8 @@ qa_flow <- bind_rows(
            summarise(n = n_distinct(grant_track), .by = client_system_id) |> filter(n > 1) |> nrow())
 )
 
-RACE_ORDER <- c(unname(RACE_LABELS), CODE_0_LABEL)
-ETHN_ORDER <- c(unname(ETHN_LABELS), CODE_0_LABEL)
+RACE_ORDER <- unname(RACE_CODEBOOK)
+ETHN_ORDER <- unname(ETHN_CODEBOOK)
 ```
 
 ### Total clients served
@@ -554,21 +558,22 @@ discharge_data_filtered |>
 
 **Codebook:**
 
-0. NA, don't know, prefer not to answer
-1. Asian
-2. Black or African American
-3. Hispanic or Latino
-4. Middle Eastern or North African
-5. Native American/American Indian or Alaska Native
-6. Native Hawaiian or Pacific Islander
-7. White
-8. 2+ races selected
+-   1 = Asian
+-   2 = Black or African American
+-   3 = Hispanic or Latino
+-   4 = Middle Eastern or North African
+-   5 = Native American/American Indian or Alaska Native
+-   6 = Native Hawaiian or Pacific Islander
+-   7 = White
+-   88 = 2+ races selected
+-   97 = Don't Know, 98 = Prefer Not To Answer, 99 = Not Applicable (non-response)
+-   Blank = missing
 
-**Assumptions:** Clients had to have an intervention start, an intervention name, and have race characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients). The "% (excluding N/As)" column excludes both code 0 and blank values.
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have race characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients). The "% (excluding N/As)" column excludes the non-response codes (97 to 99) and blank values.
 
 ```{r}
 #| label: race
-t1 <- tab_one_way(clients$race_label, "Race", RACE_ORDER, not_reported = CODE_0_LABEL)
+t1 <- tab_one_way(clients$race_label, "Race", RACE_ORDER, not_reported = unname(NR_CODE_LABELS))
 show_table(t1, "race")
 
 d <- clients_with(!is.na(race_label))
@@ -584,14 +589,13 @@ tab_two_way(d$client_type, d$race_label, "Client type", RACE_ORDER, like = t1) |
 
 **Codebook:**
 
-0. NA, don't know, prefer not to answer
-`Chinese` = 1, `Asian Indian` = 2, `Filipino` = 3, `Vietnamese` = 4, `Korean` = 5, `Japanese` = 6, `African American` = 7, `Jamaican` = 8, `Haitian` = 9, `Nigerian` = 10, `Somali` = 11, `Mexican` = 12, `Puerto Rican` = 13, `Salvadoran` = 14, `Cuban` = 15, `Dominican` = 16, `Guatemalan` = 17, `Native Hawaiian` = 18, `Samoan` = 19, `Chamorro` = 20, `English` = 21, `German` = 22, `Irish` = 23, `Italian` = 24, `Polish` = 25, `Scottish` = 26, `2+ ethnicities selected` = 88
+`Chinese` = 1, `Asian Indian` = 2, `Filipino` = 3, `Vietnamese` = 4, `Korean` = 5, `Japanese` = 6, `African American` = 7, `Jamaican` = 8, `Haitian` = 9, `Nigerian` = 10, `Somali` = 11, `Mexican` = 12, `Puerto Rican` = 13, `Salvadoran` = 14, `Cuban` = 15, `Dominican` = 16, `Guatemalan` = 17, `Native Hawaiian` = 18, `Samoan` = 19, `Chamorro` = 20, `English` = 21, `German` = 22, `Irish` = 23, `Italian` = 24, `Polish` = 25, `Scottish` = 26, `2+ ethnicities selected` = 88, `Don't Know` = 97, `Prefer Not To Answer` = 98, `Not Applicable` = 99 (non-response); blank = missing
 
-**Assumptions:** Clients had to have an intervention start, an intervention name, and have race characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients). The "% (excluding N/As)" column excludes both code 0 and blank values.
+**Assumptions:** Clients had to have an intervention start, an intervention name, and have ethnicity characterized (filtered out NAs). These results are distinct by client_system_id (no duplicate rows of clients). The "% (excluding N/As)" column excludes the non-response codes (97 to 99) and blank values.
 
 ```{r}
 #| label: ethnicity
-tab_one_way(clients$ethn_label, "Ethnicity", ETHN_ORDER, not_reported = CODE_0_LABEL) |>
+tab_one_way(clients$ethn_label, "Ethnicity", ETHN_ORDER, not_reported = unname(NR_CODE_LABELS)) |>
   show_table("ethnicity")
 ```
 
