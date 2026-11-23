@@ -1,0 +1,1636 @@
+---
+title: "Deep Dive: Where Are Poor Outcomes and Low Satisfaction Concentrated?"
+subtitle: "CYBHI Scaling EBPs/CDEPs Workstream — Final Evaluation Report"
+author: "Behavioral Health Evaluation Strategies (BHES)"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: true
+    code-tools: false
+    embed-resources: true
+    fig-width: 9
+    fig-height: 6
+execute:
+  echo: true
+  warning: false
+  message: false
+params:
+  path_combined_all: "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/combined_satisfaction_clean.csv"
+  path_all_data: "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean.csv"
+  path_all_data_subset: "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data/demographic_discharge_clean_CDEP.csv" # CDEP-only client/service file; defines EBP vs. CDEP
+  path_grantee_lookup: ""
+  output_dir: "output/deepdive"
+  data_through: ""
+  suppress_n: 60
+  score_source: "score"
+  link_by_provider: true
+  link_fallback_primary_client: true
+  large_program_pattern: "give ?thx"
+  shareable: true
+  modality_subset: "CDEP"                    # label for episodes in path_all_data_subset
+  modality_other: "EBP"                      # label for all other episodes
+  modality_col: "modality"                   # grantee-lookup column with EBP/CDEP (used only when path_all_data_subset is blank)
+  focus_round: "4"                           # funding round to contrast with all other rounds
+  setting_col: "location"                    # column that service setting is classified from (see SETTING_PATTERNS)
+  completion_date_col: "intervention_end"    # the "completion date" compared with intervention_start
+  time_axis: ""                              # blank = choose by completeness; or name a date column to force it
+  earliest_plausible_date: ""                # blank = no lower bound; dates before this count as out of range
+---
+
+# Purpose and approach
+
+Earlier results showed low rates of positive clinical outcomes and of high satisfaction overall, and lower still in one funding round and for youth respondents compared with parents/caregivers. This exploratory script asks where those poor results sit:
+
+1. **Funding round × respondent**: how large are the gaps, and do they compound?
+2. **Concentration**: are poor results over-represented in EBPs or CDEPs, particular service settings, regions or counties, age groups, programs, or providers?
+3. **Timing**: when did each funding round deliver services, and do results differ by quarter?
+4. **Adjustment**: do the round and respondent gaps persist once program context, participant characteristics, and timing are held constant?
+5. **Score at intervention start**: how do score changes differ across participants who started with low, medium, and high scores?
+6. **Completion**: how does intervention completion differ by funding round?
+
+It also checks how complete the intervention start and completion dates are, and uses the more complete one as the time axis.
+
+| Element | Definition |
+|---|---|
+| Clinical outcomes sample | One record per intervention episode per outcome measure with a numeric pre- and post-score and a `positive_outcomes` flag. A **poor result** is a record that did not meet the positive-outcome definition. |
+| Satisfaction sample | The SQ 4.02 analytic sample: one CPS survey per respondent per survey version, linked to a discharged intervention. A **poor result** is a rating below Agree on the overall satisfaction item (that is, not high satisfaction). |
+| Funding round contrast | Round `r params$focus_round` (the `focus_round` parameter) against all other rounds. |
+| Respondent | Clinical outcomes: who completed the measure (classified from the assessment name). Satisfaction: the survey version (YSS-F caregiver, YSS youth, MHSIP adult). |
+| Score at intervention start | Pre-scores are split into three roughly equal groups within each measure (one per label in `BASELINE_LABELS`), after orienting every measure so that higher means more severe. |
+| Suppression | Any group with fewer than `r params$suppress_n` records is displayed as "Suppr." Other counts are also shown as "Suppr." when needed so that a suppressed count cannot be recovered by subtraction from a total. |
+
+::: {.callout-warning}
+## Verify before interpreting
+
+1. **Service setting** is classified from the text of the `r params$setting_col` column using the patterns in `SETTING_PATTERNS`. The column's contents were not known when the script was written; check the setting crosswalk in the data quality section and edit the patterns, or point `setting_col` at a better column.
+2. **Respondent on outcome measures** is classified from the assessment name using `REPORTER_PATTERNS`; check that crosswalk too.
+3. **EBP vs. CDEP** comes from whether an episode appears in the CDEP-only client/service file. Episodes not in that file are labeled `r params$modality_other`.
+4. The largest program (matched by `large_program_pattern`) sits in a single funding round, so funding round, setting, and that program overlap. The tables that separate it out are the ones to read first.
+:::
+
+```{r}
+#| label: shareable-banner
+#| echo: false
+#| results: asis
+if (isTRUE(getOption("knitr.in.progress")) && isTRUE(as.logical(params$shareable))) {
+  n0 <- if (!is.null(params$suppress_n)) params$suppress_n else 60
+  cat(sprintf(paste0(
+    "\n\n::: {.callout-note}\n## Shareable render\n\n",
+    "Raw category values seen fewer than %1$s times are masked, and data-quality counts below %1$s are shown as \"<%1$s\". ",
+    "Results tables use the same n < %1$s suppression as every render. In results and data-quality tables alike, any other count ",
+    "that would let a suppressed count be recovered by subtraction from a published total is hidden as well. ",
+    "Render with `shareable: false` to see the masked values locally.",
+    "\n\n:::\n\n"), n0))
+}
+```
+
+# Setup
+
+```{r}
+#| label: packages
+# Modeling packages load first so that dplyr's verbs (e.g., slice) take precedence.
+# Also used by namespace only: scales (plot labels), haven (.sav inputs), arrow (.parquet inputs).
+suppressPackageStartupMessages({
+  library(lme4)
+  library(tidyverse)
+  library(knitr)
+})
+
+options(dplyr.summarise.inform = FALSE, knitr.kable.NA = "", scipen = 999)
+theme_set(
+  theme_minimal(base_size = 12) +
+    theme(panel.grid.minor = element_blank(), plot.title.position = "plot")
+)
+```
+
+## Configuration and recode rules
+
+Edit this section if category labels or column contents differ from the patterns below. Everything downstream reads from these objects.
+
+```{r}
+#| label: config
+# Defaults are used when running chunks interactively; YAML params take precedence when rendering.
+dropbox <- "/Users/cristin/Dropbox-CWS/Cristin Young/CYBHI Project/Rebecca and Tristan and Cristin/EInsight Data"
+defaults <- list(
+  path_combined_all = file.path(dropbox, "combined_satisfaction_clean.csv"),
+  path_all_data = file.path(dropbox, "demographic_discharge_clean.csv"),
+  path_all_data_subset = file.path(dropbox, "demographic_discharge_clean_CDEP.csv"),
+  path_grantee_lookup = "",
+  output_dir = "output/deepdive",
+  data_through = "",
+  suppress_n = 60,
+  score_source = "score",
+  link_by_provider = TRUE,
+  link_fallback_primary_client = TRUE,
+  large_program_pattern = "give ?thx",
+  shareable = FALSE,
+  modality_subset = "CDEP",
+  modality_other = "EBP",
+  modality_col = "modality",
+  focus_round = "4",
+  setting_col = "location",
+  completion_date_col = "intervention_end",
+  time_axis = "",
+  earliest_plausible_date = ""
+)
+cfg <- modifyList(defaults, if (isTRUE(getOption("knitr.in.progress"))) as.list(params) else list())
+
+SUPPRESS_N  <- as.integer(cfg$suppress_n)
+SUPPR       <- "Suppr."
+# Shareable render: masks raw values seen fewer than SUPPRESS_N times and shows QA counts of
+# 1 to SUPPRESS_N - 1 as "<SUPPRESS_N". Results tables are suppressed in every render.
+SHAREABLE   <- isTRUE(as.logical(cfg$shareable))
+MIN_MODEL_N <- 300   # minimum sample for a model
+MIN_SCALE_N <- 30    # minimum pre-scores for a measure to be standardized and grouped
+LIKERT_LABELS <- c("Strongly disagree", "Disagree", "Undecided", "Agree", "Strongly agree")
+
+# Non-substantive responses are grouped as "Not reported" (the interim report's "No Response" / "N/A").
+NOT_REPORTED_PATTERN <- regex(paste(
+  "^\\s*$", "don.?t know", "do not know", "prefer not", "declin", "not applicable",
+  "^n/?a$", "not collected", "unknown", "^no .*selected$", "^none selected$", "^missing$",
+  sep = "|"), ignore_case = TRUE)
+
+AGE_LEVELS <- c("0-5", "6-11", "12-15", "16-17", "18-25", "26+")
+MULTI_SELECTED_CODES <- c("2")   # used by the shared recode functions
+
+# Outcome measures: scores are standardized within these columns (must identify a single scale).
+SEVERITY_SCALE_VARS      <- c("pre_measure_s")
+HIGHER_IS_BETTER_PATTERN <- regex("noms|national outcome", ignore_case = TRUE)
+ASSESSMENT_NAME_COLS     <- c("trimmed_pre_assessment_name", "pre_assessment_name", SEVERITY_SCALE_VARS)  # first one present is used
+
+# Score at intervention start: one label per group, least to most severe. The number of labels sets the number of groups.
+BASELINE_LABELS <- c("Low severity at start", "Medium severity at start", "High severity at start")
+NO_BASELINE     <- "No score at start"
+NOT_DISCHARGED  <- "Not discharged"   # episodes with no intervention end date
+
+# Pattern classifiers: a value gets the label of the first pattern it matches, else the `other` label.
+SETTING_PATTERNS <- c(
+  "School-based"       = "school|academy|elementary|k-?12|unified|\\busd\\b|campus|district",
+  "Home or telehealth" = "home|tele|virtual|remote|online"
+)
+SETTING_OTHER <- "Other setting"
+REPORTER_PATTERNS <- c(
+  "Parent/caregiver report" = "caregiver|parent|p-?oq",
+  "Youth/self report"       = "self|youth|y-?oq"
+)
+REPORTER_OTHER <- "Other/unspecified reporter"
+
+# Funding round contrast.
+OTHER_ROUNDS <- "All other rounds"
+
+# Dates. The time axis is the intervention start date unless the completion date is valid for at least
+# TIME_AXIS_MARGIN more of the analysis records (or `time_axis` names a column).
+COMPLETION_COL   <- cfg$completion_date_col
+ASSESSMENT_DATE_COLS <- c("pre_completion_date", "post_completion_date")   # per outcome record, not per episode
+DATE_COLS        <- unique(c("intervention_start", COMPLETION_COL, "intervention_end", ASSESSMENT_DATE_COLS))
+TIME_CANDIDATES  <- c("intervention_start", COMPLETION_COL)
+TIME_AXIS_MARGIN <- 0.01
+# Dates after DATA_END are out of range. Set `data_through` so that renders on different days agree.
+DATA_END         <- if (nzchar(cfg$data_through)) as.Date(cfg$data_through) else Sys.Date()
+PLAUSIBLE_START  <- if (nzchar(cfg$earliest_plausible_date)) as.Date(cfg$earliest_plausible_date) else as.Date(NA)
+
+LARGE_PROGRAM_PATTERN <- regex(cfg$large_program_pattern, ignore_case = TRUE)
+SUBSET_LABEL <- cfg$modality_subset
+
+LANG_COL <- "were_written_documents_and_or_the_services_you_received_provided_in_the_language_you_prefer_response"
+ID_COLS  <- c("client_system_id", "primary_client_system_id", "provider_system_id")
+
+# `source` records which eInsight export each survey came from (see the 4.02 script).
+SOURCE_VERSION_MAP <- c(
+  caregiver = "YSS-F (caregiver report)",
+  child     = "YSS (youth self-report)",
+  adult     = "MHSIP (adult self-report)",
+  senior    = "MHSIP (adult self-report)"
+)
+
+# Mixed models: random intercept for provider. Factors are added to the round + respondent model in these blocks.
+RE_TERMS    <- "(1 | provider_system_id)"
+GLMER_NAGQ  <- 1L
+GLMER_CTRL  <- glmerControl(optimizer = "nloptwrap", calc.derivs = FALSE)
+BASE_VARS   <- c("focus_grp", "resp_group")   # focus round vs. all other rounds, and respondent
+MODEL_BLOCKS <- list(
+  "+ program context"         = c("modality", "setting", "large_program", "census_region", "urban_rural_grp"),
+  "+ participant and service" = c("age_group", "baseline_group", "completion_status", "measure"),
+  "+ quarter"                 = "time_period"
+)
+
+# Factors examined, in display order. Only those present in a dataset are used.
+CONTEXT_VARS <- c(
+  funding_round        = "Funding round",
+  resp_group           = "Respondent",
+  participant_type     = "Participant type",
+  age_group            = "Age at start of services (years)",
+  modality             = "Modality (EBP/CDEP)",
+  setting              = "Service setting",
+  large_program        = "Largest program",
+  program              = "Program (intervention)",
+  measure              = "Outcome measure",
+  census_region        = "Census region",
+  county_grp           = "County",
+  urban_rural_grp      = "Urban/rural",
+  implementation_track = "Implementation track",
+  entity_type          = "Entity type",
+  completion_status    = "Discharge status",
+  baseline_group       = "Score at intervention start",
+  time_period          = "Quarter"
+)
+ALL_LABELS <- c(CONTEXT_VARS, focus_grp = "Funding round")
+```
+
+The next four chunks are copied verbatim from the 4.02 script (recode functions, CPS item dictionary, helpers, and suppression helpers); keep them in sync.
+
+```{r}
+#| label: recode-functions
+participant_type_from <- function(client_type, age) {
+  ct <- str_to_lower(coalesce(as.character(client_type), ""))
+  case_when(
+    str_detect(ct, "parent|caregiver|guardian|adult") ~ "Parent/caregiver",
+    str_detect(ct, "child")                           ~ "Child (0-15)",
+    str_detect(ct, "youth|young adult")               ~ "Youth (16-25)",
+    !is.na(age) & age < 16                            ~ "Child (0-15)",
+    !is.na(age) & age <= 25                           ~ "Youth (16-25)",
+    TRUE                                              ~ "Not reported"
+  )
+}
+
+classify_discharge <- function(x) {
+  x0 <- str_to_lower(coalesce(as.character(x), ""))
+  case_when(
+    str_detect(x0, "no reason") | x0 == ""                                 ~ "Other/no reason recorded",
+    str_detect(x0, "referred out|mutual|agreed|complet|met .*goal")        ~ "Successful completion",
+    str_detect(x0, "withdr|lost to follow|drop|disengag|no contact")       ~ "Withdrew/lost to follow-up",
+    TRUE                                                                   ~ "Other/no reason recorded"
+  )
+}
+
+service_length_from <- function(start, end) {
+  d <- as.numeric(end - start)
+  case_when(
+    is.na(d) | d < 0 ~ "Not reported",
+    d < 30           ~ "<1 month",
+    d < 91           ~ "1-3 months",
+    d < 183          ~ "3-6 months",
+    d < 365          ~ "6-12 months",
+    TRUE             ~ "12+ months"
+  )
+}
+
+# Category label plus a "number selected" code -> one category (2+ selected = multiple).
+multi_select_from <- function(label, count, multi_label) {
+  label <- recode_not_reported(label)
+  cnt   <- str_squish(as.character(count))
+  if_else(!is.na(cnt) & cnt %in% MULTI_SELECTED_CODES, multi_label, label)
+}
+
+normalize_round <- function(x) {
+  num <- str_extract(as.character(x), "\\d+")
+  if_else(is.na(num), "Not reported", paste("Round", num))
+}
+
+# California Complete Count census regions (the 10 regions used in the interim report).
+REGION_XWALK <- list(
+  "1: Superior California" = c("Butte", "Colusa", "El Dorado", "Glenn", "Lassen", "Modoc", "Nevada",
+                               "Placer", "Plumas", "Sacramento", "Shasta", "Sierra", "Siskiyou",
+                               "Sutter", "Tehama", "Yolo", "Yuba"),
+  "2: North Coast" = c("Del Norte", "Humboldt", "Lake", "Mendocino", "Napa", "Sonoma", "Trinity"),
+  "3: San Francisco Bay Area" = c("Alameda", "Contra Costa", "Marin", "San Francisco", "San Mateo",
+                                  "Santa Clara", "Solano"),
+  "4: Northern San Joaquin Valley" = c("Alpine", "Amador", "Calaveras", "Madera", "Mariposa", "Merced",
+                                       "Mono", "San Joaquin", "Stanislaus", "Tuolumne"),
+  "5: Central Coast" = c("Monterey", "San Benito", "San Luis Obispo", "Santa Barbara", "Santa Cruz", "Ventura"),
+  "6: Southern San Joaquin Valley" = c("Fresno", "Inyo", "Kern", "Kings", "Tulare"),
+  "7: Inland Empire" = c("Riverside", "San Bernardino"),
+  "8: Los Angeles County" = "Los Angeles",
+  "9: Orange County" = "Orange",
+  "10: San Diego-Imperial" = c("San Diego", "Imperial")
+) |>
+  enframe("region", "county") |>
+  unnest(county)
+stopifnot(nrow(REGION_XWALK) == 58)
+
+census_region_from <- function(county) {
+  key <- county |>
+    as.character() |>
+    str_remove(regex("\\s+county$", ignore_case = TRUE)) |>
+    str_squish() |>
+    str_to_lower()
+  out <- REGION_XWALK$region[match(key, str_to_lower(REGION_XWALK$county))]
+  case_when(
+    !is.na(out)             ~ out,
+    is.na(key) | key == ""  ~ "Not reported",
+    TRUE                    ~ "Statewide/unmapped"
+  )
+}
+```
+
+```{r}
+#| label: cps-item-dictionary
+# CPS item stems by survey version. General Satisfaction (GS) domain items follow the
+# SAMHSA URS scoring convention: YSS-F/YSS items 1, 4, 5, 7, 10, 11; MHSIP items 1-3.
+# YSS and YSS-F share identical wording on items 12, 14, 15, so those stems are not used
+# to detect the survey version.
+stems <- list(
+  "YSS-F (caregiver report)" = c(
+    "x1_overall_i_am_satisfied_with_the_services_my_child_received",
+    "x2_i_helped_to_choose_my_childs_services",
+    "x3_i_helped_to_choose_my_childs_treatment_goals",
+    "x4_the_people_helping_my_child_stuck_with_us_no_matter_what",
+    "x5_i_felt_my_child_had_someone_to_talk_to_when_he_she_was_troubled",
+    "x6_i_participated_in_my_childs_treatment",
+    "x7_the_services_my_child_and_or_family_received_were_right_for_us",
+    "x8_the_location_of_services_was_convenient_for_us",
+    "x9_services_were_available_at_times_that_were_convenient_for_us",
+    "x10_my_family_got_the_help_we_wanted_for_my_child",
+    "x11_my_family_got_as_much_help_as_we_needed_for_my_child",
+    "x13_staff_respected_my_familys_religious_spiritual_beliefs"),
+  "YSS (youth self-report)" = c(
+    "x1_overall_i_am_satisfied_with_the_services_i_received",
+    "x2_i_helped_to_choose_my_services",
+    "x3_i_helped_to_choose_my_treatment_goals",
+    "x4_the_people_helping_me_stuck_with_me_no_matter_what",
+    "x5_i_felt_i_had_someone_to_talk_to_when_i_was_troubled",
+    "x6_i_participated_in_my_own_treatment",
+    "x7_i_received_services_that_were_right_for_me",
+    "x8_the_location_of_services_was_convenient_for_me",
+    "x9_services_were_available_at_times_that_were_convenient_for_me",
+    "x10_i_got_the_help_i_wanted",
+    "x11_i_got_as_much_help_as_i_needed",
+    "x13_staff_respected_my_religious_spiritual_beliefs"),
+  "MHSIP (adult self-report)" = c(
+    "x1_i_like_the_services_that_i_received_here",
+    "x2_if_i_had_other_choices_i_would_still_get_services_from_this_agency",
+    "x3_i_would_recommend_this_agency_to_a_friend_or_family_member",
+    "x4_the_location_of_services_was_convenient_parking_public_transportation_distance_etc",
+    "x5_staff_were_willing_to_see_me_as_often_as_i_felt_it_was_necessary",
+    "x6_staff_returned_my_calls_within_24_hours",
+    "x7_services_were_available_at_times_that_were_good_for_me",
+    "x8_i_was_able_to_get_all_the_services_i_thought_i_needed",
+    "x9_i_was_able_to_see_a_psychiatrist_when_i_wanted_to",
+    "x10_staff_here_believe_that_i_can_grow_change_and_recover",
+    "x11_i_felt_comfortable_asking_questions_about_my_treatment_and_medication",
+    "x12_i_felt_free_to_complain",
+    "x13_i_was_given_information_about_my_rights",
+    "x14_staff_encouraged_me_to_take_responsibility_for_how_i_live_my_life",
+    "x15_staff_told_me_what_side_effects_to_watch_out_for",
+    "x16_staff_respected_my_wishes_about_who_is_and_who_is_not_to_be_given_information_about_my_treatment")
+)
+
+item_dict <- enframe(stems, "version", "item_stem") |>
+  unnest(item_stem) |>
+  mutate(
+    item_num     = as.integer(str_extract(item_stem, "(?<=^x)\\d+")),
+    overall_item = item_num == 1,
+    gs_item      = if_else(str_detect(version, "MHSIP"), item_num %in% 1:3, item_num %in% c(1, 4, 5, 7, 10, 11))
+  )
+```
+
+```{r}
+#| label: helpers
+id_chr <- function(x) {
+  if (is.numeric(x)) x <- format(x, scientific = FALSE, trim = TRUE, digits = 15)
+  x <- str_trim(as.character(x))
+  x[x %in% c("", "NA")] <- NA_character_
+  x
+}
+
+to_date <- function(x) {
+  if (inherits(x, "Date")) return(x)
+  if (inherits(x, "POSIXt")) return(as_date(x))
+  as_date(parse_date_time(as.character(x),
+                          orders = c("Ymd", "mdY", "Ymd HMS", "mdY HMS", "Ymd HM", "mdY HM"),
+                          quiet = TRUE))
+}
+
+first_non_na <- function(x) x[!is.na(x)][1]
+
+first_substantive <- function(x) {
+  s <- x[!is.na(x) & !str_detect(as.character(x), NOT_REPORTED_PATTERN)]
+  if (length(s)) s[1] else first_non_na(x)
+}
+
+as_flag <- function(x) {
+  if (is.logical(x)) return(x)
+  x <- str_to_lower(str_trim(as.character(x)))
+  case_when(
+    x %in% c("1", "yes", "y", "true", "t", "positive") ~ TRUE,
+    x %in% c("0", "no", "n", "false", "f", "negative") ~ FALSE,
+    TRUE ~ NA
+  )
+}
+
+likert_from_text <- function(x) {
+  x <- str_to_lower(str_squish(as.character(x)))
+  case_when(
+    str_detect(x, "^strongly disagree")       ~ 1,
+    str_detect(x, "^disagree")                ~ 2,
+    str_detect(x, "undecided|neutral|neither") ~ 3,
+    str_detect(x, "^strongly agree")          ~ 5,
+    str_detect(x, "^agree")                   ~ 4,
+    TRUE                                      ~ NA_real_
+  )
+}
+
+recode_not_reported <- function(x) {
+  x <- str_squish(as.character(x))
+  if_else(is.na(x) | str_detect(x, NOT_REPORTED_PATTERN), "Not reported", x)
+}
+
+# Build a model-ready factor: small substantive levels are combined, "Other (combined)" and
+# "Not reported" are placed last, and the reference level is set (with a size check).
+prep_factor <- function(x, ref = NULL, min_n = SUPPRESS_N, lump = TRUE,
+                        order = c("freq", "given"), given_levels = NULL) {
+  order <- match.arg(order)
+  tail_levels <- c("Other (combined)", "Not reported")
+  x <- as.character(x)
+  x[is.na(x)] <- "Not reported"
+  if (lump) {
+    counts <- table(x)
+    small <- setdiff(names(counts)[counts < min_n], tail_levels)
+    if (length(small)) x[x %in% small] <- "Other (combined)"
+  }
+  f <- if (order == "freq") {
+    fct_infreq(x)
+  } else {
+    factor(x, levels = union(intersect(given_levels, unique(x)), sort(unique(x))))
+  }
+  f <- fct_relevel(f, intersect(tail_levels, levels(f)), after = Inf)
+  counts <- table(f)
+  if (!is.null(ref) && ref %in% levels(f) && counts[[ref]] >= min_n) {
+    f <- fct_relevel(f, ref)
+  } else {
+    substantive <- setdiff(names(counts)[counts >= min_n], tail_levels)
+    if (length(substantive)) f <- fct_relevel(f, names(which.max(counts[substantive])))
+  }
+  f
+}
+
+# A factor is reportable if at least two levels meet the suppression threshold.
+is_reportable <- function(x) sum(table(x) >= SUPPRESS_N) >= 2
+
+coef_or <- function(m) {
+  cf <- summary(m)$coefficients
+  tibble(term = rownames(cf), estimate = cf[, 1], std.error = cf[, 2], p.value = cf[, ncol(cf)]) |>
+    filter(term != "(Intercept)", !str_detect(term, "\\|")) |>
+    mutate(or = exp(estimate),
+           lcl = exp(estimate - qnorm(0.975) * std.error),
+           ucl = exp(estimate + qnorm(0.975) * std.error))
+}
+
+map_terms <- function(terms, vars) {
+  map_dfr(terms, function(t) {
+    hits <- vars[startsWith(t, vars)]
+    if (!length(hits)) return(tibble(term = t, variable = NA_character_, level = NA_character_))
+    v <- hits[which.max(nchar(hits))]
+    tibble(term = t, variable = v, level = substring(t, nchar(v) + 1))
+  })
+}
+
+fmt_pct <- function(x, d = 1) if_else(is.na(x), NA_character_, sprintf(paste0("%.", d, "f%%"), 100 * x))
+fmt_p   <- function(p) case_when(is.na(p) ~ NA_character_, p < 0.001 ~ "<0.001", TRUE ~ sprintf("%.3f", p))
+fmt_or  <- function(or, l, u) if_else(is.na(or), NA_character_, sprintf("%.2f (%.2f–%.2f)", or, l, u))
+fmt_n   <- function(n) format(n, big.mark = ",", trim = TRUE)
+fmt_n_qa <- function(n) if_else(SHAREABLE & !is.na(n) & n > 0 & n < SUPPRESS_N, paste0("<", SUPPRESS_N), fmt_n(n))
+list_or_none <- function(x) if (length(x)) paste(x, collapse = "; ") else "none"
+
+save_table <- function(df, name) {
+  if (nzchar(cfg$output_dir)) {
+    dir.create(cfg$output_dir, recursive = TRUE, showWarnings = FALSE)
+    write_csv(df, file.path(cfg$output_dir, paste0(name, ".csv")), na = "")
+  }
+  invisible(df)
+}
+```
+
+```{r}
+#| label: suppression-helpers
+# Copied verbatim from the 1.01 script's helpers; keep the two in sync.
+# ---- Primary and complementary suppression ----
+# `x` holds every published or derivable number in a table (cells and totals). Each element of `lines`
+# indexes entries tied by one additive constraint, with the total LAST (a row's cells, then its total).
+# Counts of 1 to k - 1 are suppressed, then more entries are suppressed until:
+#   (a) no line has exactly one suppressed entry, which subtraction would recover;
+#   (b) in a line whose total is shown, the suppressed cells add up to at least k, so their combined
+#       count (total minus the shown cells) is not itself a small count; and
+#   (c) no suppressed count below k, and no sum of two suppressed counts that is below k, can be
+#       solved for exactly from all of the table's constraints taken together (checked by matrix rank).
+# Extra suppressions go to the entry with the lowest `weight` (by default, the smallest count).
+# An entry with weight Inf is never chosen, e.g. because another table already shows it. An entry
+# that can be read off a line whose other entries are all zero or shown elsewhere cannot be
+# protected, so it is never chosen either. If no entry can protect a hidden count, the render stops
+# rather than publish a count that could be recovered.
+pick_entry <- function(cand, weight) {
+  cand <- cand[is.finite(weight[cand])]
+  if (length(cand) == 0L) NA_integer_ else cand[which.min(weight[cand])]
+}
+
+recoverable_entries <- function(x, lines, s, k) {
+  sup <- which(s)
+  if (length(sup) == 0L) return(integer())
+  A <- do.call(rbind, lapply(lines, function(ln) {
+    row <- numeric(length(x))
+    row[ln] <- c(rep(1, length(ln) - 1L), -1)
+    row[sup]
+  }))
+  A <- A[rowSums(A != 0) > 0, , drop = FALSE]
+  if (nrow(A) == 0L) return(integer())
+  r <- qr(A)$rank
+  solvable <- function(v) qr(rbind(A, v))$rank == r
+  unit <- function(j) as.numeric(seq_along(sup) == j)
+  small <- which(x[sup] < k)
+  hits <- sup[small[vapply(small, function(j) solvable(unit(j)), logical(1))]]
+  if (length(hits) == 0L && length(small) > 1L) {
+    for (pr in combn(small, 2, simplify = FALSE)) {
+      if (sum(x[sup[pr]]) < k && solvable(unit(pr[1]) + unit(pr[2]))) {
+        hits <- sup[pr]
+        break
+      }
+    }
+  }
+  hits
+}
+
+suppress_lines <- function(x, lines, k = SUPPRESS_N, init = NULL, weight = x) {
+  s <- !is.na(x) & x > 0 & x < k
+  if (!is.null(init)) s <- s | init
+  repeat {
+    pinned <- unlist(lapply(lines, function(ln) {
+      unknown <- ln[x[ln] > 0 & (is.finite(weight[ln]) | s[ln])]
+      if (length(unknown) == 1L && is.finite(weight[unknown])) unknown
+    }))
+    if (length(pinned) == 0L) break
+    weight[pinned] <- Inf
+  }
+  open_entries <- function(idx) idx[!s[idx] & x[idx] > 0]
+  cannot_protect <- function() {
+    stop("Complementary suppression cannot protect a hidden count: every entry that could be ",
+         "hidden with it is zero or shown in another table.", call. = FALSE)
+  }
+  repeat {
+    j <- NA_integer_
+    for (ln in lines) {
+      tot <- ln[length(ln)]
+      cells <- ln[-length(ln)]
+      small_sum <- !s[tot] && any(s[cells]) && sum(x[cells][s[cells]]) < k
+      if (sum(s[ln]) == 1L || small_sum) {
+        j <- pick_entry(open_entries(ln), weight)
+        if (is.na(j)) cannot_protect()
+        break
+      }
+    }
+    if (is.na(j)) {
+      rec <- recoverable_entries(x, lines, s, k)
+      if (length(rec) > 0L) {
+        near <- unique(unlist(lines[vapply(lines, function(ln) any(rec %in% ln), logical(1))]))
+        j <- pick_entry(open_entries(near), weight)
+        if (is.na(j)) j <- pick_entry(open_entries(seq_along(x)), weight)
+        if (is.na(j)) cannot_protect()
+      }
+    }
+    if (is.na(j)) break
+    s[j] <- TRUE
+  }
+  s
+}
+
+# Suppression pattern for a matrix of counts with its totals attached: row totals in the last column
+# and column totals in the last row. Every row and column is a line. Extra suppressions go to inner
+# cells first, then to row totals, and to the grand total last, because hiding the grand total forces
+# a column total to be hidden too. `init` marks entries that start hidden and `fixed` marks entries
+# that are never hidden, usually because another table hides or shows the same number.
+suppress_table <- function(ext, init = FALSE, fixed = FALSE) {
+  R <- nrow(ext) - 1L
+  C <- ncol(ext) - 1L
+  idx <- matrix(seq_along(ext), nrow(ext))
+  lines <- c(lapply(seq_len(R + 1L), function(i) idx[i, ]),
+             lapply(seq_len(C + 1L), function(j) idx[, j]))
+  weight <- as.vector(ext)
+  weight[idx[seq_len(R), C + 1L]] <- weight[idx[seq_len(R), C + 1L]] + 1e9
+  weight[idx[R + 1L, C + 1L]] <- weight[idx[R + 1L, C + 1L]] + 2e9
+  weight[rep_len(as.vector(fixed), length(ext))] <- Inf
+  s <- suppress_lines(as.vector(ext), lines, init = rep_len(as.vector(init), length(ext)), weight = weight)
+  matrix(s, nrow(ext))
+}
+
+# ---- 4.02 wrappers ----
+# Counts in one breakdown whose total is published (for example, the analytic N): TRUE for counts of
+# 1 to k - 1 and for the other counts hidden so those cannot be recovered from the total.
+hide_counts <- function(n) {
+  suppress_lines(c(n, sum(n)), list(seq_len(length(n) + 1L)), weight = c(n, Inf))[seq_along(n)]
+}
+
+# Crosswalk rows of one field, nested in the categories they were recoded to. When `published`,
+# each category's total is the n shown (or hidden) in the descriptive table and the field total is
+# the analytic N. Otherwise no total is published, so only counts of 1 to k - 1 are hidden.
+hide_nested <- function(n, category, published) {
+  if (!published) return(n > 0 & n < SUPPRESS_N)
+  cat_n <- tapply(n, category, sum)
+  m <- length(n)
+  G <- length(cat_n)
+  cat_of_row <- match(category, names(cat_n))
+  lines <- c(lapply(seq_len(G), function(g) c(which(cat_of_row == g), m + g)),
+             list(c(m + seq_len(G), m + G + 1L)))
+  init <- c(rep(FALSE, m), hide_counts(cat_n), FALSE)
+  suppress_lines(c(n, cat_n, sum(n)), lines, init = init, weight = c(n, rep(Inf, G + 1L)))[seq_len(m)]
+}
+
+# A count that may be hidden: "<k" when it is small, "Suppr." when it is hidden only to protect one.
+fmt_n_hidden <- function(n, hide) {
+  case_when(!hide ~ fmt_n(n), n < SUPPRESS_N ~ paste0("<", SUPPRESS_N), TRUE ~ SUPPR)
+}
+```
+
+```{r}
+#| label: deepdive-helpers
+num <- function(x) suppressWarnings(as.numeric(x))
+
+# Factor in a natural order, "Not reported" last (the 4.02 prep_factor puts the largest group first).
+# Default order: sorted, with numbers compared by value. Model reference groups are set in fit_poor.
+in_order <- function(x, levels = NULL) {
+  x  <- coalesce(as.character(x), "Not reported")
+  lv <- union(intersect(levels, x), str_sort(unique(x), numeric = TRUE))
+  factor(x, c(setdiff(lv, "Not reported"), intersect("Not reported", lv)))
+}
+
+# Label of the first pattern each value matches; `other` when none match; "Not reported" when blank.
+classify_by_pattern <- function(x, patterns, other) {
+  x <- str_squish(as.character(x))
+  hit <- map(patterns, \(p) coalesce(str_detect(x, regex(p, ignore_case = TRUE)), FALSE))
+  out <- reduce2(rev(hit), rev(names(patterns)), \(acc, h, label) if_else(h, label, acc), .init = rep(other, length(x)))
+  if_else(is.na(x) | str_detect(x, NOT_REPORTED_PATTERN), "Not reported", out)
+}
+
+# Roughly equal groups, least to most severe. Tied scores always land in the same group.
+severity_group <- function(severity) ceiling(cume_dist(severity) * length(BASELINE_LABELS))
+
+date_valid <- function(x) !is.na(x) & x <= DATA_END & (is.na(PLAUSIBLE_START) | x >= PLAUSIBLE_START)
+quarter_label <- function(x) if_else(date_valid(x), paste0(year(x), " Q", quarter(x)), "Not reported")
+quarter_of <- function(x, p) quarter_label(quantile(x[date_valid(x)], p, type = 1, names = FALSE))
+
+completion_status_from <- function(reason, end) if_else(is.na(end), NOT_DISCHARGED, classify_discharge(reason))
+
+fmt_sd <- function(x) if_else(is.na(x), NA_character_, sprintf("%+.2f", x))
+blank_repeats <- function(x) if_else(x == lag(x, default = ""), "", x)
+
+# ---- Suppressed tables ----
+TOTAL <- "Total"
+
+# Suppression pattern for a matrix of counts with its totals attached (last row and column). Row and
+# column totals keep the status they have in the one-way tables (hide_counts). If the cells cannot be
+# protected with those totals fixed, every inner count is hidden instead.
+protect_xtab <- function(ext) {
+  R <- nrow(ext) - 1L
+  C <- ncol(ext) - 1L
+  inner <- row(ext) <= R & col(ext) <= C
+  init <- matrix(FALSE, R + 1L, C + 1L)
+  init[seq_len(R), C + 1L] <- hide_counts(ext[seq_len(R), C + 1L])
+  init[R + 1L, seq_len(C)] <- hide_counts(ext[R + 1L, seq_len(C)])
+  tryCatch(suppress_table(ext, init, fixed = !init & !inner),
+           error = \(e) init | (inner & ext > 0))
+}
+
+# One row per row_var x col_var cell, with totals: n, whether n is hidden, and the mean of each value column.
+cell_stats <- function(d, row_var, col_var, values = character()) {
+  d <- d |> transmute(row = fct_drop(as.factor(.data[[row_var]])), col = fct_drop(as.factor(.data[[col_var]])),
+                      across(all_of(values)))
+  stats <- bind_rows(d, mutate(d, row = TOTAL), mutate(d, col = TOTAL), mutate(d, row = TOTAL, col = TOTAL)) |>
+    mutate(row = factor(row, c(levels(d$row), TOTAL)), col = factor(col, c(levels(d$col), TOTAL))) |>
+    summarise(n = n(), across(all_of(values), \(v) mean(v, na.rm = TRUE)), .by = c(row, col)) |>
+    complete(row, col, fill = list(n = 0L)) |>
+    arrange(col, row)
+  stats |>
+    mutate(hide = as.vector(protect_xtab(matrix(n, nrow = nlevels(row))))) |>
+    mutate(row_n = n[col == TOTAL], row_hide = hide[col == TOTAL], .by = row)
+}
+
+# Wide display of cell_stats: "value (n)" per cell, or "n (row %)" when no value column is given.
+# `counts = FALSE` shows the value alone.
+wide_cells <- function(stats, value = NULL, fmt = fmt_pct, counts = TRUE) {
+  stats |>
+    mutate(
+      shown = if (is.null(value)) {
+        if_else(hide, SUPPR, paste0(fmt_n(n), if_else(row_hide, "", paste0(" (", fmt_pct(n / row_n), ")"))))
+      } else if (counts) {
+        paste0(fmt(.data[[value]]), " (", if_else(hide, SUPPR, fmt_n(n)), ")")
+      } else {
+        fmt(.data[[value]])
+      },
+      cell = case_when(n == 0 ~ "—", n < SUPPRESS_N ~ SUPPR, TRUE ~ shown),
+      row  = as.character(row)) |>
+    select(group = row, col, cell) |>
+    pivot_wider(names_from = col, values_from = cell)
+}
+
+# wide_cells for several row variables against one column variable, stacked with a characteristic label.
+cells_by_factor <- function(d, vars, col_var, value = "poor", fmt = fmt_pct, counts = TRUE) {
+  imap_dfr(vars, \(label, v) wide_cells(cell_stats(d, v, col_var, value), value, fmt, counts) |>
+             mutate(characteristic = label, .before = 1)) |>
+    mutate(characteristic = blank_repeats(characteristic))
+}
+
+# One-way concentration table: where the poor results are, relative to where the records are.
+rate_table <- function(d, var) {
+  d |>
+    summarise(n = n(), n_poor = sum(poor), .by = all_of(var)) |>
+    rename(level = all_of(var)) |>
+    arrange(level) |>
+    mutate(variable = var, level = as.character(level), hidden = hide_counts(n), pct_poor = n_poor / n,
+           share_n = n / sum(n), share_poor = n_poor / sum(n_poor), ratio = pct_poor / (sum(n_poor) / sum(n)))
+}
+
+# kable with the technical column names of the tables above replaced by display labels.
+show_tab <- function(df, group = "Group", ...) {
+  lab <- c(sample = "Sample", characteristic = "Characteristic", group = group, level = group)
+  names(df) <- coalesce(lab[names(df)], names(df))
+  kable(df, ...)
+}
+
+# Raw value -> assigned category, for checking the pattern classifiers.
+crosswalk <- function(d, raw, recoded, top = 40) {
+  d |>
+    count(raw_value = coalesce(as.character(.data[[raw]]), "(blank)"), assigned = as.character(.data[[recoded]])) |>
+    mutate(raw_value = if_else(SHAREABLE & n < SUPPRESS_N & raw_value != "(blank)",
+                               sprintf("[values seen < %d times, masked]", SUPPRESS_N), raw_value)) |>
+    summarise(values = n(), n = sum(n), .by = c(raw_value, assigned)) |>
+    slice_max(n, n = top, with_ties = FALSE) |>
+    mutate(n = fmt_n_qa(n))
+}
+```
+
+## Load data
+
+```{r}
+#| label: load
+read_any <- function(path) {
+  if (is.null(path) || !nzchar(path)) return(NULL)
+  if (!file.exists(path)) stop("File not found: ", path, call. = FALSE)
+  switch(tolower(tools::file_ext(path)),
+    rds     = readRDS(path),
+    csv     = readr::read_csv(path, col_types = readr::cols(.default = readr::col_character()),
+                              na = c("", "NA", "NULL")),
+    parquet = arrow::read_parquet(path),
+    sav     = haven::read_sav(path) |> haven::as_factor() |> mutate(across(everything(), as.character)),
+    stop("Unsupported file type: ", path, call. = FALSE))
+}
+
+# Always read from the configured paths, so a full (all-program) dataset left in the
+# workspace by another script can never stand in for the subset files.
+combined_all   <- read_any(cfg$path_combined_all)
+all_data       <- read_any(cfg$path_all_data)
+all_data_subset <- read_any(cfg$path_all_data_subset)   # NULL when no subset file is set
+grantee_lookup <- read_any(cfg$path_grantee_lookup)
+
+check_cols <- function(df, cols, name) {
+  missing <- setdiff(cols, names(df))
+  if (length(missing)) stop(name, " is missing required columns: ", paste(missing, collapse = ", "), call. = FALSE)
+}
+check_cols(combined_all, c("client_system_id", "provider_system_id"), "combined_all")
+check_cols(all_data, c("client_system_id", "provider_system_id", "intervention_name", "intervention_start", "intervention_end",
+                       "reason_for_discharge", "pre_score", "post_score", "positive_outcomes", SEVERITY_SCALE_VARS), "all_data")
+
+loaded <- list("combined_all (satisfaction surveys)" = combined_all, "all_data (client/service records)" = all_data)
+if (!is.null(all_data_subset)) {
+  check_cols(all_data_subset, c("client_system_id", "provider_system_id", "intervention_name", "intervention_start"),
+             "all_data_subset")
+  loaded[[paste0("all_data_subset (", SUBSET_LABEL, " client/service records)")]] <- all_data_subset
+}
+tibble(dataset = names(loaded), rows = fmt_n(map_int(loaded, nrow)), columns = map_int(loaded, ncol)) |> kable()
+```
+
+# Prepare the data
+
+## Satisfaction surveys
+
+Scored exactly as in the 4.02 script (these two chunks are copied from it; its response–score and survey-version QA tables are not repeated here).
+
+```{r}
+#| label: sat-raw
+n_sat_file <- nrow(combined_all)
+
+sat_raw <- combined_all |>
+  as_tibble() |>
+  distinct() |>
+  mutate(across(any_of(ID_COLS), id_chr))
+n_sat_distinct <- nrow(sat_raw)
+
+date_col <- intersect(c("date_clean", "date_completed"), names(sat_raw))[1]
+sat_raw$survey_date   <- if (is.na(date_col)) as.Date(NA) else to_date(sat_raw[[date_col]])
+sat_raw$survey_type   <- if ("source" %in% names(sat_raw)) str_to_lower(str_squish(as.character(sat_raw$source))) else NA_character_
+sat_raw$lang_raw      <- if (LANG_COL %in% names(sat_raw)) as.character(sat_raw[[LANG_COL]]) else NA_character_
+if (!"primary_client_system_id" %in% names(sat_raw)) sat_raw$primary_client_system_id <- NA_character_
+
+if (nzchar(cfg$data_through)) {
+  sat_raw <- sat_raw |> filter(is.na(survey_date) | survey_date <= as.Date(cfg$data_through))
+}
+n_sat_window <- nrow(sat_raw)
+sat_raw <- sat_raw |> mutate(survey_id = row_number())
+
+# Item-level long format: one row per survey x item with the response text and score.
+sat_items_long <- sat_raw |>
+  select(survey_id, matches("^x\\d+_.*_(response|score)$")) |>
+  mutate(across(-survey_id, as.character)) |>
+  pivot_longer(-survey_id,
+               names_to = c("item_stem", ".value"),
+               names_pattern = "^(x\\d+_.*)_(response|score)$") |>
+  mutate(across(any_of(c("response", "score")), \(v) na_if(str_squish(v), ""))) |>
+  filter(!(is.na(response) & is.na(score))) |>
+  mutate(
+    score_num  = suppressWarnings(as.numeric(score)),
+    score_num  = if_else(score_num %in% 1:5, score_num, NA_real_),
+    score_text = likert_from_text(response),
+    item_value = if (cfg$score_source == "response") coalesce(score_text, score_num) else coalesce(score_num, score_text)
+  )
+```
+
+```{r}
+#| label: sat-scoring
+version_counts <- sat_items_long |>
+  inner_join(item_dict |> select(item_stem, version), by = "item_stem") |>
+  count(survey_id, version)
+
+n_multi_version <- version_counts |> count(survey_id) |> filter(n > 1) |> nrow()
+
+detected_version <- version_counts |>
+  slice_max(n, by = survey_id, with_ties = FALSE) |>
+  select(survey_id, detected_version = version)
+
+# Version comes from `source`; the item-pattern version is a cross-check and a fallback.
+survey_version <- sat_raw |>
+  select(survey_id, survey_type) |>
+  mutate(source_version = unname(SOURCE_VERSION_MAP[survey_type])) |>
+  left_join(detected_version, by = "survey_id") |>
+  mutate(
+    version       = coalesce(source_version, detected_version),
+    version_basis = case_when(!is.na(source_version)   ~ "source",
+                              !is.na(detected_version) ~ "item pattern",
+                              TRUE                     ~ "none")
+  )
+
+n_version_mismatch <- with(survey_version, sum(!is.na(source_version) & !is.na(detected_version) &
+                                                 source_version != detected_version))
+n_version_fallback <- sum(survey_version$version_basis == "item pattern")
+
+gs_total <- item_dict |> filter(gs_item) |> count(version, name = "gs_total")
+
+sat_scores <- sat_items_long |>
+  inner_join(item_dict, by = "item_stem") |>
+  semi_join(survey_version |> filter(!is.na(version)) |> select(survey_id, version), by = c("survey_id", "version")) |>
+  summarise(
+    sat_overall = first_non_na(item_value[overall_item]),
+    gs_answered = sum(!is.na(item_value[gs_item])),
+    gs_mean     = if (any(!is.na(item_value[gs_item]))) mean(item_value[gs_item], na.rm = TRUE) else NA_real_,
+    .by = c(survey_id, version)
+  ) |>
+  left_join(gs_total, by = "version") |>
+  mutate(gs_positive = if_else(gs_answered >= ceiling(gs_total * 2 / 3), as.integer(gs_mean > 3.5), NA_integer_))
+
+sat <- sat_raw |>
+  select(survey_id, client_system_id, primary_client_system_id,
+         sat_provider_system_id = provider_system_id, survey_date, survey_type, lang_raw) |>
+  left_join(survey_version |> select(survey_id, version, version_basis), by = "survey_id") |>
+  left_join(sat_scores |> select(-version), by = "survey_id") |>
+  mutate(
+    high_sat = as.integer(sat_overall >= 4),
+    sat_ord  = factor(sat_overall, levels = 1:5, labels = LIKERT_LABELS, ordered = TRUE),
+    lang_lower = str_to_lower(str_squish(lang_raw)),
+    lang_pref_met = case_when(
+      str_detect(lang_lower, "^yes\\b|^y$") ~ "Yes",
+      str_detect(lang_lower, "^no\\b|^n$")  ~ "No",
+      TRUE                                  ~ "Not reported"
+    )
+  ) |>
+  select(-lang_lower)
+```
+
+## Episodes and their context
+
+```{r}
+#| label: episodes
+# Standardizes IDs, intervention names, and dates (applied identically to the full and subset files,
+# so episode keys match between them).
+prep_service_data <- function(df) {
+  df <- df |>
+    as_tibble() |>
+    mutate(
+      across(any_of(ID_COLS), id_chr),
+      intervention_name = str_squish(as.character(intervention_name)),
+      across(any_of(DATE_COLS), to_date),
+      across(any_of("age_at_start_of_treatment_in_years"), num)
+    )
+  df[setdiff(DATE_COLS, names(df))] <- as.Date(NA)
+  df
+}
+ad_all <- prep_service_data(all_data)
+
+# Non-blank date text that could not be read as a date (counted before any rows are removed).
+date_parse_fail <- map_int(set_names(intersect(DATE_COLS, names(all_data))),
+                           \(f) sum(!is.na(all_data[[f]]) & is.na(ad_all[[f]])))
+
+# Remove eInsight test/demo accounts, as the other scripts do. Blank provider_id values are kept.
+is_demo <- if ("provider_id" %in% names(ad_all)) coalesce(str_detect(as.character(ad_all$provider_id), "DEMO"), FALSE) else rep(FALSE, nrow(ad_all))
+ad <- ad_all[!is_demo, ]
+
+KEYS <- c("client_system_id", "provider_system_id", "intervention_name", "intervention_start")
+INTERVENTION_VARS <- unique(c("provider", "funding_round", cfg$setting_col, "county", "intervention_end", COMPLETION_COL,
+                              "reason_for_discharge", "age_at_start_of_treatment_in_years"))
+DEMO_VARS <- c("client_type", "urban_rural")
+
+# One row per client x provider x intervention episode.
+interventions <- ad |>
+  filter(!is.na(client_system_id), !is.na(intervention_name)) |>
+  summarise(across(any_of(INTERVENTION_VARS), first_non_na), .by = all_of(KEYS))
+
+# One row per client: demographics from the earliest record with a substantive value.
+clients <- ad |>
+  filter(!is.na(client_system_id)) |>
+  arrange(client_system_id, intervention_start) |>
+  summarise(across(any_of(DEMO_VARS), first_substantive), .by = client_system_id)
+
+# Episodes in the subset (CDEP) file; NULL when no subset file is set.
+subset_episodes <- NULL
+if (!is.null(all_data_subset)) {
+  subset_episodes <- prep_service_data(all_data_subset) |>
+    filter(!is.na(client_system_id), !is.na(intervention_name)) |>
+    distinct(across(all_of(KEYS)))
+  n_subset_unmatched <- nrow(anti_join(subset_episodes, interventions, by = KEYS))
+}
+```
+
+```{r}
+#| label: scores
+# One row per episode x measure with a pre-score, preferring the record that also has a post-score.
+# Every measure is oriented so that higher = more severe, then standardized and grouped within measure.
+name_col <- intersect(ASSESSMENT_NAME_COLS, names(ad))[1]
+
+scores <- ad |>
+  mutate(pre = num(pre_score), post = num(post_score), pos_flag = as_flag(positive_outcomes),
+         assessment_name = as.character(.data[[name_col]])) |>
+  filter(!is.na(client_system_id), !is.na(intervention_name), !is.na(pre),
+         if_all(all_of(SEVERITY_SCALE_VARS), \(v) !is.na(v))) |>
+  unite("measure_raw", all_of(SEVERITY_SCALE_VARS), sep = " / ", remove = FALSE) |>
+  arrange(is.na(post), desc(post_completion_date)) |>
+  slice_head(n = 1, by = all_of(c(KEYS, "measure_raw"))) |>
+  mutate(
+    direction          = if_else(str_detect(measure_raw, HIGHER_IS_BETTER_PATTERN), -1, 1),
+    n_scale            = n(),
+    sd_pre             = sd(pre),
+    severity           = direction * pre,
+    severity_z         = (severity - mean(severity)) / sd_pre,
+    baseline_group_num = severity_group(severity),
+    improvement_sd     = direction * (pre - post) / sd_pre,   # positive = improved, in pre-score SD units
+    .by = measure_raw
+  ) |>
+  mutate(reporter_raw = classify_by_pattern(assessment_name, REPORTER_PATTERNS, REPORTER_OTHER))
+n_scores_small_scale <- sum(scores$n_scale < MIN_SCALE_N | !is.finite(scores$severity_z))
+scores <- scores |> filter(n_scale >= MIN_SCALE_N, is.finite(severity_z))
+
+# Episode-level score at start (used for satisfaction and episode counts): the episode's mean
+# standardized severity across its measures, grouped across episodes.
+episode_baseline <- scores |>
+  summarise(baseline_severity = mean(severity_z), .by = all_of(KEYS)) |>
+  mutate(baseline_group_num = severity_group(baseline_severity))
+```
+
+```{r}
+#| label: episode-context
+episodes <- interventions |> left_join(clients, by = "client_system_id")
+
+if (!is.null(grantee_lookup)) {
+  episodes <- episodes |>
+    left_join(grantee_lookup |>
+                mutate(provider_system_id = id_chr(provider_system_id)) |>
+                rename(any_of(c(modality = cfg$modality_col))) |>
+                select(provider_system_id, any_of(c("implementation_track", "entity_type", "modality"))) |>
+                distinct(provider_system_id, .keep_all = TRUE),
+              by = "provider_system_id")
+}
+# EBP vs. CDEP: an episode is in the subset file or it is not (this takes precedence over the lookup).
+if (!is.null(subset_episodes)) {
+  episodes <- episodes |>
+    left_join(mutate(subset_episodes, in_subset = TRUE), by = KEYS) |>
+    mutate(modality = if_else(coalesce(in_subset, FALSE), SUBSET_LABEL, cfg$modality_other)) |>
+    select(-in_subset)
+}
+episodes[setdiff(c(INTERVENTION_VARS, DEMO_VARS), names(episodes))] <- NA_character_
+episodes <- episodes |> mutate(across(age_at_start_of_treatment_in_years, num))
+
+FOCUS_ROUND <- normalize_round(cfg$focus_round)
+if (!FOCUS_ROUND %in% normalize_round(episodes$funding_round)) {
+  stop("focus_round = \"", cfg$focus_round, "\" does not match any funding_round value in all_data.", call. = FALSE)
+}
+
+# Largest single program: matched by pattern, else the program with the most episodes.
+large_program_names <- episodes |>
+  count(intervention_name, sort = TRUE) |>
+  filter(str_detect(intervention_name, LARGE_PROGRAM_PATTERN) | !any(str_detect(intervention_name, LARGE_PROGRAM_PATTERN)) & row_number() == 1) |>
+  pull(intervention_name)
+LARGE_LABEL <- paste("Largest program:", paste(large_program_names, collapse = ", "))
+NOT_LARGE   <- "All other programs"
+```
+
+## Clinical outcomes sample
+
+```{r}
+#| label: outcomes-sample
+paired <- scores |> filter(!is.na(post))
+outcomes_raw <- paired |>
+  filter(!is.na(pos_flag)) |>
+  transmute(across(all_of(KEYS)), measure_raw, assessment_name, reporter_raw, baseline_group_num, severity_z, improvement_sd,
+            across(all_of(ASSESSMENT_DATE_COLS)), poor = as.integer(!pos_flag)) |>
+  inner_join(select(episodes, -any_of(ASSESSMENT_DATE_COLS)), by = KEYS)
+
+flow_outcomes <- tribble(
+  ~step, ~n,
+  "Episode × measure records with a numeric pre-score", nrow(scores) + n_scores_small_scale,
+  sprintf("On a measure with at least %s pre-scores", MIN_SCALE_N), nrow(scores),
+  "With a numeric post-score", nrow(paired),
+  "With a positive-outcome flag (clinical outcomes sample)", nrow(outcomes_raw)
+)
+flow_outcomes |> mutate(n = fmt_n_qa(n)) |> kable(col.names = c("Step", "Records"))
+```
+
+## Satisfaction sample
+
+Surveys are linked to discharged episodes with the 4.02 rules (closest discharge date for the same client at the same provider, then a retry on the family's primary client ID, then one survey per respondent per survey version).
+
+```{r}
+#| label: linkage
+interventions_discharged <- interventions |> filter(!is.na(intervention_end))
+if (nzchar(cfg$data_through)) {
+  interventions_discharged <- interventions_discharged |> filter(intervention_end <= as.Date(cfg$data_through))
+}
+
+link_surveys <- function(s, id_col, by_provider) {
+  x <- s |> mutate(link_client_id = .data[[id_col]]) |> filter(!is.na(link_client_id))
+  y <- interventions_discharged |>
+    rename(int_client_id = client_system_id) |>
+    mutate(int_provider_id = provider_system_id)
+  keys <- c(link_client_id = "int_client_id")
+  if (isTRUE(by_provider)) keys <- c(keys, sat_provider_system_id = "int_provider_id")
+  x |>
+    inner_join(y, by = keys, relationship = "many-to-many") |>
+    mutate(days_end_to_survey = as.numeric(survey_date - intervention_end),
+           gap = abs(days_end_to_survey)) |>
+    arrange(survey_id, gap, intervention_start) |>
+    distinct(survey_id, .keep_all = TRUE) |>
+    select(-any_of("int_provider_id"))
+}
+
+sat_valid <- sat |> filter(!is.na(sat_overall))
+
+linked_1 <- link_surveys(sat_valid, "client_system_id", cfg$link_by_provider) |>
+  mutate(link_method = "Respondent client ID")
+
+linked_2 <- NULL
+if (isTRUE(cfg$link_fallback_primary_client)) {
+  linked_2 <- sat_valid |>
+    anti_join(linked_1, by = "survey_id") |>
+    link_surveys("primary_client_system_id", cfg$link_by_provider) |>
+    mutate(link_method = "Primary (family) client ID")
+}
+
+satisfaction_raw <- bind_rows(linked_1, linked_2) |>
+  mutate(respondent_key = coalesce(client_system_id, paste0("survey_", survey_id))) |>
+  arrange(respondent_key, version, intervention_start, gap) |>
+  distinct(respondent_key, version, .keep_all = TRUE) |>
+  transmute(client_system_id = link_client_id, provider_system_id, intervention_name, intervention_start,
+            survey_date, reporter_raw = version, poor = as.integer(high_sat == 0)) |>
+  inner_join(episodes, by = KEYS) |>
+  left_join(episode_baseline, by = KEYS)
+
+flow_satisfaction <- tribble(
+  ~step, ~n,
+  "Survey records in combined_all", n_sat_file,
+  "Valid (1–5) response on the overall satisfaction item", nrow(sat_valid),
+  "Linked to a discharged intervention", nrow(linked_1) + if (is.null(linked_2)) 0L else nrow(linked_2),
+  "Satisfaction sample (one survey per respondent per version)", nrow(satisfaction_raw)
+)
+flow_satisfaction |> mutate(n = fmt_n_qa(n)) |> kable(col.names = c("Step", "Surveys"))
+```
+
+## Date completeness and choice of time axis
+
+A date is **valid** when it is present, not after `r format(DATA_END)`, `r if (is.na(PLAUSIBLE_START)) "and readable as a date" else paste("and not before", format(PLAUSIBLE_START))`. The time axis is the intervention start date unless the completion date (`r COMPLETION_COL`) is valid for at least `r fmt_pct(TIME_AXIS_MARGIN, 0)` more of the analysis records (outcome and satisfaction samples combined). Note that the satisfaction sample requires a discharge date, and open episodes have no completion date by definition.
+
+```{r}
+#| label: date-quality
+episodes_raw <- episodes |> left_join(episode_baseline, by = KEYS)
+
+date_quality <- function(d, population) {
+  d |>
+    select(any_of(DATE_COLS)) |>
+    pivot_longer(everything(), names_to = "field", values_to = "date") |>
+    summarise(records = n(), missing = mean(is.na(date)), out_of_range = mean(!is.na(date) & !date_valid(date)),
+              valid = mean(date_valid(date)), .by = field) |>
+    mutate(population = population, .before = 1)
+}
+
+samples_raw <- list("Clinical outcomes sample" = outcomes_raw, "Satisfaction sample" = satisfaction_raw)
+date_quality_tab <- imap_dfr(c(list("All episodes" = episodes_raw), samples_raw), date_quality)
+
+axis_quality <- date_quality_tab |>
+  filter(population %in% names(samples_raw), field %in% TIME_CANDIDATES) |>
+  summarise(valid = weighted.mean(valid, records), .by = field) |>
+  arrange(match(field, TIME_CANDIDATES))
+TIME_COL <- if (nzchar(cfg$time_axis)) cfg$time_axis else {
+  if (isTRUE(diff(axis_quality$valid) >= TIME_AXIS_MARGIN)) COMPLETION_COL else TIME_CANDIDATES[1]
+}
+stopifnot(TIME_COL %in% names(episodes_raw))
+TIME_LABEL <- paste("Quarter of", str_replace_all(TIME_COL, "_", " "))
+CONTEXT_VARS[["time_period"]] <- ALL_LABELS[["time_period"]] <- TIME_LABEL
+
+n_start_after_end <- sum(episodes_raw$intervention_start > episodes_raw$intervention_end, na.rm = TRUE)
+
+date_quality_display <- date_quality_tab |>
+  mutate(used = if_else(field == TIME_COL, "Time axis", ""), records = fmt_n_qa(records),
+         across(c(missing, out_of_range, valid), fmt_pct), population = blank_repeats(population))
+date_quality_display |>
+  kable(col.names = c("Population", "Date field", "Records", "% missing", "% out of range", "% valid", ""))
+save_table(date_quality_display, "01_date_completeness")
+
+tibble(field = names(date_parse_fail), unreadable = fmt_n_qa(date_parse_fail)) |>
+  kable(col.names = c("Date field", "Non-blank values that could not be read as a date (rows of all_data)"))
+```
+
+Time axis used in this render: **`r TIME_COL`** (`r if (nzchar(cfg$time_axis)) "set by the time_axis parameter" else paste0("chosen by completeness; valid for ", paste(sprintf("%s of analysis records on %s", fmt_pct(axis_quality$valid), axis_quality$field), collapse = " and "))`). Episodes whose start date is after their end date: **`r fmt_n_qa(n_start_after_end)`**.
+
+## Derive factors
+
+```{r}
+#| label: derive-factors
+# Applied to each dataset separately, because small groups are combined using that dataset's counts.
+add_context <- function(d) {
+  d |>
+    mutate(
+      round_norm        = normalize_round(funding_round),
+      funding_round     = in_order(round_norm),
+      focus_grp         = in_order(case_when(round_norm %in% c(FOCUS_ROUND, "Not reported") ~ round_norm, TRUE ~ OTHER_ROUNDS),
+                                   c(OTHER_ROUNDS, FOCUS_ROUND)),
+      resp_group        = prep_factor(reporter_raw, lump = FALSE),
+      participant_type  = prep_factor(participant_type_from(client_type, age_at_start_of_treatment_in_years), lump = FALSE),
+      age_group         = in_order(as.character(cut(age_at_start_of_treatment_in_years,
+                                                    breaks = c(-Inf, 5, 11, 15, 17, 25, Inf), labels = AGE_LEVELS)), AGE_LEVELS),
+      setting_raw       = as.character(.data[[cfg$setting_col]]),
+      setting           = prep_factor(classify_by_pattern(setting_raw, SETTING_PATTERNS, SETTING_OTHER)),
+      large_program     = factor(if_else(intervention_name %in% large_program_names, LARGE_LABEL, NOT_LARGE), c(LARGE_LABEL, NOT_LARGE)),
+      program           = prep_factor(intervention_name),
+      census_region     = prep_factor(census_region_from(county)),
+      county_grp        = prep_factor(recode_not_reported(county)),
+      urban_rural_grp   = prep_factor(recode_not_reported(urban_rural)),
+      completion_status = prep_factor(completion_status_from(reason_for_discharge, intervention_end)),
+      baseline_group    = in_order(coalesce(BASELINE_LABELS[baseline_group_num], NO_BASELINE), c(BASELINE_LABELS, NO_BASELINE)),
+      time_period       = in_order(quarter_label(.data[[TIME_COL]])),
+      across(any_of(c("modality", "implementation_track", "entity_type")), \(v) prep_factor(recode_not_reported(v))),
+      across(any_of("measure_raw"), \(v) prep_factor(v), .names = "measure"),
+      across(any_of("poor"), \(v) 1L - v, .names = "positive")
+    )
+}
+
+episodes_d <- add_context(mutate(episodes_raw, reporter_raw = NA_character_))
+SAMPLES <- list(
+  outcomes     = list(data = add_context(outcomes_raw), label = "Clinical outcomes", unit = "paired measures",
+                      poor = "did not meet the positive-outcome definition"),
+  satisfaction = list(data = add_context(satisfaction_raw), label = "Satisfaction", unit = "surveys",
+                      poor = "rated below Agree (not high satisfaction)")
+)
+# Factors present in a dataset with more than one group there.
+vars_in <- function(d, vars = CONTEXT_VARS) vars[names(vars) %in% names(d) & map_lgl(names(vars), \(v) n_distinct(d[[v]]) > 1)]
+
+# Applies f to each sample's data and stacks the results with a `sample` label column.
+by_sample <- function(f) imap_dfr(SAMPLES, \(s, k) f(s$data) |> mutate(sample = s$label, .before = 1))
+```
+
+# Results
+
+In every table a **poor result** means: clinical outcomes, the paired measure `r SAMPLES$outcomes$poor`; satisfaction, the survey was `r SAMPLES$satisfaction$poor`.
+
+## Funding round × respondent
+
+```{r}
+#| label: round-by-respondent
+overall <- by_sample(\(d) tibble(n = nrow(d), pct_poor = mean(d$poor)))
+overall |>
+  mutate(n = fmt_n(n), pct_poor = fmt_pct(pct_poor)) |>
+  kable(col.names = c("Sample", "Records", "% poor result"))
+
+round_resp <- by_sample(\(d) cell_stats(d, "funding_round", "resp_group", "poor"))
+
+wide_cells(filter(round_resp, sample == SAMPLES$outcomes$label), "poor") |>
+  show_tab("Funding round", caption = "Clinical outcomes: % poor result (n) by funding round and who completed the measure")
+wide_cells(filter(round_resp, sample == SAMPLES$satisfaction$label), "poor") |>
+  show_tab("Funding round", caption = "Satisfaction: % poor result (n) by funding round and survey version")
+save_table(by_sample(\(d) wide_cells(cell_stats(d, "funding_round", "resp_group", "poor"), "poor")), "02_round_by_respondent")
+```
+
+```{r}
+#| label: round-by-respondent-plot
+#| fig-height: 5
+round_resp |>
+  filter(n >= SUPPRESS_N, row != TOTAL, col != TOTAL) |>
+  ggplot(aes(x = row, y = fct_rev(col), fill = poor)) +
+  geom_tile(colour = "white") +
+  geom_text(aes(label = fmt_pct(poor, 0)), size = 3.5) +
+  scale_fill_distiller(palette = "OrRd", direction = 1, labels = scales::percent) +
+  facet_wrap(~sample, scales = "free") +
+  labs(x = NULL, y = NULL, fill = "% poor result",
+       title = "Poor results by funding round and respondent",
+       subtitle = sprintf("Cells with fewer than %s records not shown", SUPPRESS_N)) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1), panel.grid = element_blank())
+```
+
+## Where are poor results concentrated?
+
+For each group, the tables compare its share of all records with its share of all poor results. A ratio above 1 means the group's rate of poor results is above the sample's overall rate.
+
+```{r}
+#| label: concentration
+conc <- by_sample(\(d) imap_dfr(vars_in(d), \(label, v) rate_table(d, v) |> mutate(characteristic = label)))
+
+conc_display <- conc |>
+  mutate(n_disp = if_else(hidden, SUPPR, fmt_n(n)),
+         pct_disp = if_else(n < SUPPRESS_N, SUPPR, fmt_pct(pct_poor)),
+         ratio_disp = if_else(n < SUPPRESS_N, SUPPR, sprintf("%.2f", ratio)),
+         across(c(share_n, share_poor), \(x) if_else(hidden, SUPPR, fmt_pct(x))))
+
+# Hot spots: reportable groups with the highest rate of poor results (time and single programs are shown separately).
+hot_spots <- conc_display |>
+  filter(n >= SUPPRESS_N, !variable %in% c("time_period", "program")) |>
+  slice_max(ratio, n = 12, by = sample, with_ties = FALSE)
+hot_spots |>
+  transmute(sample = blank_repeats(sample), characteristic, level, n_disp, pct_disp, ratio_disp, share_n, share_poor) |>
+  kable(col.names = c("Sample", "Characteristic", "Group", "n", "% poor result", "Ratio to overall rate",
+                      "Share of all records", "Share of all poor results"),
+        caption = "Groups with the highest rates of poor results")
+save_table(conc_display |> select(sample, characteristic, level, n = n_disp, pct_poor = pct_disp, ratio = ratio_disp, share_n, share_poor),
+           "03_concentration_by_factor")
+```
+
+::: {.callout-note collapse="true"}
+## Full concentration tables, every factor (click to expand)
+
+```{r}
+#| label: concentration-full
+conc_display |>
+  mutate(characteristic = blank_repeats(paste(sample, characteristic, sep = ": "))) |>
+  select(characteristic, level, n_disp, pct_disp, ratio_disp, share_n, share_poor) |>
+  kable(col.names = c("Sample: characteristic", "Group", "n", "% poor result", "Ratio to overall rate",
+                      "Share of all records", "Share of all poor results"))
+```
+:::
+
+### Within and outside `r FOCUS_ROUND`
+
+Each cell is the % poor result (n). If a factor explains the `r FOCUS_ROUND` gap, the gap between the two columns shrinks within its groups.
+
+```{r}
+#| label: by-focus-round
+FACTOR_VARS <- setdiff(names(CONTEXT_VARS), c("funding_round", "program", "county_grp", "time_period"))
+# The focus round's count must keep the status it has in the funding round table: if it is hidden there,
+# these tables show percentages only.
+focus_counts_ok <- function(d) !any(filter(rate_table(d, "funding_round"), level == FOCUS_ROUND)$hidden)
+focus_tab <- by_sample(\(d) cells_by_factor(d, vars_in(d, CONTEXT_VARS[FACTOR_VARS]), "focus_grp", counts = focus_counts_ok(d)))
+focus_tab |>
+  mutate(sample = blank_repeats(sample)) |>
+  show_tab()
+save_table(focus_tab, "04_factor_by_focus_round")
+```
+
+### By respondent
+
+```{r}
+#| label: by-respondent
+resp_tabs <- imap(SAMPLES, \(s, k) cells_by_factor(s$data, vars_in(s$data, CONTEXT_VARS[setdiff(FACTOR_VARS, "resp_group")]), "resp_group"))
+resp_tabs$outcomes |> show_tab(caption = "Clinical outcomes: % poor result (n) by who completed the measure")
+resp_tabs$satisfaction |> show_tab(caption = "Satisfaction: % poor result (n) by survey version")
+save_table(bind_rows(resp_tabs, .id = "sample"), "05_factor_by_respondent")
+```
+
+### Providers and programs
+
+The intraclass correlation (ICC) is the share of variation in poor results that lies between providers; the median odds ratio is the typical odds ratio between two randomly chosen providers (1.0 = no difference). Providers are not listed; inspect `provider_rates(SAMPLES$outcomes$data)` interactively to identify them.
+
+```{r}
+#| label: providers
+provider_rates <- function(d) {
+  d |>
+    summarise(n = n(), n_poor = sum(poor), pct_poor = mean(poor), .by = provider_system_id) |>
+    arrange(desc(n_poor)) |>
+    mutate(cum_share_poor = cumsum(n_poor) / sum(n_poor))
+}
+
+provider_summary <- function(d) {
+  pr <- provider_rates(d)
+  m0 <- tryCatch(glmer(as.formula(paste("poor ~ 1 +", RE_TERMS)), data = d, family = binomial, control = GLMER_CTRL),
+                 error = \(e) NULL)
+  v <- if (is.null(m0)) NA_real_ else as.data.frame(VarCorr(m0))$vcov[1]
+  big <- filter(pr, n >= SUPPRESS_N)
+  tibble(providers = nrow(pr), reportable = nrow(big),
+         p25 = quantile(big$pct_poor, 0.25), p75 = quantile(big$pct_poor, 0.75),
+         top1 = pr$cum_share_poor[1], top5 = pr$cum_share_poor[min(5, nrow(pr))],
+         icc = v / (v + pi^2 / 3), mor = exp(sqrt(2 * v) * qnorm(0.75)))
+}
+
+provider_tab <- by_sample(provider_summary)
+provider_tab |>
+  mutate(across(c(p25, p75, top1, top5, icc), fmt_pct), mor = sprintf("%.2f", mor)) |>
+  kable(col.names = c("Sample", "Providers", sprintf("Providers with n ≥ %s", SUPPRESS_N),
+                      "% poor: 25th percentile provider", "% poor: 75th percentile provider",
+                      "Share of all poor results: top provider", "Top 5 providers", "ICC (provider)", "Median odds ratio"))
+save_table(provider_tab, "06_provider_concentration")
+
+conc_display |>
+  filter(variable == "program") |>
+  arrange(sample, desc(ratio)) |>
+  transmute(sample = blank_repeats(sample), level, n_disp, pct_disp, ratio_disp, share_n, share_poor) |>
+  kable(col.names = c("Sample", "Program (intervention)", "n", "% poor result", "Ratio to overall rate",
+                      "Share of all records", "Share of all poor results"),
+        caption = sprintf("Programs, highest rate of poor results first (programs with fewer than %s records are combined)", SUPPRESS_N))
+```
+
+## Timing: when was each funding round, and do results change over time?
+
+Timing uses **`r TIME_COL`**. The first table places each round in time using all episodes: the quarter by which 5%, 50%, and 95% of the round's dated episodes had occurred.
+
+```{r}
+#| label: round-timing
+round_timing <- episodes_d |>
+  summarise(n = n(), dated = mean(date_valid(.data[[TIME_COL]])),
+            across(all_of(TIME_CANDIDATES), list(p05 = \(x) quarter_of(x, 0.05), p50 = \(x) quarter_of(x, 0.5),
+                                                 p95 = \(x) quarter_of(x, 0.95))),
+            .by = funding_round) |>
+  arrange(funding_round) |>
+  mutate(hidden = hide_counts(n))
+round_timing_display <- round_timing |>
+  mutate(across(matches("_p\\d+$"), \(x) if_else(n < SUPPRESS_N, SUPPR, x)), dated = fmt_pct(dated),
+         n = if_else(hidden, SUPPR, fmt_n(n))) |>
+  select(-hidden)
+round_timing_display |>
+  kable(col.names = c("Funding round", "Episodes", sprintf("%% with a valid %s", TIME_COL),
+                      paste(rep(str_replace_all(TIME_CANDIDATES, "_", " "), each = 3), c("5%", "median", "95%"), sep = ": ")))
+save_table(round_timing_display, "07_round_timing")
+
+quarter_round <- cell_stats(episodes_d, "time_period", "funding_round")
+```
+
+```{r}
+#| label: round-timing-plot
+#| fig-height: 5
+quarter_round |>
+  filter(n >= SUPPRESS_N, !hide, row != TOTAL, col != TOTAL, row != "Not reported") |>
+  ggplot(aes(x = row, y = n, colour = col, group = col)) +
+  geom_line() +
+  geom_point() +
+  scale_y_continuous(labels = scales::comma) +
+  labs(x = TIME_LABEL, y = "Episodes", colour = NULL, title = "Episodes per quarter by funding round",
+       subtitle = sprintf("All episodes; quarters with fewer than %s episodes in a round (or a suppressed count) not shown", SUPPRESS_N)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "bottom")
+```
+
+::: {.callout-note collapse="true"}
+## Episodes by quarter and funding round: counts (click to expand)
+
+```{r}
+#| label: quarter-round-table
+quarter_round_display <- wide_cells(quarter_round)
+quarter_round_display |> show_tab(TIME_LABEL, caption = "n (% of the quarter's episodes)")
+save_table(quarter_round_display, "08_episodes_by_quarter_and_round")
+```
+:::
+
+```{r}
+#| label: results-by-quarter
+quarter_focus <- by_sample(\(d) cell_stats(d, "time_period", "focus_grp", "poor"))
+
+quarter_focus_display <- by_sample(\(d) wide_cells(cell_stats(d, "time_period", "focus_grp", "poor"), "poor", counts = focus_counts_ok(d)))
+quarter_focus_display |>
+  mutate(sample = blank_repeats(sample)) |>
+  show_tab(TIME_LABEL, caption = "% poor result (n) by quarter")
+save_table(quarter_focus_display, "09_results_by_quarter")
+```
+
+```{r}
+#| label: results-by-quarter-plot
+#| fig-height: 5
+quarter_focus |>
+  filter(n >= SUPPRESS_N, row != TOTAL, row != "Not reported") |>
+  ggplot(aes(x = row, y = poor, colour = col, group = col)) +
+  geom_line() +
+  geom_point(aes(size = n)) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, NA)) +
+  scale_size_area(max_size = 4, labels = scales::comma) +
+  facet_wrap(~sample, ncol = 1) +
+  labs(x = TIME_LABEL, y = "% poor result", colour = NULL, size = "n", title = "Poor results by quarter",
+       subtitle = sprintf("Quarters with fewer than %s records in a group not shown", SUPPRESS_N)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "bottom")
+```
+
+## Do the round and respondent gaps persist after adjustment?
+
+Each column is a logistic model of a poor result. The first has only respondent and an indicator for `r FOCUS_ROUND` (against all other rounds combined); the second adds a random intercept for provider; later columns add the blocks of factors named in the header, cumulatively. Cells are odds ratios of a poor result against the reference group (* p < 0.05). An odds ratio that moves toward 1 as factors are added means those factors account for part of the gap. These models are exploratory: outcome records from the same participant are treated as independent within provider, and the largest program sits inside one funding round, so once it is in the model the coefficient for that round describes the round's other programs.
+
+```{r}
+#| label: fit-function
+# Trimmed from the 4.02 fit function: logistic only, provider random intercept, no ordinal engine.
+fit_poor <- function(d, vars, re = RE_TERMS) {
+  vars <- vars[vars %in% names(d)]
+  d <- d |> select(poor, all_of(vars), provider_system_id) |> drop_na() |> droplevels()
+  vars <- vars[map_lgl(vars, \(v) is_reportable(d[[v]]))]
+  if (nrow(d) < MIN_MODEL_N || !length(vars)) return(NULL)
+  # Reference group: the first group, in display order, that meets the suppression threshold.
+  d <- d |> mutate(across(all_of(vars), \(f) fct_relevel(f, names(which(table(f) >= SUPPRESS_N))[1])))
+  f <- as.formula(paste("poor ~", paste(c(vars, re), collapse = " + ")))
+  m <- tryCatch(
+    if (length(re)) glmer(f, data = d, family = binomial, nAGQ = GLMER_NAGQ, control = GLMER_CTRL)
+    else glm(f, data = d, family = binomial),
+    error = \(e) NULL)
+  if (is.null(m)) NULL else list(model = m, data = d, vars = vars)
+}
+
+model_or_table <- function(fit) {
+  d  <- fit$data
+  cf <- coef_or(fit$model)
+  cf <- bind_cols(cf |> select(-term), map_terms(cf$term, fit$vars)) |>
+    mutate(level = if_else(level == "", "Per 1 SD increase", level))
+  rows <- map_dfr(fit$vars, function(v) {
+    if (is.factor(d[[v]])) {
+      count(d, level = .data[[v]]) |>
+        mutate(level = as.character(level), is_ref = level == levels(d[[v]])[1], variable = v)
+    } else {
+      tibble(level = "Per 1 SD increase", n = sum(!is.na(d[[v]])), is_ref = FALSE, variable = v)
+    }
+  })
+  rows |>
+    mutate(hidden = hide_counts(n), .by = variable) |>
+    left_join(cf |> select(variable, level, or, lcl, ucl, p.value), by = c("variable", "level")) |>
+    mutate(characteristic = unname(ALL_LABELS[variable]))
+}
+
+# Round + respondent, then each block added cumulatively.
+fit_sequence <- function(d) {
+  specs <- accumulate(MODEL_BLOCKS, c, .init = BASE_VARS) |>
+    set_names(c("+ provider effect", names(MODEL_BLOCKS)))
+  compact(c(list("Round + respondent" = fit_poor(d, BASE_VARS, re = character())), map(specs, \(v) fit_poor(d, v))))
+}
+
+or_cells <- function(fits) {
+  imap_dfr(fits, \(f, k) model_or_table(f) |>
+             filter(n >= SUPPRESS_N) |>
+             transmute(variable, characteristic, level, model = k,
+                       cell = case_when(is_ref ~ "Ref.", is.na(or) ~ "n/e",
+                                        TRUE ~ paste0(sprintf("%.2f", or), if_else(coalesce(p.value < 0.05, FALSE), "*", ""))))) |>
+    pivot_wider(names_from = model, values_from = cell)
+}
+```
+
+```{r}
+#| label: models
+fits <- map(SAMPLES, \(s) fit_sequence(s$data))
+model_tab <- imap_dfr(fits, \(f, k) or_cells(f) |> mutate(sample = SAMPLES[[k]]$label, .before = 1))
+
+model_tab |>
+  filter(variable %in% BASE_VARS) |>
+  mutate(characteristic = blank_repeats(paste(sample, characteristic, sep = ": "))) |>
+  select(-sample, -variable) |>
+  show_tab(caption = "Odds ratios of a poor result for the focus round and respondent, as factors are added")
+save_table(model_tab, "10_sequential_models")
+```
+
+::: {.callout-note collapse="true"}
+## Odds ratios for every factor in every model (click to expand)
+
+```{r}
+#| label: models-full
+model_tab |>
+  mutate(characteristic = blank_repeats(paste(sample, characteristic, sep = ": "))) |>
+  select(-sample, -variable) |>
+  show_tab()
+```
+:::
+
+## Score changes by score at intervention start
+
+Within each outcome measure, pre-scores are oriented so that higher means more severe and split into `r length(BASELINE_LABELS)` roughly equal groups (tied scores stay together, so groups on short scales can be uneven). The groups are formed from all pre-scores, so they are only roughly equal among records that also have a post-score. **Improvement** is the pre-to-post change in pre-score standard deviation units, signed so that positive means better. Participants who start with more severe scores have more room to improve and also tend to move toward the average on retest, so compare rounds and respondents *within* a starting group rather than comparing starting groups with each other.
+
+```{r}
+#| label: baseline-groups
+out_d <- SAMPLES$outcomes$data
+BASELINE_BREAKDOWNS <- vars_in(out_d, CONTEXT_VARS[c("funding_round", "resp_group", "modality", "age_group")])
+
+baseline_stats <- imap_dfr(BASELINE_BREAKDOWNS, \(label, v)
+  cell_stats(out_d, "baseline_group", v, c("improvement_sd", "positive")) |> mutate(breakdown = label, .before = 1))
+
+baseline_wide <- function(value, fmt) {
+  imap_dfr(BASELINE_BREAKDOWNS, \(label, v)
+    wide_cells(cell_stats(out_d, v, "baseline_group", value), value, fmt) |> mutate(characteristic = label, .before = 1)) |>
+    mutate(characteristic = blank_repeats(characteristic))
+}
+improvement_display <- baseline_wide("improvement_sd", fmt_sd)
+positive_display    <- baseline_wide("positive", fmt_pct)
+
+improvement_display |> show_tab(caption = "Mean improvement in SD units (n), by score at intervention start")
+positive_display |> show_tab(caption = "% meeting the positive-outcome definition (n), by score at intervention start")
+save_table(bind_rows("Mean improvement (SD units)" = improvement_display, "% positive outcome" = positive_display, .id = "statistic"),
+           "11_change_by_baseline_group")
+```
+
+```{r}
+#| label: baseline-groups-plot
+#| fig-height: 7
+baseline_stats |>
+  filter(n >= SUPPRESS_N, row != TOTAL, col != TOTAL) |>
+  ggplot(aes(x = row, y = improvement_sd, colour = col, group = col)) +
+  geom_hline(yintercept = 0, colour = "grey50") +
+  geom_line() +
+  geom_point(aes(size = n)) +
+  scale_size_area(max_size = 4, labels = scales::comma) +
+  scale_x_discrete(labels = scales::label_wrap(14)) +
+  facet_wrap(~breakdown, scales = "free_x") +
+  labs(x = NULL, y = "Mean improvement (pre-score SD units; above 0 = improved)", colour = NULL, size = "n",
+       title = "Score change by score at intervention start",
+       subtitle = sprintf("Groups with fewer than %s paired measures not shown", SUPPRESS_N)) +
+  theme(legend.position = "bottom", legend.box = "vertical")
+```
+
+## Intervention completion by funding round
+
+Discharge status uses the 4.02 classification of `reason_for_discharge`; episodes with no intervention end date are "Not discharged".
+
+```{r}
+#| label: completion-by-round
+completion <- cell_stats(episodes_d, "funding_round", "completion_status")
+completion_all <- wide_cells(completion)
+
+# The same counts as a share of discharged episodes. A percentage is shown only when every count it is
+# built from is shown in the table above.
+open_episodes <- completion |> filter(col == NOT_DISCHARGED) |> select(row, open_n = n, open_hide = hide)
+completion_discharged <- completion |>
+  filter(!col %in% c(NOT_DISCHARGED, TOTAL)) |>
+  left_join(open_episodes, by = "row") |>
+  mutate(open_n = coalesce(open_n, 0L),
+         shown  = n >= SUPPRESS_N & !hide & !row_hide & !coalesce(open_hide, FALSE),
+         cell   = case_when(n == 0 ~ "—", shown ~ fmt_pct(n / (row_n - open_n)), TRUE ~ SUPPR)) |>
+  select(group = row, col, cell) |>
+  pivot_wider(names_from = col, values_from = cell)
+
+completion_all |> show_tab("Funding round", caption = "All episodes: n (% of the round's episodes)")
+completion_discharged |> show_tab("Funding round", caption = "Discharged episodes only: % of the round's discharged episodes")
+save_table(bind_rows("All episodes" = completion_all, "Discharged episodes" = completion_discharged, .id = "population"),
+           "12_completion_by_round")
+```
+
+Poor results by discharge status, within and outside `r FOCUS_ROUND`, are in the "Discharge status" rows of the table in the section on `r FOCUS_ROUND` above.
+
+# Data quality
+
+## Classifier crosswalks
+
+Raw values and the category each was assigned to (the most common values in each table). `r if (SHAREABLE) sprintf("Raw values seen fewer than %s times are masked in this shareable render.", SUPPRESS_N)`
+
+```{r}
+#| label: qa-crosswalks
+crosswalk(episodes_d, "setting_raw", "setting") |>
+  kable(col.names = c(sprintf("Raw value of `%s`", cfg$setting_col), "Service setting", "Distinct values", "Episodes"),
+        caption = "Service setting (all episodes)")
+crosswalk(out_d, "assessment_name", "resp_group") |>
+  kable(col.names = c(sprintf("Raw value of `%s`", name_col), "Respondent", "Distinct values", "Paired measures"),
+        caption = "Who completed the outcome measure (clinical outcomes sample)")
+```
+
+## Measures and starting groups
+
+A measure with several assessment names or an implausibly wide score range may combine subscales; if so, add the name column to `SEVERITY_SCALE_VARS`.
+
+```{r}
+#| label: qa-measures
+scores |>
+  summarise(n = n(), min_pre = min(pre), max_pre = max(pre), with_post = mean(!is.na(post)),
+            names = n_distinct(assessment_name), .by = c(measure_raw, direction, baseline_group_num)) |>
+  arrange(measure_raw, baseline_group_num) |>
+  transmute(measure = blank_repeats(measure_raw),
+            polarity = if_else(direction < 0, "Higher = better (sign flipped)", "Lower = better"),
+            group = BASELINE_LABELS[baseline_group_num],
+            range = if_else(SHAREABLE & n < SUPPRESS_N, SUPPR, paste(min_pre, max_pre, sep = " to ")),
+            with_post = if_else(n < SUPPRESS_N, SUPPR, fmt_pct(with_post)), names, n = fmt_n_qa(n)) |>
+  kable(col.names = c("Measure", "Polarity", "Score at intervention start", "Pre-score range", "% with a post-score",
+                      "Distinct assessment names", "Pre-scores"))
+```
+
+```{r}
+#| label: qa-subset
+#| echo: false
+#| results: asis
+if (!is.null(subset_episodes)) {
+  cat(sprintf("%s episodes in the subset file: **%s**. Not found in `all_data`: **%s** (these cannot be labeled %s; check that both files come from the same export and cleaning run).\n\n",
+              SUBSET_LABEL, fmt_n_qa(nrow(subset_episodes)), fmt_n_qa(n_subset_unmatched), SUBSET_LABEL))
+}
+cat(sprintf("Test/demo records removed from `all_data`: **%s**.\n\n", fmt_n_qa(sum(is_demo))))
+```
+
+# Session information
+
+```{r}
+#| label: session-info
+sessionInfo()
+```
