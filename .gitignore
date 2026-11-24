@@ -64,3 +64,8 @@ _freeze/
 *.rds
 *.rda
 *.RData
+*.css
+*.js
+*.woff
+*.woff2
+site_libs/
