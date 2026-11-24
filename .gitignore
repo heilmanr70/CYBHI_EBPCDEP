@@ -54,3 +54,13 @@
 .DS_Store
 .DS_Store
 .posit/assistant
+
+# Quarto and R outputs
+*_files/
+*_cache/
+_freeze/
+.quarto/
+*.sav
+*.rds
+*.rda
+*.RData
